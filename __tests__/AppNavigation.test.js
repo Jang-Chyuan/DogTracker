@@ -614,7 +614,7 @@ test('a tapped dog opens its card; 看軌跡 saves its query, and back reopens t
   expect(renderer.root.findByType(MapScreen).props.historical).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'dog-card' }).length).toBeGreaterThan(0);
 });
-test('the card switches through every dog, wrapping; each step centres the map on that dog', async () => {
+test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick centres the map on that dog', async () => {
   Linking.getInitialURL.mockResolvedValueOnce('dogtracker://dev/fixture?name=card-switch');
   let emit;
   Linking.addEventListener.mockImplementationOnce((_, handler) => {
@@ -623,41 +623,49 @@ test('the card switches through every dog, wrapping; each step centres the map o
   });
   await mount();
   await advance(1000);
-  const identityNode = () => renderer.root.find(node => node.props.testID === 'dog-card-identity' && node.props.accessible);
-  const identity = () => identityNode().props.accessibilityLabel;
+  const { size: sizes } = require('../src/theme/tokens');
+  const slot = sizes.card.carousel.slot;
+  const middle = () => renderer.root.find(node => node.props.testID === 'dog-card-edit'
+    && typeof node.props.onPress === 'function');
+  const open = () => middle().props.accessibilityLabel.replace(/^編輯(.*)的名字和頭像$/, '$1');
+  const strip = () => renderer.root.findAll(node => node.props.testID === 'dog-card-carousel'
+    && typeof node.props.onMomentumScrollEnd === 'function')[0];
   const card = () => renderer.root.findAll(node => node.props.testID === 'dog-card' && node.props.onLayout)[0];
   const map = () => renderer.root.findAll(node => node.props.focusDog !== undefined && node.props.presentation, { deep: true })[0];
-  // The card has its height (the map is asked to move once it has).
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
   await advance(100);
-  // Name and 訊號源 only: no place in the order.
-  expect(identity()).toBe('豆豆，訊號源 4');
-  const step = async id => {
-    await act(async () => row(id).props.onPress());
-    await advance(100);
+  expect(open()).toBe('豆豆');
+  // The order: 豆豆 (open), 阿福 (problem), then by number; each once.
+  const order = ['豆豆', '阿福', '狗 5', '小黑', '狗 9', '狗 12'];
+  const picks = renderer.root.findAll(node => /^dog-card-(pick-\d+|edit)$/.test(node.props.testID ?? '')
+    && typeof node.props.onPress === 'function');
+  expect(picks).toHaveLength(6);
+  const land = async index => {
+    await act(async () => strip().props.onMomentumScrollEnd({ nativeEvent: { contentOffset: { x: index * slot } } }));
+    await advance(300);
   };
-  // 豆豆 is open, 阿福 has a problem, then by number; all six, then round.
-  const seen = [];
   const keys = new Set();
-  for (let index = 0; index < 6; index += 1) {
-    await step('dog-card-next');
-    seen.push(identity().split('，')[0]);
+  for (let index = 1; index < order.length; index += 1) {
+    await land(index);
+    expect(open()).toBe(order[index]);
     const shown = map().props;
     const selected = shown.presentation.dogMarkers.find(marker => marker.selected);
     // On top of the others, and the map always asked to centre it.
-    expect(selected.name).toBe(seen[index]);
+    expect(selected.name).toBe(order[index]);
     expect(shown.focusDog).toMatchObject({ coordinate: selected.coordinate, always: true });
     keys.add(shown.focusDog.key);
   }
-  expect(seen).toEqual(['阿福', '狗 5', '小黑', '狗 9', '狗 12', '豆豆']);
-  expect(keys.size).toBe(6);
-  await step('dog-card-previous');
-  expect(identity()).toBe('狗 12，訊號源 12');
-  // TalkBack's 上一隻 on the name goes the same way; the card stays (no new rise).
-  await act(async () => identityNode().props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
-  await advance(100);
-  expect(identity()).toBe('狗 9，訊號源 9');
+  expect(keys.size).toBe(5);
+  // The last dog: TalkBack has 上一隻 only (no wrap-around to the first).
+  expect(middle().props.accessibilityActions).toEqual([{ name: 'previous', label: '上一隻' }]);
+  await act(async () => middle().props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
+  await advance(300);
+  expect(open()).toBe('狗 9');
   expect(map().props.focusDog.always).toBe(true);
+  // Overscrolled past the first: lands on the first dog.
+  await land(-1);
+  expect(open()).toBe('豆豆');
+  expect(middle().props.accessibilityActions).toEqual([{ name: 'next', label: '下一隻' }]);
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 

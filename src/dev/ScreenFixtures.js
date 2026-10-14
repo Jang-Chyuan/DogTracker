@@ -33,6 +33,7 @@ import { dayKey } from '../history/screen/HistoryScreenDates';
 import { activityMinutes, activityReadings } from '../activity/ActivityMinutes';
 import { ACTIVITY_CONTEXT_MS } from '../activity/ActivityData';
 import { CARD_BATTERY_ROWS } from '../activity/DogCardReadings';
+import { CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { plausibleBattery } from '../tracking/BatteryPlausibility';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
@@ -911,11 +912,11 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
-  // ---- switching dogs from the card (2026-10-13, ‹ › and swipe) ----------
+  // ---- switching dogs from the card (2026-10-14, the row of dogs) ---------
   // Six dogs on receiver 7: 豆豆, 小黑 and 阿福 walking together (one 「3 隻」
   // tag, 阿福 at 12% so it has the red 「!」), 狗 5, 狗 9 and 狗 12 on their own.
-  // 豆豆's card is open: ‹ › step through all six (豆豆, 阿福 (problem), then
-  // 5, 6, 9, 12, then 豆豆 again).
+  // 豆豆's card is open: its row of dogs goes 豆豆, 阿福 (problem), then 5,
+  // 6, 9, 12, and ends there (no wrap-around).
   'card-switch': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -2008,6 +2009,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       ...tracking,
       ...fixture.tracking,
       caughtUp: true,
+      catchUp: CATCH_UP_IDLE,
       historyLoaded: true,
       initialSnapshotReady: true,
       ready: { ...tracking.ready, real: true },
@@ -2045,7 +2047,12 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    cloudSync: { ...cloudSync, ...fixture.cloudSync },
+    // On a signed-in phone the live CloudSync's latest-first state (its
+    // revisions, publication, catch-up, busy flags) must not leak into a
+    // fixture: it kept the fixture's dogs off the map, and its changing
+    // revision restarted the card's readings so 活動量 stayed 「—」.
+    cloudSync: { ...cloudSync, latestFirst: false, mapSuccessRevision: undefined, getMapPublication: undefined,
+      snapshotPending: false, publishedPending: false, busy: false, catchUp: CATCH_UP_IDLE, ...fixture.cloudSync },
     // A history fixture asks its own stand-in cloud (054b), never Supabase.
     historyCloud: fixture.history ? fixture.historyCloud : live.historyCloud,
     history: history && {

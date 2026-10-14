@@ -2,13 +2,13 @@ import { t } from '../i18n';
 // A dog's summary card (design v3 A3/A3b/A7b; DESIGN.md「摘要卡片」「卡片的
 // 狀態列」): it rises from the bottom when a dog is tapped and replaces the old
 // dog list, follow button and dog panel. No ✕: it closes by swiping it down,
-// tapping empty map, or the back key. With more than one dog on the map, ‹ ›
-// at the ends of the title row, a sideways swipe and TalkBack's 下一隻／上一隻
-// switch to the next or previous dog (DogSwitch). The face opens A5. It only draws DogCardModel.dogCard().
+// tapping empty map, or the back key. With other dogs on the map its top is
+// the row of dogs (DogCarousel) that picks another; alone, the dog's face and
+// name. The face carries the pencil badge and opens the edit sheet. It only
+// draws DogCardModel.dogCard().
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import {
   forwardRef,
-  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -36,8 +36,8 @@ import Glyph from './Glyph';
 import { dogCardMaxHeight } from './MapPanelHeight';
 import { PressScale } from './MapControls';
 import BangGlyph from '../components/BangGlyph';
-import { isReduceMotion, REDUCED_FADE_MS, slideOrFade } from '../utils/reduceMotion';
-import { isSwitchSwipe, swipeStep } from './DogSwitch';
+import { slideOrFade } from '../utils/reduceMotion';
+import DogCarousel from './DogCarousel';
 import { linesFor } from '../utils/textScale';
 import {
   layout,
@@ -62,8 +62,6 @@ const CLOSE_MS = 180;
 // this, closes it; anything less springs back.
 const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
-// The quickest a switch slide finishes (a hard fling), so it is still seen.
-const SWITCH_MIN_MS = 120;
 // The card floats a little off the screen edges, as in the A3 mockups.
 const CARD_INSET = space.s;
 
@@ -190,27 +188,6 @@ const clock = at => {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-/**
- * ‹ or › (DESIGN.md「摘要卡片」換狗): a 48dp target at either end of the title
- * row, labelled with the dog it goes to (「下一隻：小黑」).
- */
-function SwitchButton({ step, target, onStep, live = true }) {
-  const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  const next = step > 0;
-  return (
-    <Pressable
-      testID={live ? (next ? 'dog-card-next' : 'dog-card-previous') : undefined}
-      accessibilityRole="button"
-      accessibilityLabel={next ? t('c1293', { name: target }) : t('c1294', { name: target })}
-      onPress={() => onStep(step)}
-      style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
-    >
-      <Glyph name={next ? 'chevron' : 'back'} color={colors.text} size={sizes.card.switchIcon} />
-    </Pressable>
-  );
-}
-
 function Headline({ headline, speech, heading }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
@@ -248,139 +225,67 @@ function Headline({ headline, speech, heading }) {
 }
 
 /**
- * One card's content (handle, title row, headline, rows, 看軌跡). The open
- * card and the neighbours drawn beside it for the swipe are the same face;
- * only the open one is live (`live`): the others are hidden from touch and
- * TalkBack.
+ * The card's top: alone, the dog's face (the edit button, a pencil badge on
+ * it) and name; with other dogs, the row of dogs (DogCarousel).
  */
-const CardFace = memo(function CardFace({
-  card,
-  avatar,
-  heading,
-  live,
-  arrows,
-  previousName,
-  nextName,
-  onStepPress,
-  onAction,
-  onEdit,
-  onActivity,
-  onTrack,
-  trackBusy,
-  onScroll,
-}) {
+function CardHeader({ card, avatar, switcher, onEdit, width }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
+  const actions = useMemo(() => switcher ? [
+    ...(switcher.next != null ? [{ name: 'next', label: t('c1291') }] : []),
+    ...(switcher.previous != null ? [{ name: 'previous', label: t('c1292') }] : []),
+  ] : undefined, [switcher]);
+  const onAction = useCallback(event => {
+    switcher?.onStep(event.nativeEvent.actionName === 'next' ? 1 : -1);
+  }, [switcher]);
+  if (switcher?.dogs?.length > 1) {
+    return (
+      <DogCarousel
+        dogs={switcher.dogs}
+        currentId={card.slaveId}
+        width={width}
+        onSelect={switcher.onSelect}
+        onEdit={onEdit}
+        actions={actions?.length ? actions : undefined}
+        onAction={onAction}
+      />
+    );
+  }
   return (
-    <>
-      <View style={styles.handle} accessible={false} />
-      {/* 「‹（頭像✏️）名字 ›」: the face, with a pencil badge, opens the dog's
-          page (A5); ‹ › only with another dog on the map. */}
-      <View style={styles.header}>
-        {arrows && (
-          <SwitchButton step={-1} target={previousName} onStep={onStepPress} live={live} />
-        )}
-        <View style={styles.identity}>
-          <Pressable
-            testID={live ? 'dog-card-edit' : undefined}
-            accessibilityRole="button"
-            accessibilityLabel={t('c378', { dogName: card.name })}
-            onPress={onEdit}
-            style={({ pressed }) => [styles.edit, pressed && styles.pressed]}
-          >
-            <DogAvatar
-              avatar={avatar}
-              size={sizes.card.avatar}
-              stale={card.stale}
-              border={0}
-            />
-            <View style={styles.editBadge} testID={live ? 'dog-card-edit-badge' : undefined}>
-              <Glyph
-                name="pencil"
-                color={colors.textMuted}
-                size={sizes.card.editBadgeIcon}
-              />
-            </View>
-          </Pressable>
-          {/* One TalkBack item for who this is, carrying 下一隻／上一隻. */}
-          <View
-            style={styles.names}
-            testID={live ? 'dog-card-identity' : undefined}
-            accessible
-            accessibilityLabel={identitySpeech(card)}
-            accessibilityActions={arrows ? SWITCH_ACTIONS : undefined}
-            onAccessibilityAction={arrows ? onAction : undefined}
-          >
-            <Text style={styles.name} numberOfLines={linesFor(1)}>
-              {card.name}
-            </Text>
-            <Text style={styles.source}>{card.sourceLabel}</Text>
-          </View>
-        </View>
-        {arrows && (
-          <SwitchButton step={1} target={nextName} onStep={onStepPress} live={live} />
-        )}
-      </View>
-      <ScrollView
-        style={styles.scroll}
-        bounces={false}
-        scrollEnabled={live}
-        scrollEventThrottle={16}
-        onScroll={onScroll}
-      >
-        <Headline
-          headline={card.headline}
-          speech={card.headlineSpeech}
-          heading={heading}
-        />
-        <View style={styles.rows}>
-          {card.rows.map((row, index) => (
-            <StatusRow
-              key={row.key}
-              row={row}
-              first={index === 0}
-              onPress={row.key === 'activity' ? onActivity : undefined}
-            />
-          ))}
-        </View>
-      </ScrollView>
-      <PressScale
-        testID={live ? 'dog-card-track' : undefined}
+    <View style={styles.header}>
+      <Pressable
+        testID="dog-card-edit"
         accessibilityRole="button"
-        accessibilityLabel={t('c071')}
-        accessibilityState={{ disabled: trackBusy }}
-        disabled={trackBusy}
-        onPress={onTrack}
-        style={styles.track}
+        accessibilityLabel={t('c378', { dogName: card.name })}
+        onPress={onEdit}
+        style={({ pressed }) => [styles.edit, pressed && styles.pressed]}
       >
-        <Text style={styles.trackText}>{t('c071')}</Text>
-      </PressScale>
-    </>
+        <DogAvatar
+          avatar={avatar}
+          size={sizes.card.avatar}
+          stale={card.stale}
+          border={0}
+        />
+        <View style={styles.editBadge} testID="dog-card-edit-badge">
+          <Glyph name="pencil" color={colors.textMuted} size={sizes.card.editBadgeIcon} />
+        </View>
+      </Pressable>
+      <Text style={styles.name} numberOfLines={linesFor(1)}>
+        {card.name}
+      </Text>
+    </View>
   );
-});
+}
 
 /**
- * The open dog's card, and with other dogs on the map its neighbours, one
- * page to each side (DESIGN.md「摘要卡片」換狗): a sideways drag moves the
- * whole row 1:1 so the previous／next dog's card slides in; let go past
- * SWIPE_DISTANCE (or flung) and the row finishes the slide on the native
- * driver, then the switch is committed (MapScreen centres the map on it);
- * otherwise it springs back. ‹ › run the same slide. Under 減少動態效果 the
- * card crossfades instead. TalkBack's 下一隻／上一隻 switch at once.
- *
- * The row never jumps when the switch lands: each card sits at page `index`
- * (its step count from the opening), drawn at slide + index × page, and the
- * slide ends at −index × page; when the dog behind the card changes, the
- * card already at that page simply becomes the live one. A step asked for
- * while a slide is still running is ignored (one tap, one slide).
- *
  * @param card DogCardModel.dogCard()
  * @param avatar the dog's face (useDogAvatars), or null for the default
+ * @param switcher MapScreen's, with other dogs on the map: the order's dogs
+ *   (each { slaveId, name, avatar, problem, stale }), onSelect(slaveId),
+ *   onStep(±1) for TalkBack and next／previous (null at an end)
  * @param heading the map's rotation in degrees (0 = north up)
- * @param switcher MapScreen's: previous／next names, cards (previousCard,
- *   nextCard) and faces, and onStep(±1) that commits a switch; null with one dog
  * @param onClosed called once the card has slid away (after close())
- * @param onHeight the open card's height while open (0 once closed)
+ * @param onHeight the card's height while open (0 once closed)
  * @param ref close(): slide away, then onClosed
  */
 const DogCard = forwardRef(function DogCard(
@@ -406,90 +311,32 @@ const DogCard = forwardRef(function DogCard(
   const offset = useRef(new Animated.Value(windowHeight)).current;
   // 減少動態效果: the card fades in place instead of rising (slideOrFade).
   const fade = useRef(new Animated.Value(1)).current;
-  // 減少動態效果's switch: the card fades out, the next one fades in.
-  const swap = useRef(new Animated.Value(1)).current;
   const measured = useRef(0);
   const closing = useRef(false);
   const scrollTop = useRef(0);
   const callbacks = useRef({});
-  callbacks.current = { onClosed, onHeight, switcher };
-  // One page: a card's width and the 8dp it floats from the screen edge, so
-  // a neighbour waits just off screen.
-  const page = windowWidth - CARD_INSET;
-  const pageRef = useRef(page);
-  pageRef.current = page;
-  // The open card's page (its steps from the opening) and the row's slide.
-  const [index, setIndex] = useState(0);
-  const indexRef = useRef(0);
-  const slide = useRef(new Animated.Value(0)).current;
-  // Which gesture this drag is: 'close' (down) or 'switch' (sideways).
-  const dragging = useRef(null);
-  const sliding = useRef(false);
-  const heights = useRef({});
-  const mounted = useRef(true);
-  const restFor = at => -at * pageRef.current;
-  const springHome = useCallback(() => {
-    const home = -indexRef.current * pageRef.current;
-    if (isReduceMotion()) slide.setValue(home);
-    else Animated.spring(slide, { toValue: home, ...motion.sheetSpring, useNativeDriver: true })
-      // Settled where it was sent (the JS side of a native-driven value).
-      .start(({ finished }) => { if (finished) slide.setValue(home); });
-  }, [slide]);
-  // A switch the slide has finished: the next page is the open card now.
-  const commit = useCallback(step => {
-    indexRef.current += step;
-    scrollTop.current = 0;
-    setIndex(indexRef.current);
-    callbacks.current.switcher?.onStep(step);
-  }, []);
-  /** The rest of the slide to the previous／next card, then the switch. */
-  const go = useCallback((step, { from = null, velocity = 0 } = {}) => {
-    if (sliding.current || closing.current || !callbacks.current.switcher) return;
-    sliding.current = true;
-    const target = restFor(indexRef.current + step);
-    if (isReduceMotion()) {
-      const half = REDUCED_FADE_MS / 2;
-      Animated.timing(swap, { toValue: 0, duration: half, useNativeDriver: true }).start(() => {
-        swap.setValue(0);
-        slide.setValue(target);
-        commit(step);
-        Animated.timing(swap, { toValue: 1, duration: half, useNativeDriver: true })
-          .start(() => {
-            swap.setValue(1);
-            sliding.current = false;
-          });
-      });
-      return;
-    }
-    const start = from ?? restFor(indexRef.current);
-    const remaining = Math.abs(target - start);
-    // A fling keeps its speed (dp/ms); a tap or a slow release takes the
-    // card's own slide time.
-    const duration = Math.max(SWITCH_MIN_MS, Math.min(motion.cardSwitch.duration,
-      Math.abs(velocity) > 0 ? remaining / Math.abs(velocity) : motion.cardSwitch.duration));
-    Animated.timing(slide, { toValue: target, duration, easing: ease, useNativeDriver: true })
-      .start(({ finished }) => {
-        sliding.current = false;
-        if (finished && mounted.current) {
-          slide.setValue(target);
-          commit(step);
-        } else springHome();
-      });
-  }, [slide, swap, commit, springHome]);
-  const goRef = useRef(go);
-  goRef.current = go;
-  // TalkBack keeps its focus where it was when the dog changes: say which dog
-  // the card now shows.
+  callbacks.current = { onClosed, onHeight };
+  // Another dog picked: the body below swaps by a short fade (the row of
+  // dogs stays put), and TalkBack hears which dog it is now.
+  const bodyFade = useRef(new Animated.Value(1)).current;
   const shownDog = useRef(card.slaveId);
   useEffect(() => {
     if (shownDog.current === card.slaveId) return;
     shownDog.current = card.slaveId;
-    AccessibilityInfo.announceForAccessibility?.(identitySpeech(card));
-    // Only a new dog is announced, not every reading.
+    AccessibilityInfo.announceForAccessibility?.(card.name);
+    bodyFade.setValue(motion.cardSwap.from);
+    Animated.timing(bodyFade, {
+      toValue: 1,
+      duration: motion.cardSwap.duration,
+      easing: ease,
+      useNativeDriver: true,
+    }).start();
+    // Only a new dog, not every reading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.slaveId]);
   // The close that is running (a slide, or the reduced-motion fade).
   const closingRun = useRef(null);
+  const mounted = useRef(true);
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
@@ -514,10 +361,8 @@ const DogCard = forwardRef(function DogCard(
       closingRun.current?.stop();
       offset.stopAnimation();
       fade.stopAnimation();
-      slide.stopAnimation();
-      swap.stopAnimation();
     },
-    [offset, fade, slide, swap],
+    [offset, fade],
   );
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -529,12 +374,11 @@ const DogCard = forwardRef(function DogCard(
     );
     return () => subscription.remove();
   }, [close]);
-  // The open card's height is what the map keeps clear (its buttons stand on
-  // it); a card that slid in reports its own, measured while it waited.
-  const report = useCallback(own => {
+  const onLayout = event => {
+    const own = Math.round(event.nativeEvent.layout.height);
     // What it covers, counted from the screen bottom (it floats above it).
     const value = own ? own + CARD_INSET + insets.bottom : 0;
-    if (!value || value === measured.current || closing.current) return;
+    if (!value || value === measured.current) return;
     const first = !measured.current;
     measured.current = value;
     setHeight(value);
@@ -548,59 +392,19 @@ const DogCard = forwardRef(function DogCard(
         easing: ease,
       }).start();
     }
-  }, [insets.bottom, offset, fade]);
-  useEffect(() => {
-    if (heights.current[index]) report(heights.current[index]);
-  }, [index, report]);
-  const layoutAt = at => event => {
-    const own = Math.round(event.nativeEvent.layout.height);
-    heights.current[at] = own;
-    if (at === indexRef.current) report(own);
   };
-  // The window turned (or changed size): the row stays on the open card.
-  useEffect(() => {
-    if (!sliding.current) slide.setValue(-indexRef.current * page);
-  }, [page, slide]);
   const pan = useRef(
     PanResponder.create({
-      // A clearly sideways drag switches the dog (when there is another one);
-      // a clear downward drag closes the card, only while the rows are
-      // scrolled to the top: a drag inside the rows scrolls them.
-      onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        if (closing.current || sliding.current) return false;
-        if (callbacks.current.switcher && isSwitchSwipe(gesture)) {
-          dragging.current = 'switch';
-          return true;
-        }
-        if (
-          gesture.dy > 8 &&
-          Math.abs(gesture.dy) > Math.abs(gesture.dx) &&
-          scrollTop.current <= 0
-        ) {
-          dragging.current = 'close';
-          return true;
-        }
-        return false;
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (dragging.current === 'switch') {
-          // 1:1 with the finger; under 減少動態效果 the card stays put and
-          // crossfades on release.
-          if (!isReduceMotion()) slide.setValue(-indexRef.current * pageRef.current + gesture.dx);
-        } else offset.setValue(Math.max(0, gesture.dy));
-      },
+      // Only a clear downward drag, and only while the rows are scrolled to the
+      // top: a drag inside the rows scrolls them.
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        !closing.current &&
+        gesture.dy > 8 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) &&
+        scrollTop.current <= 0,
+      onPanResponderMove: (_, gesture) =>
+        offset.setValue(Math.max(0, gesture.dy)),
       onPanResponderRelease: (_, gesture) => {
-        if (dragging.current === 'switch') {
-          dragging.current = null;
-          const step = swipeStep(gesture);
-          if (step) goRef.current(step, {
-            from: -indexRef.current * pageRef.current + gesture.dx,
-            velocity: gesture.vx,
-          });
-          else springHome();
-          return;
-        }
-        dragging.current = null;
         if (
           gesture.dy > measured.current * CLOSE_SHARE ||
           gesture.vy > CLOSE_VELOCITY
@@ -613,106 +417,83 @@ const DogCard = forwardRef(function DogCard(
             useNativeDriver: true,
           }).start();
       },
-      onPanResponderTerminate: () => {
-        dragging.current = null;
-        springHome();
+      onPanResponderTerminate: () =>
         Animated.spring(offset, {
           toValue: 0,
           ...motion.sheetSpring,
           useNativeDriver: true,
-        }).start();
-      },
+        }).start(),
     }),
   ).current;
-  // ‹ › slide like a swipe; TalkBack's actions switch at once.
-  const stepPress = useCallback(step => goRef.current(step), []);
-  const action = useCallback(event => {
-    if (sliding.current) return;
-    callbacks.current.switcher?.onStep(event.nativeEvent.actionName === 'next' ? 1 : -1);
-  }, []);
-  const onScroll = useCallback(event => {
-    scrollTop.current = event.nativeEvent.contentOffset.y;
-  }, []);
-  // The three pages: the open card, and with a switcher its neighbours.
-  const pages = useMemo(() => {
-    const list = [{ at: index, role: 'live', card, avatar }];
-    if (switcher?.previousCard) list.push({ at: index - 1, role: 'previous',
-      card: switcher.previousCard, avatar: switcher.previousAvatar });
-    if (switcher?.nextCard) list.push({ at: index + 1, role: 'next',
-      card: switcher.nextCard, avatar: switcher.nextAvatar });
-    return list;
-  }, [index, card, avatar, switcher]);
-  const opacity = useMemo(() => Animated.multiply(fade, swap), [fade, swap]);
-  const shifts = useRef({});
-  const shiftFor = at => {
-    const key = `${at}:${page}`;
-    if (!shifts.current[key]) shifts.current[key] = Animated.add(slide, at * page);
-    return shifts.current[key];
-  };
   // At most 75% of the screen below the status bar; the header and 看軌跡
   // stay, the headline and rows scroll.
   const maxHeight = dogCardMaxHeight(windowHeight, insets.top, insets.bottom);
   return (
-    <>
-      {pages.map(item => {
-        const live = item.role === 'live';
-        return (
-          <Animated.View
-            // By page, not by dog: the card that slid in is already the one
-            // at the open page, so landing the switch changes nothing on screen.
-            key={item.at}
-            testID={live ? 'dog-card' : `dog-card-page-${item.role}`}
-            onLayout={layoutAt(item.at)}
-            {...(live ? pan.panHandlers : null)}
-            pointerEvents={live ? 'auto' : 'none'}
-            importantForAccessibility={live ? 'auto' : 'no-hide-descendants'}
-            accessibilityElementsHidden={!live}
-            style={[
-              styles.card,
-              {
-                maxHeight,
-                bottom: CARD_INSET + insets.bottom,
-                transform: [{ translateY: offset }, { translateX: shiftFor(item.at) }],
-                opacity,
-              },
-              !height && styles.unmeasured,
-            ]}
-          >
-            <CardFace
-              card={item.card}
-              avatar={item.avatar}
-              heading={heading}
-              live={live}
-              arrows={!!switcher}
-              previousName={live ? switcher?.previous : undefined}
-              nextName={live ? switcher?.next : undefined}
-              onStepPress={stepPress}
-              onAction={action}
-              onEdit={live ? onEdit : undefined}
-              onActivity={live ? onActivity : undefined}
-              onTrack={live ? onTrack : undefined}
-              trackBusy={trackBusy}
-              onScroll={live ? onScroll : undefined}
+    <Animated.View
+      testID="dog-card"
+      onLayout={onLayout}
+      {...pan.panHandlers}
+      style={[
+        styles.card,
+        {
+          maxHeight,
+          bottom: CARD_INSET + insets.bottom,
+          transform: [{ translateY: offset }],
+          opacity: fade,
+        },
+        !height && styles.unmeasured,
+      ]}
+    >
+      <View style={styles.handle} accessible={false} />
+      <CardHeader
+        card={card}
+        avatar={avatar}
+        switcher={switcher}
+        onEdit={onEdit}
+        width={windowWidth - 2 * CARD_INSET}
+      />
+      <Animated.View style={[styles.body, { opacity: bodyFade }]}>
+      <ScrollView
+        style={styles.scroll}
+        bounces={false}
+        scrollEventThrottle={16}
+        onScroll={event => {
+          scrollTop.current = event.nativeEvent.contentOffset.y;
+        }}
+      >
+        <Headline
+          headline={card.headline}
+          speech={card.headlineSpeech}
+          heading={heading}
+        />
+        <View style={styles.rows}>
+          {card.rows.map((row, index) => (
+            <StatusRow
+              key={row.key}
+              row={row}
+              first={index === 0}
+              onPress={row.key === 'activity' ? onActivity : undefined}
             />
-          </Animated.View>
-        );
-      })}
-    </>
+          ))}
+        </View>
+      </ScrollView>
+      <PressScale
+        testID="dog-card-track"
+        accessibilityRole="button"
+        accessibilityLabel={t('c071')}
+        accessibilityState={{ disabled: trackBusy }}
+        disabled={trackBusy}
+        onPress={onTrack}
+        style={styles.track}
+      >
+        <Text style={styles.trackText}>{t('c071')}</Text>
+      </PressScale>
+      </Animated.View>
+    </Animated.View>
   );
 });
 
 export default DogCard;
-
-// TalkBack's custom actions on the card's name (下一隻／上一隻).
-const SWITCH_ACTIONS = [
-  { name: 'next', label: t('c1291') },
-  { name: 'previous', label: t('c1292') },
-];
-
-/** 「豆豆，訊號源 4」: who the card is about (no place in the order). */
-function identitySpeech(card) {
-  return t('c1296', { name: card.name, source: card.sourceLabel });
-}
 
 const getStyles = makeStyles(theme => {
   const { colors, shadow } = theme;
@@ -741,28 +522,18 @@ const getStyles = makeStyles(theme => {
       marginTop: space.s,
       marginBottom: space.xs,
     },
+    // One dog: its face (the edit button) and name, side by side.
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: touch.min,
-      // ‹ › reach into the card's side padding: their icons line up with
-      // the content's edges.
-      marginHorizontal: -space.m,
-      // At least 12dp between ‹ › and the face (the edit button).
-      gap: space.m,
-    },
-    // The face and the name block, centred between ‹ and ›.
-    identity: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
       gap: space.s,
+      marginLeft: -space.xs,
     },
-    names: { flexShrink: 1 },
+    name: { ...type.title, color: colors.text, flexShrink: 1 },
     // The face is the edit button: 48dp, the 40dp face in the middle and a
-    // 20dp neutral pencil badge at its bottom right (A5's camera badge look;
-    // the red 「!」 is top right on the map, never here).
+    // 20dp neutral pencil badge at its bottom right (never red: the red
+    // 「!」 is a problem).
     edit: {
       width: touch.min,
       height: touch.min,
@@ -783,8 +554,7 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    name: { ...type.title, color: colors.text, flexShrink: 1 },
-    source: { ...type.caption, color: colors.textMuted },
+    body: { flexShrink: 1 },
     scroll: { flexGrow: 0, flexShrink: 1 },
     headline: {
       flexDirection: 'row',
@@ -836,21 +606,13 @@ const getStyles = makeStyles(theme => {
       marginTop: space.xs,
     },
     track: {
-      marginTop: space.m,
       minHeight: touch.primary,
       paddingVertical: space.s,
       borderRadius: radius.button,
       backgroundColor: colors.tonal,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    // ‹ › at the header's two ends: 48dp, the icon level with the content's edge.
-    switchButton: {
-      width: touch.min,
-      height: touch.min,
-      borderRadius: radius.full,
-      alignItems: 'center',
-      justifyContent: 'center',
+      marginTop: space.m,
     },
     trackText: { ...type.status, color: colors.tonalText },
     pressed: { backgroundColor: colors.pressedOverlay },

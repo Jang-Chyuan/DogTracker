@@ -50,7 +50,7 @@ import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
 import { liveSwitchOrder, switchOrder, switchTarget } from '../map/DogSwitch';
-import { NO_READINGS, useDogCardReadingsFor } from '../map/useDogCardReadings';
+import { useDogCardReadings } from '../map/useDogCardReadings';
 import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
 import {
   cloudClock,
@@ -869,7 +869,7 @@ export default function MapScreen({
         : null),
     [fixture?.readActivityEarliest, database, cloudOwner],
   );
-  // ---- switching dogs from the card (‹ ›, swipe, 下一隻／上一隻) -------------
+  // ---- switching dogs from the card (its row of dogs, 下一隻／上一隻) -----------
   // The order is taken from the dogs drawn when the card opened (or as soon
   // as there are any: a fixture or notification can open it first) and kept
   // while stepping; dogs gone since drop out, new ones come last.
@@ -885,27 +885,12 @@ export default function MapScreen({
     [takenOrder, livePresentation.dogMarkers],
   );
   const cardDogId = cardDog?.slaveId ?? null;
-  // The previous and next dogs' cards are drawn beside the open one, so a
-  // swipe slides the neighbour in (DogCard): they are read like it.
-  const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
-  const previousId = switching ? switchTarget(switchDogs, cardDogId, -1) : null;
-  const nextId = switching ? switchTarget(switchDogs, cardDogId, 1) : null;
-  const neighbourDog = id => (id == null ? null : dogs.find(dog => dog.slaveId === id && dog.coordinate) || null);
-  const previousDog = neighbourDog(previousId);
-  const nextDog = neighbourDog(nextId);
-  // One reader for all three: a dog's rows stay when it moves from beside the
-  // card into it, so the card that slid in never flashes 「—」.
-  const cardIds = useMemo(
-    () => [...new Set([cardDogId, previousId, nextId].filter(id => id != null))],
-    [cardDogId, previousId, nextId],
-  );
-  const readingsById = useDogCardReadingsFor(
+  const readings = useDogCardReadings(
     cardOpen ? readCardRows : null,
-    cardIds,
+    cardDogId,
     now,
     `${cardBusy}:${cardSuccess}:${cloudSync?.publishedRevision ?? 0}`,
   );
-  const readings = readingsById[cardDogId] ?? NO_READINGS;
   // 「室內・N 分」 of a stay begun before the live rows (a cold start sees
   // half an hour): from where the history's stay begins, over midnight too.
   const indoorStay = useCardIndoorStay(cardOpen ? history?.readDay ?? null : null, cardDog,
@@ -914,83 +899,84 @@ export default function MapScreen({
   const address = useAddress(
     cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null,
   );
-  const previousAddress = useAddress(previousDog && isIndoorHold(previousDog) ? previousDog.coordinate : null);
-  const nextAddress = useAddress(nextDog && isIndoorHold(nextDog) ? nextDog.coordinate : null);
-  const modelFor = useCallback((dog, dogReadings, dogAddress, stay) => {
-    if (!dog) return null;
-    const freshness = dogFreshness(dog, {
+  const cardModel = useMemo(() => {
+    if (!cardDog) return null;
+    const freshness = dogFreshness(cardDog, {
       now,
       cloud: cloudClockInput,
       pauses,
     });
-    return dogCard(dog, {
+    return dogCard(cardDog, {
       freshness,
-      range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
-      battery: dogReadings.battery,
-      activity: dogReadings.activity,
+      range: cloudDogs?.ranges?.[cardDog.slaveId] ?? null,
+      battery: readings.battery,
+      activity: readings.activity,
       // The recording service's fix, else the map's blue dot (E03).
       phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
       now,
       reference:
         freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
-      name: dogName(dog.slaveId, dogAliases),
-      address: dogAddress,
-      indoorStay: stay,
+      name: dogName(cardDog.slaveId, dogAliases),
+      address,
+      indoorStay,
     });
   }, [
+    cardDog,
     now,
     cloudClockInput,
     pauses,
     cloudDogs?.ranges,
+    readings,
     livePhone,
     nativePhone,
     fixture,
     dogAliases,
+    address,
+    indoorStay,
   ]);
-  const cardModel = useMemo(
-    () => modelFor(cardDog, readings, address, indoorStay),
-    [modelFor, cardDog, readings, address, indoorStay],
-  );
-  // The neighbours: the same card, without the history's indoor start (the
-  // open card reads that; a neighbour shows the live rows' minutes).
-  const previousModel = useMemo(
-    () => modelFor(previousDog, readingsById[previousId] ?? NO_READINGS, previousAddress, null),
-    [modelFor, previousDog, readingsById, previousId, previousAddress],
-  );
-  const nextModel = useMemo(
-    () => modelFor(nextDog, readingsById[nextId] ?? NO_READINGS, nextAddress, null),
-    [modelFor, nextDog, readingsById, nextId, nextAddress],
-  );
   const closedCard = useCallback(
     () => setSelected(current => (current?.kind === 'dog' ? null : current)),
     [],
   );
-  // A step selects that dog (on top of the others) and always brings the map
-  // to it: centred in the map left above the card, the user's zoom kept
-  // (`always`); the order and the card itself stay.
-  const stepDog = useCallback(
-    step => {
-      const to = switchTarget(switchDogs, cardDogId, step);
+  // Picking a dog on the card's row (or TalkBack's 下一隻／上一隻) selects it
+  // (on top of the others) and always brings the map to it: centred in the
+  // map left above the card, the user's zoom kept (`always`); the order and
+  // the card itself stay.
+  const selectDog = useCallback(
+    to => {
       if (to == null || to === cardDogId) return;
       cardGeneration.current += 1;
       setSelected({ kind: 'dog', slaveId: to });
       setFocusRequest({ slaveId: to, key: Date.now(), always: true });
     },
-    [switchDogs, cardDogId],
+    [cardDogId],
+  );
+  const stepDog = useCallback(
+    step => selectDog(switchTarget(switchDogs, cardDogId, step)),
+    [selectDog, switchDogs, cardDogId],
+  );
+  // The row of dogs (DogCarousel): every dog in the order, each once.
+  const markerById = useMemo(
+    () => Object.fromEntries(livePresentation.dogMarkers.map(marker => [marker.slaveId, marker])),
+    [livePresentation.dogMarkers],
   );
   const switcher = useMemo(() => {
-    if (!switching) return null;
+    if (cardDogId == null || switchDogs.length < 2 || !switchDogs.includes(cardDogId)) return null;
     return {
-      previous: dogName(previousId, dogAliases),
-      next: dogName(nextId, dogAliases),
-      // The neighbours' own cards and faces, drawn beside the open one.
-      previousCard: previousModel,
-      nextCard: nextModel,
-      previousAvatar: avatars[previousId] ?? null,
-      nextAvatar: avatars[nextId] ?? null,
+      dogs: switchDogs.map(id => ({
+        slaveId: id,
+        name: dogName(id, dogAliases),
+        avatar: avatars[id] ?? null,
+        problem: !!markerById[id]?.problem,
+        stale: !!markerById[id]?.stale,
+      })),
+      // No wrap-around: at either end there is nothing further that way.
+      previous: switchTarget(switchDogs, cardDogId, -1),
+      next: switchTarget(switchDogs, cardDogId, 1),
+      onSelect: selectDog,
       onStep: stepDog,
     };
-  }, [switching, previousId, nextId, dogAliases, previousModel, nextModel, avatars, stepDog]);
+  }, [cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the
   // history page never opens on the previous one.

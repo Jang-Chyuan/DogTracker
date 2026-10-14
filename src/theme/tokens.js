@@ -312,11 +312,13 @@ export const size = {
     warnIcon: 18,
     // A3 direction arrow accompanying the headline distance.
     directionIcon: 26,
-    // ‹ › that switch to the previous／next dog (the title row's two ends).
-    switchIcon: 24,
-    // The pencil badge on the card's face (the face opens A5).
+    // The pencil badge on the card's face (the face opens the edit sheet).
     editBadge: 20,
     editBadgeIcon: 12,
+    // The row of dogs at the card's top (DogCarousel): one slot per dog; the
+    // middle face, then one and two slots away; their opacity; the middle
+    // name's width.
+    carousel: { slot: 64, face: [56, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200 },
     maxRatio: 0.75,
   },
   activity: {
@@ -816,8 +818,8 @@ export const motion = {
   easeOut: [0.23, 1, 0.32, 1],
   press: { scale: 0.97, duration: 120 },
   cardRise: { duration: 220 },
-  // The rest of a card switch slide after the finger lets go (or ‹ ›).
-  cardSwitch: { duration: 240 },
+  // Another dog picked on the card: its body fades in from this opacity.
+  cardSwap: { from: 0.2, duration: 160 },
   rangeExpand: { duration: 220 },
   rangeCollapse: { duration: 180 },
   cursorJump: { duration: 220 },

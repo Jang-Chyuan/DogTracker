@@ -64,7 +64,8 @@ test('A3b on screen: name, 訊號源, headline, rows in order, red and amber 「
   expect(onHeight).toHaveBeenLastCalledWith(428);
   const text = flatten(renderer.toJSON());
   expect(text).toContain('豆豆');
-  expect(text).toContain('訊號源 4');
+  // 訊號源 is on the dog's edit sheet now, not on the card.
+  expect(text).not.toContain('訊號源');
   expect(text).toContain('850 m');
   expect(text).toContain('離手機・最後位置');
   const order = ['位置', '電量', '接收範圍', '活動量'].map(label => text.indexOf(label));

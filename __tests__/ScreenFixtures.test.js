@@ -819,7 +819,7 @@ test('card-readings-old: readings older than the position carry their time', asy
 
 test('the real map opens a card fixture\'s card with its rows', async () => {
   const problems = await renderFixture('card-problems');
-  for (const words of ['豆豆', '訊號源 4', '沒有新位置・最後 09:05', '15%・偏低', '不在接收範圍', '看軌跡', '離手機・最後位置']) {
+  for (const words of ['豆豆', '沒有新位置・最後 09:05', '15%・偏低', '不在接收範圍', '看軌跡', '離手機・最後位置']) {
     expect(problems.text).toContain(words);
   }
   // No receiver row on a dog's card.
