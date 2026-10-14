@@ -338,6 +338,35 @@ export function phoneStillTravel(nodes, { config = configFor('phone'), points = 
     && !(n.type === 'resume' && made.some(s => s.start === n.start)));
 }
 
+/** 2026-10-14 (phone, display): moves counted inside a stay go to a foot
+ * row beside it (the one that arrived, else the next one). When that row is
+ * only the few seconds between two places — a stay ends, the next starts 5 s
+ * later — it read 「走路 不到 1 分・112 m」: the walk's minutes are the
+ * stays', its metres were not its own. Those carried metres go on to the next
+ * foot row of a minute or more (else the last one before), so the rows still
+ * add up to the summary; the step keeps only its own metres and, with none,
+ * goes as an empty foot row (emptyPhoneFootRows), its seconds to the rows
+ * beside it. With no such foot row at all it stays as it was. Mutates the
+ * foot rows' countedDistanceM / carriedM. */
+export function phoneStepCarry(nodes) {
+  const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
+  const shownMinutes = n => Math.floor(n.end / 60000) - Math.floor(n.start / 60000);
+  const short = n => (n.durationMs ?? n.end - n.start) < 60000 || shownMinutes(n) === 0;
+  const beside = n => !n || !['movement', 'switch'].includes(n.type);
+  nodes.forEach((n, i) => {
+    if (!foot(n) || !(n.carriedM > 0) || !short(n) || !beside(nodes[i - 1]) || !beside(nodes[i + 1])) return;
+    const host = nodes.slice(i + 1).find(m => foot(m) && !short(m))
+      ?? nodes.slice(0, i).reverse().find(m => foot(m) && !short(m));
+    if (!host) return;
+    const own = n.countedDistanceM - n.carriedM;
+    host.countedDistanceM += n.carriedM;
+    host.carriedM = (host.carriedM || 0) + n.carriedM;
+    n.countedDistanceM = own > 1e-6 ? own : 0;
+    n.carriedM = 0;
+  });
+  return nodes;
+}
+
 /** PR 116: phone foot rows with nothing counted that would read
  * 「走路 0 分 · 0.0 km」 next to a place, a break or either end: they say
  * nothing, so the list leaves them out. */
@@ -520,8 +549,10 @@ export function historyTimeline(rows = [], options = {}) {
       // steps of leaving — goes to the next foot row (2026-10-13: never to a
       // walk hours earlier, across breaks and other stays).
       const arrived = [...sections].reverse().find(row => row.type === 'movement');
-      if (arrived && isFoot(arrived.mode) && e.start - arrived.end <= config.gapMs) arrived.countedDistanceM += e.countedDistanceM;
-      else carried += e.countedDistanceM;
+      if (arrived && isFoot(arrived.mode) && e.start - arrived.end <= config.gapMs) {
+        arrived.countedDistanceM += e.countedDistanceM;
+        if (e.countedDistanceM > 0) arrived.carriedM = (arrived.carriedM || 0) + e.countedDistanceM;
+      } else carried += e.countedDistanceM;
       continue;
     }
     if (e.mode === 'indoor') continue;
@@ -552,7 +583,7 @@ export function historyTimeline(rows = [], options = {}) {
       excluded: ['driving', 'ride', 'gap'].includes(e.mode),
       line: e.gap ? 'long-dashed' : ['driving', 'ride'].includes(e.mode) ? 'solid' : 'dotted' });
     const row = sections[sections.length - 1];
-    if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; carried = 0; }
+    if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; row.carriedM = (row.carriedM || 0) + carried; carried = 0; }
   }
   // A phone break inside one recording session (the list folds a short one
   // into the row beside it, 2026-10-13); a session change is always its own
@@ -647,6 +678,7 @@ export function historyTimeline(rows = [], options = {}) {
     nodes = fold.nodes;
   }
   if (subject === 'phone') {
+    phoneStepCarry(nodes);
     const empty = emptyPhoneFootRows(nodes);
     for (const n of empty) drop.add(n);
     nodes = nodes.filter(n => !empty.has(n));

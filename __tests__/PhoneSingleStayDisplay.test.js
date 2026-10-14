@@ -115,9 +115,16 @@ test('partial observations do not borrow an unobserved future stay confirmation'
   const available = rows.filter(p => p.time <= end);
   const model = historyTimeline(available, { ...options, today: true, now: end, following: false,
     range: { start: available[0].time, end } });
-  expect(model.locations.filter(n => n.type === 'stop')).toHaveLength(0);
+  // 2026-10-14: the phone has no 3× baseline, so the 20 observed minutes are
+  // a stay by themselves — confirmed by what was observed, nothing later.
+  const stops = model.locations.filter(n => n.type === 'stop');
+  expect(stops.every(n => n.end <= end && (n.displayRange?.end ?? n.end) <= end
+    && n.points.every(p => p.time <= end) && n.originalRepresentative === undefined)).toBe(true);
   expect(model.displayStays).toBeUndefined();
-  expect(model.nodes.find(n => n.type === 'end').originalRepresentative).toBeUndefined();
+  // The end at the last fix is shown at that stay (its own observations).
+  const last = model.nodes.find(n => n.type === 'end');
+  if (stops.some(n => n.end === last.start)) expect(last.originalRepresentative).toBeDefined();
+  else expect(last.originalRepresentative).toBeUndefined();
 });
 
 test('a range wholly inside one stay keeps the existing unnumbered still-here contract', () => {

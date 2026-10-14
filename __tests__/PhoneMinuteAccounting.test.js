@@ -339,14 +339,18 @@ test('weak GPS split by a moment of 0 m walking is one 「GPS 訊號弱」 row',
   expect(alone[1]).toMatchObject({ start: 0, end: 300000, reason: 'uncertain' });
 });
 
-test('a 0 m 「走路」 with no stay beside it is an unnumbered stay', () => {
+test('a 0 m 「走路」 with no stay beside it is a stay', () => {
   const model = timeline(day([['still', 300], ['none', 400], ['session', 'fiction-session-2'], ['jiggle', 300],
     ['none', 400], ['session', 'fiction-session-3'], ['walk', 300]]));
   const { rows } = expectAccounted(model);
   expect(rows.some(n => n.type === 'movement' && Math.round(n.countedDistanceM) === 0)).toBe(false);
-  // The first is the range's first row (2026-10-14: no 出發 before a stay).
-  expect(rows.filter(n => n.type === 'stop' && n.presentationOnly === 'phone-stationary')).toHaveLength(2);
-  expect(rows[0]).toMatchObject({ type: 'stop', presentationOnly: 'phone-stationary', start: model.points[0].time });
+  // 2026-10-14: five minutes of it are a stay of their own (the phone has no
+  // 3× baseline); it was an unnumbered presentation stay before.
+  const jiggle = rows.filter(n => n.type === 'stop' && n.start > model.points[0].time + 600000
+    && n.end < model.points.at(-1).time - 600000);
+  expect(jiggle).toHaveLength(1);
+  // The first stay is the range's first row (2026-10-14: no 出發 before a stay).
+  expect(rows[0]).toMatchObject({ type: 'stop', start: model.points[0].time });
   expect(rows.some(n => n.type === 'departure')).toBe(false);
   // Before driving off: the stay is the first row (no 出發), no switch point beside it.
   const off = timeline(day([['jiggle', 300], ['drive', 600], ['walk', 300]]));

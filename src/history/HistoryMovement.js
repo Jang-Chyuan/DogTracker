@@ -1,4 +1,5 @@
-import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps, samePlaceGap } from './HistoryConfig';
+import { configFor, distanceMeters, atLeast, accuracyOf, measuredSpeedMps, samePlaceGap,
+  recordingSessionChanged } from './HistoryConfig';
 import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { rawCoordinate } from '../placement/RawObservation';
 import { hasFix } from '../placement/IndoorHold';
@@ -22,38 +23,125 @@ function detectVehicles(edges, config) {
  * of scanning the whole day again. `scan` is { high, active, low, vehicles }.
  */
 export const vehicleScan = () => ({ high: null, active: null, low: null,
-  footLow: null, parked: null, vehicles: [] });
+  footLow: null, parked: null, chain: null, vehicles: [] });
+
+// 2026-10-14 (phone, config.vehicleMergeMs): stop-and-go traffic. A car or
+// scooter in town moves in bursts of 10–30 s between lights and crawls in
+// jams; a crawl at walking pace reads as getting out (the exit below), and a
+// burst shorter than enterMs never starts a vehicle. `scan.chain` is the
+// vehicle evidence the scan has just seen while no vehicle is going: a
+// vehicle that just ended (`vehicle: true`) or bursts (runs of fast edges of
+// at least vehicleBurstMs, `highMs` adding them up). It lasts vehicleMergeMs
+// from the end of the last piece and breaks on foot evidence (a walk:
+// footEdge time of at least vehicleFootMs, once the phone got farther than
+// vehicleFootM from where that piece ended), an indoor hold or a recording
+// session change. Another burst within it is the same trip: a vehicle that
+// ended goes on (its exit was a red light, a jam or a weak fix), and bursts
+// adding up to enterMs are a vehicle from the first one. A stay between two
+// such pieces is shorter than vehicleMergeMs and becomes part of the drive.
+// The chain object is replaced, never changed, so a copy of the scan
+// (TodayRouteEngine's checkpoint) keeps its own.
+const rawPoint = p => (Number.isFinite(p?.raw_latitude) && Number.isFinite(p?.raw_longitude)
+  ? { latitude: p.raw_latitude, longitude: p.raw_longitude } : p);
+// Phone: a fast edge is fast by geometry, or by the phone's own measured
+// speed when the geometry is at least backtrackSpeed (one fix's jitter must
+// not cut a burst; a still phone's speed noise has no geometry behind it).
+function fastEdge(edge, config) {
+  if (atLeast(edge.speed, config.vehicleSpeed)) return true;
+  if (!config.vehicleMergeMs || config.backtrackSpeed == null || !atLeast(edge.speed, config.backtrackSpeed)) return false;
+  const measured = phoneReliableSpeed(edge.to);
+  return measured != null && atLeast(measured, config.vehicleSpeed);
+}
+// A step on foot: measured at walking pace (stillMps to vehicleFootMaxMps),
+// not held stationary. A crawl in a jam reads the same; only its length tells.
+function footEdge(edge, config) {
+  if (edge.gap || edge.mode === 'indoor' || edge.to.phoneStationary) return false;
+  const measured = phoneReliableSpeed(edge.to);
+  return measured != null && measured >= config.stillMps && measured <= config.vehicleFootMaxMps;
+}
+function chainFoot(chain, edge, config) {
+  if (!footEdge(edge, config)) return chain;
+  const far = chain.far || distanceMeters(rawPoint(chain.anchor), rawPoint(edge.to))
+    > Math.max(config.vehicleFootM, accuracyOf(chain.anchor, config), accuracyOf(edge.to, config));
+  const footMs = chain.footMs + edge.durationMs;
+  return far && footMs >= config.vehicleFootMs ? null : { ...chain, footMs, far };
+}
+// After a vehicle ended at lastEdge (exited on foot from footFrom on): the
+// foot window that ended it counts as foot evidence already.
+function chainAfter(edges, lastEdge, footFrom, endIndex, config) {
+  if (!config.vehicleMergeMs) return null;
+  let chain = { vehicle: true, lastEnd: edges[lastEdge].end, anchor: edges[lastEdge].to,
+    footMs: 0, far: false, highMs: 0, first: null };
+  for (let j = footFrom; j != null && j <= endIndex && chain; j += 1) chain = chainFoot(chain, edges[j], config);
+  return chain;
+}
+// Re-open the vehicle the chain holds (the last one found).
+function reopenVehicle(scan) {
+  const vehicle = scan.vehicles[scan.vehicles.length - 1];
+  scan.vehicles = scan.vehicles.slice(0, -1);
+  scan.active = vehicle.firstEdge;
+  scan.chain = null; scan.high = null; scan.low = null; scan.footLow = null; scan.parked = null;
+}
+function backtrack(edges, index, config) {
+  let start = index;
+  if (config.backtrackSpeed != null) {
+    while (start > 0 && !edges[start - 1].gap && edges[start - 1].mode !== 'indoor'
+      && atLeast(edges[start - 1].speed, config.backtrackSpeed)) start -= 1;
+  }
+  return start;
+}
 
 // `exited`: confirmed walking or terminal parking (legacy: low speed), so
 // its last fix is the first one outside the vehicle; ended by a gap or hold,
 // its last fix was still
 // in the car (判定表「開車和停留」: car fixes take no part in visits).
 function closeVehicle(scan, edges, endIndex, exited = false) {
-  scan.vehicles.push({ start: edges[scan.active].start, end: edges[endIndex].end,
-    firstEdge: scan.active, lastEdge: endIndex, exited });
+  scan.vehicles = [...scan.vehicles, { start: edges[scan.active].start, end: edges[endIndex].end,
+    firstEdge: scan.active, lastEdge: endIndex, exited }];
   scan.active = null; scan.low = null; scan.high = null;
-  scan.footLow = null; scan.parked = null;
+  scan.footLow = null; scan.parked = null; scan.chain = null;
 }
 
 export function stepVehicles(scan, edges, i, config) {
   const edge = edges[i];
+  const merging = !!config.vehicleMergeMs;
+  // The chain ends vehicleMergeMs after its last piece, at a hold and where
+  // the recorder was off (a session change).
+  if (scan.chain && (edge.end - scan.chain.lastEnd > config.vehicleMergeMs || edge.mode === 'indoor'
+    || recordingSessionChanged(edge.from, edge.to))) scan.chain = null;
   if (edge.gap || edge.mode === 'indoor') {
-    if (scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
-      || !atLeast(edge.speed, config.vehicleSpeed))) closeVehicle(scan, edges, i - 1);
+    const closing = scan.active != null && (edge.mode === 'indoor' || edge.durationMs > config.maxVehicleGapMs
+      || !atLeast(edge.speed, config.vehicleSpeed));
+    if (scan.high != null && merging) registerBurst(scan, edges, i - 1, config);
+    if (closing) {
+      closeVehicle(scan, edges, i - 1);
+      // A weak fix or a short break at a light: the trip may go on.
+      if (merging && edge.mode !== 'indoor' && edge.durationMs <= config.maxVehicleGapMs
+        && !recordingSessionChanged(edge.from, edge.to)) scan.chain = chainAfter(edges, i - 1, null, i, config);
+    }
     scan.high = null; scan.low = null; scan.footLow = null; scan.parked = null; return;
   }
   if (scan.active == null) {
-    if (atLeast(edge.speed, config.vehicleSpeed)) {
+    if (merging ? fastEdge(edge, config) : atLeast(edge.speed, config.vehicleSpeed)) {
       if (scan.high == null) scan.high = i;
-      if (edge.end - edges[scan.high].start >= config.enterMs) {
-        scan.active = scan.high;
-        if (config.backtrackSpeed != null) {
-          while (scan.active > 0 && !edges[scan.active - 1].gap && edges[scan.active - 1].mode !== 'indoor'
-            && atLeast(edges[scan.active - 1].speed, config.backtrackSpeed)) scan.active -= 1;
-        }
+      const run = edge.end - edges[scan.high].start;
+      const chain = scan.chain;
+      if (run >= config.enterMs) {
+        scan.active = backtrack(edges, scan.high, config);
         scan.high = null;
+        if (chain?.vehicle) reopenVehicle(scan);
+        else if (chain) { scan.active = Math.min(scan.active, chain.first); scan.chain = null; }
+      } else if (chain && run >= config.vehicleBurstMs) {
+        if (chain.vehicle) reopenVehicle(scan);
+        else if (chain.highMs + run >= config.enterMs) {
+          scan.active = chain.first; scan.chain = null; scan.high = null;
+        }
       }
-    } else scan.high = null;
+    } else {
+      if (scan.high != null && merging) registerBurst(scan, edges, i - 1, config);
+      scan.high = null;
+      if (scan.chain) scan.chain = chainFoot(scan.chain, edge, config);
+    }
   } else if (!atLeast(edge.speed, config.exitSpeed)) {
     if (scan.low == null) scan.low = i;
     // Phone replay decorates legacy geometry-only rows too. That derived state
@@ -82,7 +170,10 @@ export function stepVehicles(scan, edges, i, config) {
         const departure = edge.to.phoneConfirmedMovement && distanceMeters(raw(first), raw(edge.to))
           > Math.max(config.minMoveM, accuracyOf(first, config), accuracyOf(edge.to, config));
         if (departure || edge.end - edges[scan.footLow].start >= config.exitMs) {
-          closeVehicle(scan, edges, scan.footLow - 1, true);
+          const footFrom = scan.footLow;
+          closeVehicle(scan, edges, footFrom - 1, true);
+          // A crawl in a jam reads as this walk: the trip may go on.
+          scan.chain = chainAfter(edges, footFrom - 1, footFrom, i, config);
           return;
         }
       } else scan.footLow = null;
@@ -95,6 +186,18 @@ export function stepVehicles(scan, edges, i, config) {
       } else scan.parked = null;
     }
   } else { scan.low = null; scan.footLow = null; scan.parked = null; }
+}
+
+// A run of fast edges (scan.high to endIndex) that ended before enterMs: a
+// burst when it lasted vehicleBurstMs, the first piece of a chain or the
+// next one of a chain of bursts (a chain holding a vehicle re-opened it).
+function registerBurst(scan, edges, endIndex, config) {
+  const run = edges[endIndex].end - edges[scan.high].start;
+  if (endIndex < scan.high || run < config.vehicleBurstMs) return;
+  const chain = scan.chain && !scan.chain.vehicle ? scan.chain : null;
+  scan.chain = { vehicle: false, first: chain ? chain.first : backtrack(edges, scan.high, config),
+    highMs: (chain?.highMs ?? 0) + run, lastEnd: edges[endIndex].end, anchor: edges[endIndex].to,
+    footMs: 0, far: false };
 }
 
 /** The vehicles found, a vehicle still going closed at the data's end. */
@@ -115,7 +218,8 @@ export function finishVehicles(scan, edges, config = configFor('phone')) {
  */
 export function vehiclesSettledAt(scan, edges, i, config) {
   const edge = edges[i];
-  if (scan.active != null || scan.high != null) return false;
+  // A chain may still turn the edges since its last piece into a drive.
+  if (scan.active != null || scan.high != null || scan.chain != null) return false;
   if (edge.gap || edge.mode === 'indoor') return true;
   return config.backtrackSpeed == null ? true : !atLeast(edge.speed, config.backtrackSpeed);
 }

@@ -136,6 +136,8 @@ describe('2. drift inside a stay is no walk', () => {
     const input = rows([['still', 1020], ['none', 100], ['still', 20, { accuracy: 30 }], ['still', 60], ['none', 300],
       ['session', 'fiction-session-2'], ['still', 2400], ['walk', 300]], { from: dayStart - 10 * MINUTE });
     const model = timeline(input);
+    // 2026-10-14: the phone has no 3× baseline, so the stay carried over
+    // midnight is a numbered 「接續前一天」 stay of its own (no 出發).
     expect(shownTypes(model)).toEqual(['stop', 'gap', 'stop', 'movement', 'end']);
     expect(listed(model)[1]).toMatchObject({ sessionChange: true });
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
