@@ -436,6 +436,17 @@ const exportDay = now => legsPath(now, 160 * MINUTE, at(20, -60), [
   { walk: 12, bearing: 260, speed: 0.8 }, { stay: 3 }, { inside: 25 }, { walk: 20, bearing: 330, speed: 0.8 },
 ]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix, ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
 
+// A busy day for the address lookups: 小黑 out at about 06:20 with 16 short
+// stays about 200 m apart (each a place of its own), walking between them.
+const busyDay = now => legsPath(now, 190 * MINUTE, at(0, -80), [
+  { stay: 6 }, ...Array.from({ length: 16 }, (_, index) => [
+    { walk: 5, bearing: (index * 67) % 360, speed: 0.7 }, { stay: 5 }]).flat(),
+  { walk: 8, bearing: 20, speed: 0.7 },
+]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix }));
+// Made-up names for it (示範路 is no real road); two places have none.
+const BUSY_NAMES = Array.from({ length: 24 }, (_, index) => ([5, 12].includes(index) ? null
+  : { line: `330台灣桃園市桃園區示範路${index * 10 + 1}號` }));
+
 // ---- history (055b): several dogs ----------------------------------------
 // One dog's morning near the station from `start` (fixture now 09:30), a fix
 // every 10 s: `legs` as legsPath's. `make` bleRow (this phone) or cloudRow.
@@ -1503,6 +1514,18 @@ const FIXTURES = {
   'history-export-day': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: exportDay(now) }), geocoder: { names: HISTORY_NAMES },
     historyView: { export: { phase: 'choose' } } }),
+  // A busy day (16 stays): each address takes the made-up geocoder 1.5 s
+  // (the emulator's own Geocoder took 1.4–17 s), so the last rows wait about
+  // 25 s; two places have none (coordinates).
+  'history-busy-day': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: busyDay(now) }), geocoder: { names: BUSY_NAMES, delayMs: 1500 } }),
+  // The same with this phone's own Geocoder (network + Play services).
+  'history-busy-day-geocoder': now => ({ ...FIXTURES['history-busy-day'](now), geocoder: 'real' }),
+  // Both with the export window open.
+  'history-busy-day-export': now => ({ ...FIXTURES['history-busy-day'](now),
+    historyView: { export: { phase: 'choose' } } }),
+  'history-busy-day-geocoder-export': now => ({ ...FIXTURES['history-busy-day-geocoder'](now),
+    historyView: { export: { phase: 'choose' } } }),
   // ---- history (054b): the calendar and a day only the cloud holds -------
   // H3b: 小黑's calendar on October; dots on this phone's days and the cloud's
   // (9/28 and 10/3 only in the cloud); a day only the cloud holds downloads
@@ -1814,7 +1837,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     exporter: historyExport ? fixtureExporter(historyExport) : null,
     // Its places' names (053a): made-up answers, none, or this phone's
     // Geocoder; never this phone's address cache.
-    addressLookup: fixtureAddressLookup(geocoder),
+    addressLookup: fixtureAddressLookup(geocoder, geocoder?.delayMs != null ? { delayMs: geocoder.delayMs } : undefined),
   };
 }
 

@@ -10,7 +10,7 @@ import { historyTimeline } from '../src/history';
 import {
   clock, emptyText, km, listDuration, nodePill, placeLines, sectionText, summaryDuration, summaryText,
 } from '../src/history/HistoryText';
-import { AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
+import { ADDRESS_CONFIG, AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
 import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/TodayDistance';
@@ -231,7 +231,7 @@ describe('addresses (053a)', () => {
     expect(placeLines(held, { state: 'none' }).title).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   });
 
-  test('the list: 查地址中… while asking, the address when it comes, no coordinates after 5 s without one', async () => {
+  test('the list: the shimmer while waiting or asking (past 5 s), the address when it comes, the coordinates after a real failure', async () => {
     jest.useFakeTimers();
     try {
       const { model } = await fixtureList('history-today');
@@ -256,10 +256,19 @@ describe('addresses (053a)', () => {
       expect(titles()[0]).toBe('桃園區大興西路二段 105 號附近');
       expect(titles()).toEqual(['桃園區大興西路二段 105 號附近']);
       expect(renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-address-pending')).toHaveLength(3);
-      // Five seconds on, the rest count as not found: coordinates, 查不到地址.
+      // Five seconds on, the rest are still being asked: still the shimmer.
       await act(async () => { jest.advanceTimersByTime(5000); });
-      expect(titles()[1]).toBe(i18nT('c1256'));
-      expect(text()).not.toMatch(/\d+\.\d{4}, \d+\.\d{4}/);
+      expect(titles()).toHaveLength(1);
+      expect(renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-address-pending')).toHaveLength(3);
+      // The geocoder has nothing for the second: its coordinates.
+      const second = placesOf(model)[1];
+      await act(async () => answers[1]('[]'));
+      expect(titles()[1]).toBe(`${second.latitude.toFixed(4)}, ${second.longitude.toFixed(4)}`);
+      // The others never answer: at the 15 s timeout, coordinates too.
+      await act(async () => { await jest.advanceTimersByTimeAsync(ADDRESS_CONFIG.timeoutMs); });
+      expect(renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-address-pending')).toHaveLength(0);
+      expect(titles().slice(1).every(title => /^\d+\.\d{4}, \d+\.\d{4}$/.test(title))).toBe(true);
+      expect(text()).not.toContain('地址暫時無法取得');
       expect(text()).not.toContain('查不到地址');
       await act(async () => renderer.unmount());
     } finally {

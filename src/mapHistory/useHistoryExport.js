@@ -8,7 +8,7 @@ import { logger } from '../logger';
 // key) drops a running export; 重試 makes the files again from the same
 // snapshot. Temporary files go the next day.
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { AddressLookupContext } from '../placement/AddressLookup';
+import { ADDRESS_CONFIG, AddressLookupContext } from '../placement/AddressLookup';
 import { buildCSV } from './ExportCSV';
 import { buildGPX } from './ExportGPX';
 import { buildPNGLayout } from './ExportPNG';
@@ -107,8 +107,11 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
         const day = screen.dayModel, range = screen.range, look = screen.look, subject = screen.subject;
         if (!day || !range) throw new Error(t("c797"));
         const places = day.subjects.flatMap(entry => exportPlaces(entry.model));
-        // 有網路時地址最多等 5 秒; offline none (lookupAddresses decides).
-        const found = places.length ? await lookup.lookupAddresses(places, { timeoutMs: 5000 }) : [];
+        // The addresses the list already has come from the cache at once; the
+        // rest are waited for while they are asked (ADDRESS_CONFIG.exportWaitMs
+        // in all); offline only the saved ones. A place left without one
+        // shows its coordinates (lookupAddresses decides).
+        const found = places.length ? await lookup.lookupAddresses(places, { timeoutMs: ADDRESS_CONFIG.exportWaitMs }) : [];
         if (!alive()) return;
         const addresses = {};
         places.forEach((place, index) => { if (found[index]) addresses[placeKey(place)] = found[index]; });

@@ -98,8 +98,9 @@ REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js
 停住點、歷史節點用 Android 內建 Geocoder（`PlaceLookupModule.kt`，不用 key、不用付費服務）查地址；地址只用來描述，不移動狗。
 
 - 寫法（`ADDRESS_CONFIG`）：最近的地址點 50 m 內「桃園區中正路 1 號附近」；50–300 m「…附近（約 120 m）」（取整到 10 m）；更遠只寫區「大園區（附近沒有地址）」；連區都沒有就是 `null`。去掉郵遞區號、臺灣、縣市、里／村，簡體轉繁體，數字前後加空格。地理編碼的地址行在已經結束門牌的部分後面又多一個「號」時（「100號十三樓號」「21號之3號」「32號號」）拿掉最後那個「號」（2026-10-13）；正常的「21號」「21之3號」不變。
-- 一次查一筆（排隊），每筆最多 15 秒；沒網路不問 Geocoder；查不到、逾時、出錯一分鐘後才重查（卡片重新打開時馬上重查）。微調 50 m 內沿用同一個地址。
+- 同時最多查 3 筆（`ADDRESS_CONFIG.parallel`，`PlaceLookupModule.kt` 的執行緒也是 3 條），其餘排隊；每筆最多 15 秒（連查網路狀態一起算），一筆逾時時還在排隊的也一起算查不到（Geocoder 不回答時不讓後面每筆各等 15 秒）；沒網路不問 Geocoder；查不到、逾時、出錯一分鐘後才重查（卡片重新打開時馬上重查），重查中照舊算查不到（不再變回查詢中）。微調 50 m 內沿用同一個地址。
+- 為什麼不再一次一筆（2026-10-14，模擬器 emulator-5564、`history-busy-day-geocoder` 情境，16 個停留）：一筆一筆查，每筆 1.4–17 秒（中位數約 3.6 秒，主機很忙），16 筆全部查到共約 73 秒、沒有一筆失敗；但清單原本 5 秒後就把還在排隊的列算成查不到，18 列裡有 13 列顯示「地址暫時無法取得」，其實只是還沒輪到。匯出最多只等 5 秒，同樣大多寫空白。改成同時 3 筆後同一個情境 16 筆約 12 秒查完（每筆 0.9–5.2 秒），排隊中的列一直是 shimmer，沒有一列提早變座標。
 - 快取：記憶體＋`dogtracker.sqlite` 的 `address_cache`（最多 500 筆，借 Android 原生 SQLite owner），即時卡片和歷史清單共用 `AddressLookupContext` 預設的同一個 lookup；畫面情境用自己的 lookup（`src/dev/fixtureGeocoder.js`），不寫進這支手機的快取。
 - `useAddress(point)`：A7b 卡片第二行，字串或 `null`（還在查、查不到、沒網路都不寫，不轉圈）。
-- `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；超過 5 秒還沒答案算查不到（寫第一行座標、第二行膠囊；室內節點也查停住點地址、採同樣排法），之後查到照樣補上。
-- `lookupAddresses(points, { timeoutMs })`：匯出用，最多等 5 秒，順序和輸入相同。
+- `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；排隊中、查詢中（含讀手機裡存的地址）都是 `pending`（shimmer），不論等多久；真的查不到（沒有答案、沒網路、逾時）才是 `none`，清單在地址的位置寫座標（`HistoryText.coordinates`，「24.9892, 121.3138」；室內節點也查停住點地址、採同樣排法），之後查到照樣換成地址。「桃園區（附近沒有地址）」是查到（`found`）。
+- `lookupAddresses(points, { timeoutMs })`：匯出用，順序和輸入相同。清單已查到的直接從快取拿，一分鐘內查不到的不再問；其他的等到有答案或真的查不到，最多 `ADDRESS_CONFIG.exportWaitMs`（20 秒）；沒網路只用手機裡存的。拿不到地址的列，匯出 PNG 寫座標（和清單相同）；GPX、CSV 不變。

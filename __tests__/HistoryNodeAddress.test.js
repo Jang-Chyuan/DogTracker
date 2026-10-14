@@ -17,9 +17,11 @@ test.each(['indoor', 'stop', 'departure', 'end', 'switch'])('%s uses identical s
   const node = { ...house, type, durationMs: 2400000, interruptionMs: 300000, label: '結束' };
   const missing = placeLines(node, { state: 'none' });
   expect(missing).toEqual({ title: '24.9378, 121.2954', titleMuted: false, coordinates: '', missing: '' });
+  // 2026-10-14 (the user's decision): no address → the PNG row shows the
+  // coordinates, as the list does, never a blank.
   const row = exportTimelineRows([node], () => null)[0];
   const layout = layoutRow(row, defaultMeasure);
-  expect(layout.titleLines).toEqual(['']);
+  expect(layout.titleLines).toEqual(['24.9378, 121.2954']);
   expect(row.coordinates).toBe('');
   expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
   if (type === 'stop') expect(layout.items[1].text).toBe(row.note);
@@ -105,23 +107,43 @@ test.each([1, 2])('a leading stay pill and marker are centered on the first wrap
 });
 
 
-test('pending addresses shimmer on the normal first line, unavailable addresses show a real fallback without coordinates', async () => {
+test('pending addresses shimmer however long they wait; a real failure shows the coordinates; a late answer replaces them', async () => {
   jest.useFakeTimers();
   let renderer, answer, publish;
   const lookup = { lookup: () => answer, subscribe: fn => { publish = fn; return () => {}; } };
   const view = <AddressLookupContext.Provider value={lookup}><HistoryTimelineList
     model={{ nodes: [{ ...house, type: 'stop', number: 1, durationMs: house.end }] }} color={colors.route1} />
   </AddressLookupContext.Provider>;
+  const speech = () => renderer.root.findAll(node => node.props.testID === 'timeline-stop'
+    && typeof node.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
   try {
     await act(async () => { renderer = Renderer.create(view); });
     expect(renderer.root.findAllByProps({ testID: 'place-address-pending' }).length).toBeGreaterThan(0);
     expect(renderer.root.findAllByProps({ testID: 'place-title' })).toHaveLength(0);
+    // Still queued or asked (undefined) a minute on: still the shimmer.
+    await act(async () => { jest.advanceTimersByTime(60000); publish(); });
+    expect(renderer.root.findAllByProps({ testID: 'place-address-pending' }).length).toBeGreaterThan(0);
     await act(async () => { answer = null; publish(); });
     expect(renderer.root.findAllByProps({ testID: 'place-address-pending' })).toHaveLength(0);
-    expect(JSON.stringify(renderer.toJSON())).toContain('地址暫時無法取得');
-    expect(JSON.stringify(renderer.toJSON())).not.toContain('24.9378, 121.2954');
+    expect(JSON.stringify(renderer.toJSON())).toContain('24.9378, 121.2954');
+    expect(speech()).toContain('24.9378, 121.2954');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('地址暫時無法取得');
     await act(async () => { answer = address; publish(); });
     expect(JSON.stringify(renderer.toJSON())).toContain(address);
-    expect(JSON.stringify(renderer.toJSON())).not.toContain('地址暫時無法取得');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('24.9378, 121.2954');
+    expect(speech()).toContain(address);
   } finally { await act(async () => renderer?.unmount()); jest.useRealTimers(); }
+});
+
+test.each(['departure', 'end', 'indoor'])('a %s row without an address shows its coordinates on screen and in the PNG', async type => {
+  const node = { ...house, type, label: '結束', durationMs: house.end };
+  const lookup = { lookup: () => null, subscribe: () => () => {} };
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+    <HistoryTimelineList model={{ nodes: [node] }} color={colors.route1} />
+  </AddressLookupContext.Provider>); });
+  const title = renderer.root.findAll(item => typeof item.type === 'string' && item.props.testID === 'place-title')[0];
+  expect([title.props.children].flat().join('')).toBe('24.9378, 121.2954');
+  expect(exportTimelineRows([node], () => null)[0].title).toBe('24.9378, 121.2954');
+  await act(async () => renderer.unmount());
 });
