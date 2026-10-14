@@ -7,7 +7,9 @@
 //   notification) moved it on, the revision says so and the app reads it again
 //   (useNativeAlertState);
 // - the app hands over what only it knows about this phone's dogs (names,
-//   indoor holds, range judgements) and the S6 settings (alertSnapshot);
+//   indoor holds, range judgements) and the S6 settings (alertSnapshot). A
+//   dog is this phone's while its own receiver hears it, even when a
+//   teammate's cloud row of the same collar is newer (isLocalDog);
 // - the merged notification (N1/N2) on the 「提醒」 channel, the alert
 //   vibration and the sound (sendAlertEffects).
 //
@@ -15,6 +17,7 @@
 // memory and nothing is posted; the last command is kept for the debug preview.
 import NativeAlertNotifications from '../../specs/NativeAlertNotifications';
 import { isIndoorHold } from '../tracking/DogFreshness';
+import { RANGE } from '../tracking/ReceiverRange';
 
 let last = { command: 'cancel', content: null, at: null };
 let lastSent = null;
@@ -75,27 +78,62 @@ export async function saveAlertState(state, basedOn, native = NativeAlertNotific
   return !!(await native.saveState(JSON.stringify(state), basedOn));
 }
 
-const local = dog => {
-  const held = isIndoorHold(dog);
-  const source = held ? dog.packetSource ?? dog.fixSource : dog.fixSource ?? dog.packetSource;
-  return source !== 'cloud';
-};
-const time = (value, source) => (Number.isFinite(value) && source !== 'cloud' ? value : null);
+// How recently this phone's receiver must have heard a dog for it to be one of
+// this phone's dogs: the live map's own "still communicating" window and
+// ReceiverRange's "only heard through the cloud" gap (RANGE.localSilenceMs).
+export const LOCAL_RECEPTION_MS = RANGE.localSilenceMs;
+
+const finite = value => (Number.isFinite(value) ? value : null);
+const newestSource = dog => (isIndoorHold(dog) ? dog.packetSource ?? dog.fixSource : dog.fixSource ?? dog.packetSource);
+// The last packet this phone heard itself: the newest BLE row (LocalReception),
+// else the range judgement's own record of it.
+const heardAt = dog => finite(dog.localPacketAt) ?? finite(dog.range?.lastLocalAt);
 
 /**
- * What the background check needs from the app: this phone's dogs (not the
- * cloud's, which wait until the app is back) with their names, indoor holds
- * and range judgements, and the S6 settings.
+ * Whether a dog is one of this phone's dogs, for the background check. Not
+ * "whose row is newest": the same collar can be heard by this phone's
+ * receiver and by a teammate's, and the teammate's cloud row is often a few
+ * seconds newer. Such a dog is still this phone's (its name, hold and range
+ * judgement must stay with the background check) as long as this phone heard
+ * it within LOCAL_RECEPTION_MS of now or of the dog's newest packet. Only a
+ * dog this phone has stopped hearing, while the cloud still does, is the
+ * cloud's (design v3 N 「限制」).
  */
-export function alertSnapshot(dogs = [], preferences = null) {
+export function isLocalDog(dog, now = Date.now()) {
+  if (!dog) return false;
+  if (newestSource(dog) !== 'cloud') return true;
+  const heard = heardAt(dog);
+  if (heard == null) return false;
+  const newest = finite(dog.packetAt) ?? finite(dog.fixAt);
+  return now - heard <= LOCAL_RECEPTION_MS || (newest != null && newest - heard <= LOCAL_RECEPTION_MS);
+}
+
+// The background check times this phone's dogs by this phone's own packets
+// (its stored rows move them on): a cloud time is another phone's or the
+// server's clock, and a teammate's newer row is not this phone's reception.
+const localTime = (value, source, local) => (source !== 'cloud' ? finite(value) : finite(local));
+
+/**
+ * What the background check needs from the app: this phone's dogs (isLocalDog;
+ * not the cloud's, which wait until the app is back) with their names, indoor
+ * holds and range judgements, and the S6 settings. `others` names the rest
+ * with their range judgements, so a dog this phone hears again while the app
+ * is away keeps its name and its judgement instead of starting from nothing.
+ *
+ * Each dog may carry `localPacketAt` / `localFixAt` (LocalReception): the
+ * newest packet, and the newest valid position, this phone received itself.
+ */
+export function alertSnapshot(dogs = [], preferences = null, now = Date.now()) {
+  const local = [], others = [];
+  for (const dog of dogs) (isLocalDog(dog, now) ? local : others).push(dog);
   return {
     preferences: preferences || null,
-    dogs: dogs.filter(local).map(dog => ({
+    dogs: local.map(dog => ({
       slaveId: dog.slaveId,
       name: dog.name ?? null,
       coordinate: dog.coordinate ?? null,
-      fixAt: time(dog.fixAt, dog.fixSource),
-      packetAt: time(dog.packetAt, dog.packetSource),
+      fixAt: localTime(dog.fixAt, dog.fixSource, dog.localFixAt),
+      packetAt: localTime(dog.packetAt, dog.packetSource, heardAt(dog)),
       held: isIndoorHold(dog),
       indoorState: dog.indoorState ?? null,
       batteryPercentage: Number.isFinite(dog.batteryPercentage) ? dog.batteryPercentage : null,
@@ -105,6 +143,7 @@ export function alertSnapshot(dogs = [], preferences = null) {
       charging: !!dog.charging,
       range: dog.range ?? null,
     })),
+    others: others.map(dog => ({ slaveId: dog.slaveId, name: dog.name ?? null, range: dog.range ?? null })),
   };
 }
 

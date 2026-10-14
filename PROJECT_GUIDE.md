@@ -67,7 +67,7 @@ android/app/src/main/java/com/dogtracker/
 ├─ HistoryExportPackage.kt、ExportLifecycle.kt、ExportLabelLayout.kt、HistoryExportCleanup.kt  匯出繪圖、分享與清理
 ├─ PlaceLookupModule.kt                  地址查詢
 ├─ AlertNotificationsModule.kt、AlertNotificationsPackage.kt、NotificationChannels.kt  通知橋接
-├─ alerts/  BackgroundAlerts.kt、AlertRules.kt、AlertPoster.kt、IndoorHold.kt  背景提醒與停住判斷
+├─ alerts/  BackgroundAlerts.kt、HandOver.kt、AlertRules.kt、AlertPoster.kt、IndoorHold.kt  背景提醒、App 交接與停住判斷
 ├─ cloud/   CloudHistoryWorker.kt、CloudSyncSchedule.kt、CloudSyncPackage.kt、SearchRelayService.kt  背景雲端工作
 └─ location/  LocationTrackerService.kt、LocationTrackerStore.kt、LocationTrackerPackage.kt、LocationPipeline.kt、DisplayLocation.kt  手機定位與記錄
 ```
