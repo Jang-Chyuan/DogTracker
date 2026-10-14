@@ -33,6 +33,7 @@ import { dayKey } from '../history/screen/HistoryScreenDates';
 import { activityMinutes, activityReadings } from '../activity/ActivityMinutes';
 import { ACTIVITY_CONTEXT_MS } from '../activity/ActivityData';
 import { CARD_BATTERY_ROWS } from '../activity/DogCardReadings';
+import { CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { plausibleBattery } from '../tracking/BatteryPlausibility';
 
 // 2026-10-07 09:30 in Taiwan. Every fixture's rows are placed against this.
@@ -252,6 +253,16 @@ const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND,
 ];
 
 
+
+// A long, fictional address (the card's address line wraps to two lines).
+const LONG_PLACE = { names: [{ line: '330台灣桃園市桃園區虛構里示範路一段一百二十八巷六十四弄三十二號' }] };
+// 小黑 walking out of range to 1.6 km, then held indoors there (packets
+// without a fix) from `inside` to `until` ago.
+const heldFarAway = (now, inside, until) => [
+  ...track(bleRow, now, { slave: 6, from: inside + 15 * MINUTE, to: inside + 10 * SECOND, battery: 62,
+    dog: (progress, where) => awayFrom(where, 700 + 900 * Math.min(1, progress * 1.5), progress, 200) }),
+  ...series(bleRow, now, { slave: 6, from: inside, to: until, rssi: -96, snr: -4, battery: 62 }),
+];
 
 // ---- history (054a): one day of one dog or my route ------------------------
 
@@ -917,6 +928,30 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // ---- switching dogs from the card (2026-10-14, the row of dogs) ---------
+  // Six dogs on receiver 7: 豆豆, 小黑 and 阿福 walking together (one 「3 隻」
+  // tag, 阿福 at 12% so it has the red 「!」), 狗 5, 狗 9 and 狗 12 on their own.
+  // 豆豆's card is open: its row of dogs goes by number only — 豆豆 (4), 5,
+  // 小黑 (6), 阿福 (8, its problem does not move it), 9, 12 — and ends there
+  // (no wrap-around; pulled past an end it springs back).
+  'card-switch': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08], battery: 62 }),
+      ...series(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND, start: [14.4, 9.5], step: [0.05, 0.08] }),
+      ...series(bleRow, now, { slave: 8, from: 10 * MINUTE, to: 11 * SECOND, start: [13.6, 9.6], step: [0.05, 0.08],
+        battery: 12 }),
+      ...series(bleRow, now, { slave: 5, from: 10 * MINUTE, start: [-20, 30], step: [0.04, 0.02] }),
+      ...series(bleRow, now, { slave: 9, from: 10 * MINUTE, to: 7 * SECOND, start: [30, -25], step: [0.02, 0.04] }),
+      ...series(bleRow, now, { slave: 12, from: 10 * MINUTE, to: 9 * SECOND, start: [-30, -20], step: [0.03, -0.02] }),
+    ]),
+    cloudRows: [],
+  }),
+  // card-switch with 豆豆 renamed to a fictional 15-character name: the
+  // title row 「‹（頭像✏️）名字 ›」 cuts it with 「…」 at the normal font and
+  // wraps it at 200%.
+  'card-long-name': now => ({ ...FIXTURES['card-switch'](now),
+    aliases: { ...ALIASES, 4: '紅火蟻偵測隊第一小隊的豆豆隊長' } }),
   // ---- the activity page (057, design A4) ------------------------------
   // 小黑's card only (A3): tap 活動量 to open A4 on 今天 with the same reads.
   'activity-card': now => ({ ...activityPage(now, null, {}), openPage: null }),
@@ -957,8 +992,8 @@ const FIXTURES = {
   'dog-photo-stale': now => ({ ...FIXTURES['dogs-aged'](now), openDog: 8,
     avatars: { 8: { kind: 'photo', uri: FIXTURE_PHOTO } } }),
   // A3b: 豆豆 walked out to 1.4 km and has been silent since 09:05 (25
-  // minutes): no new position, battery 15%, out of range — every problem row
-  // at once, and 活動量 「—」.
+  // minutes): no new position, battery 15%, out of range — every problem at
+  // once (不在接收範圍 the 位置 row's second line), and 活動量 「—」.
   'card-problems': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
@@ -971,7 +1006,7 @@ const FIXTURES = {
   }),
   // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
   // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 with
-  // the held place's address under it (053a), no 接收範圍 row.
+  // the held place's address under it (053a) is the first row.
   'card-indoor': now => ({
     geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1005,8 +1040,50 @@ const FIXTURES = {
   // card-indoor named by this phone's own Geocoder (network + Play services;
   // the place is by Taoyuan station). Nothing is written to its cache.
   'card-indoor-geocoder': now => ({ ...FIXTURES['card-indoor'](now), geocoder: 'real' }),
-  // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 row at all;
-  // running hard for the last few minutes (劇烈活動).
+  // ---- the first row's harder cases (2026-10-14, tried on a phone) --------
+  // card-indoor with a long fictional address: under 「室內・11 分」 and the
+  // distance, across the row's whole width, wrapping to two lines.
+  'card-indoor-long-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: LONG_PLACE }),
+  // 小黑 went indoors at 09:03 and has sent nothing since 09:05: 「沒有新資料・
+  // 最後 09:05」 in red over the address.
+  'card-indoor-silent': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now),
+      ...indoorBle(now, 6, [-18, 24], { inside: 27 * MINUTE, until: 25 * MINUTE, battery: 62 })]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // Four dogs, four kinds of first row, to see the card keep one height from
+  // dog to dog: 豆豆 in range (one line), 狗 5 silent since 09:05 and out of
+  // range (two lines), 小黑 indoors 1.6 km away with a long address (three
+  // or four lines), 阿福 only from the cloud (one line).
+  'card-switch-mixed': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...series(bleRow, now, { slave: 4, from: 10 * MINUTE, start: [14, 9], step: [0.05, 0.08], battery: 62 }),
+      ...track(bleRow, now, { slave: 5, from: 40 * MINUTE, to: 25 * MINUTE, battery: 15,
+        dog: (progress, where) => awayFrom(where, 700 + 700 * progress, progress, 30) }),
+      ...heldFarAway(now, 12 * MINUTE, 8 * SECOND),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 walked out to 1.6 km (out of range) and went indoors there 12
+  // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・最後確認 HH:MM」
+  // in red — two things in one row, one red 「!」.
+  'card-indoor-out': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now), ...heldFarAway(now, 12 * MINUTE, 8 * SECOND)]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // The same, silent since 09:05: 「沒有新資料・最後 09:05」, the address and
+  // 不在接收範圍 — three lines in the first row.
+  'card-indoor-silent-out': now => ({
+    geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([...dog4Ble(now), ...heldFarAway(now, 28 * MINUTE, 25 * MINUTE)]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 to write, so
+  // the first row is 位置 「最後 HH:MM」; running hard for the last few
+  // minutes (劇烈活動).
   'card-cloud-dog': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
     ble: dog4Ble(now),
@@ -1016,8 +1093,8 @@ const FIXTURES = {
       ...dog8Cloud(now),
     ],
   }),
-  // The phone's newest fix is 15 minutes old: the headline says 「手機沒有
-  // 定位」 instead of a direction and distance; 我的位置 turns grey.
+  // The phone's newest fix is 15 minutes old: the first row's right end says
+  // 「手機沒有定位」 instead of a direction and distance; 我的位置 turns grey.
   'card-phone-no-fix': now => ({
     receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 15 * MINUTE), openDog: 4,
     ble: dog4Ble(now), cloudRows: [...dog6Cloud(now), ...dog8Cloud(now)],
@@ -1695,6 +1772,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
   if (!make) return null;
   nextId = 1;
   const { receiver, cloud, phone, ble = [], cloudRows = [], openDog = null, openPage = null, avatars = {},
+    aliases = ALIASES,
     dismissed = {}, storageError = null, mapFailure = null, openRoute = null, permissions = {},
     upload = cloud?.ownerId ? uploading(now) : null, expired = false, dialog = null, alerts = null,
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
@@ -1820,7 +1898,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       return { count, metres, status };
     })(),
     ride: rides.ride(now),
-    dogAliases: ALIASES,
+    dogAliases: aliases,
     // card-* states open this dog's card; dog-edit its edit sheet (A5) too.
     openDog,
     openPage,
@@ -2010,6 +2088,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
       ...tracking,
       ...fixture.tracking,
       caughtUp: true,
+      catchUp: CATCH_UP_IDLE,
       historyLoaded: true,
       initialSnapshotReady: true,
       ready: { ...tracking.ready, real: true },
@@ -2047,7 +2126,12 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    cloudSync: { ...cloudSync, ...fixture.cloudSync },
+    // On a signed-in phone the live CloudSync's latest-first state (its
+    // revisions, publication, catch-up, busy flags) must not leak into a
+    // fixture: it kept the fixture's dogs off the map, and its changing
+    // revision restarted the card's readings so 活動量 stayed 「—」.
+    cloudSync: { ...cloudSync, latestFirst: false, mapSuccessRevision: undefined, getMapPublication: undefined,
+      snapshotPending: false, publishedPending: false, busy: false, catchUp: CATCH_UP_IDLE, ...fixture.cloudSync },
     // A history fixture asks its own stand-in cloud (054b), never Supabase.
     historyCloud: fixture.history ? fixture.historyCloud : live.historyCloud,
     history: history && {

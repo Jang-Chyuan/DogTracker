@@ -1391,8 +1391,9 @@ function GoogleTrackingMapRenderer({
         const box = point && markerBox(selected || { name: '', size: sizes.marker.attention }, point, fontScale);
         const occluded = box && [...mapControlBoxes({ width, height, bottom: overlayBottom, bottomRow }), ...hints.map(hintBox)]
           .some(other => boxesOverlap(box, other));
+        // A dog switched to from the card always comes to the middle.
         const hidden =
-          !point || occluded ||
+          focusDog.always || !point || occluded ||
           point.x < margin ||
           point.x > width - margin ||
           point.y < overlayTop + margin ||
@@ -1779,6 +1780,15 @@ function GoogleTrackingMapRenderer({
       ? { x: finger.x - origin.x, y: finger.y - origin.y } : null;
     const drawn = tap && screenPoints
       ? dogUnderTouch(dogMarkers, screenPoints, tags, tap, dogZ, fontScale) : null;
+    // The finger was on no face and no name tag, only a marker's transparent
+    // canvas (174dp wide on Android): what the eye sees there is empty map,
+    // so it is an empty-map tap — it closes an open card instead of opening
+    // (or keeping) that marker's dog.
+    if (tap && screenPoints && drawn == null) {
+      clearTimeout(mapPressTimer.current);
+      onMapPress?.();
+      return;
+    }
     pressDog(drawn ?? slaveId);
   };
   // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
@@ -1793,6 +1803,11 @@ function GoogleTrackingMapRenderer({
     return tap.x >= left && tap.x <= left + box.width && tap.y >= top && tap.y <= top + box.height;
   };
   const pressMapLive = event => {
+    // Android also reports a marker's tap as a map tap ('marker-press'), at
+    // the marker's anchor rather than the finger: the marker's own onPress
+    // (pressDogMarker) answers it. Taken as a tap on that point it re-opened
+    // the dog under a card that a tap beside it had just closed.
+    if (event?.nativeEvent?.action === 'marker-press') return;
     const at = Date.now();
     // Google can report a tap on a dog as a tap on the map (a card open):
     // a tap on a dog's face opens that dog.

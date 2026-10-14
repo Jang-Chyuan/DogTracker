@@ -32,7 +32,9 @@ import {
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
-import { useAddress } from '../placement/AddressLookup';
+import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
+// An indoor dog's address being asked: the room it may need.
+const ADDRESS_RESERVE_LINES = 2;
 import { useMapClock } from '../map/useMapClock';
 
 import { useReceiverState } from '../map/useReceiverState';
@@ -49,6 +51,7 @@ import ActivityScreen from '../activity/ActivityScreen';
 import DogProfile from '../dogs/DogProfile';
 import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
+import { switchOrder, switchTarget } from '../map/DogSwitch';
 import { useDogCardReadings } from '../map/useDogCardReadings';
 import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
 import {
@@ -864,9 +867,17 @@ export default function MapScreen({
         : null),
     [fixture?.readActivityEarliest, database, cloudOwner],
   );
+  // ---- switching dogs from the card (its row of dogs, 下一隻／上一隻) -----------
+  // Every drawn dog by signal-source number (DogSwitch): the open dog sits
+  // in its own place, with dogs on both sides; the row has ends.
+  const switchDogs = useMemo(
+    () => switchOrder(livePresentation.dogMarkers),
+    [livePresentation.dogMarkers],
+  );
+  const cardDogId = cardDog?.slaveId ?? null;
   const readings = useDogCardReadings(
     cardOpen ? readCardRows : null,
-    cardDog?.slaveId ?? null,
+    cardDogId,
     now,
     `${cardBusy}:${cardSuccess}:${cloudSync?.publishedRevision ?? 0}`,
   );
@@ -918,6 +929,80 @@ export default function MapScreen({
     () => setSelected(current => (current?.kind === 'dog' ? null : current)),
     [],
   );
+  // Picking a dog on the card's row (or TalkBack's 下一隻／上一隻) selects it
+  // (on top of the others) and always brings the map to it: centred in the
+  // map left above the card, the user's zoom kept (`always`); the order and
+  // the card itself stay.
+  const selectDog = useCallback(
+    to => {
+      if (to == null || to === cardDogId) return;
+      cardGeneration.current += 1;
+      setSelected({ kind: 'dog', slaveId: to });
+      setFocusRequest({ slaveId: to, key: Date.now(), always: true });
+    },
+    [cardDogId],
+  );
+  const stepDog = useCallback(
+    step => selectDog(switchTarget(switchDogs, cardDogId, step)),
+    [selectDog, switchDogs, cardDogId],
+  );
+  // The row of dogs (DogCarousel): every dog in the order, each once.
+  const markerById = useMemo(
+    () => Object.fromEntries(livePresentation.dogMarkers.map(marker => [marker.slaveId, marker])),
+    [livePresentation.dogMarkers],
+  );
+  // The other dogs' first rows (2026-10-14: the card must not grow or shrink
+  // from dog to dog): what each would show, so the card keeps room for the
+  // tallest. Their addresses are asked too (the history's cache), their
+  // battery and activity rows are one line each at the normal font.
+  const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
+  const otherDogs = useMemo(() => (switching
+    ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))
+      .filter(Boolean) : []), [switching, switchDogs, cardDogId, dogs]);
+  const otherPlaces = usePlaceNames(otherDogs.map(dog => (isIndoorHold(dog) ? dog.coordinate : null)));
+  // An address still being asked gets the room of two lines (it may come
+  // back long), so its answer never makes the card taller; the open dog's
+  // own too.
+  const reserve = useMemo(() => {
+    const others = otherDogs.map((dog, index) => {
+      const freshness = dogFreshness(dog, { now, cloud: cloudClockInput, pauses });
+      const place = otherPlaces[index];
+      const asking = isIndoorHold(dog) && place?.state === 'pending';
+      const model = dogCard(dog, {
+        freshness,
+        range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+        phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
+        now,
+        name: dogName(dog.slaveId, dogAliases),
+        address: isIndoorHold(dog) && !asking
+          ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
+      });
+      const row = asking ? { ...model.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : model.rows[0];
+      return { key: dog.slaveId, row, headline: model.headline };
+    });
+    if (!cardModel) return others;
+    const asking = isIndoorHold(cardDog) && !address;
+    const own = asking ? { ...cardModel.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : cardModel.rows[0];
+    return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
+  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, cloudDogs?.ranges, livePhone, nativePhone, fixture,
+    dogAliases, cardModel, cardDog, address]);
+  const switcher = useMemo(() => {
+    if (!switching) return null;
+    return {
+      dogs: switchDogs.map(id => ({
+        slaveId: id,
+        name: dogName(id, dogAliases),
+        avatar: avatars[id] ?? null,
+        problem: !!markerById[id]?.problem,
+        stale: !!markerById[id]?.stale,
+      })),
+      // No wrap-around: at either end there is nothing further that way.
+      previous: switchTarget(switchDogs, cardDogId, -1),
+      next: switchTarget(switchDogs, cardDogId, 1),
+      onSelect: selectDog,
+      onStep: stepDog,
+    };
+  }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
   const [trackBusy, setTrackBusy] = useState(false);
   // 看軌跡: today's path of this dog. The query is stored first, so the
   // history page never opens on the previous one.
@@ -1035,7 +1120,7 @@ export default function MapScreen({
   const focusDog = useMemo(
     () =>
       cardDog && cardHeight && focusRequest?.slaveId === cardDog.slaveId
-        ? { key: focusRequest.key, coordinate: cardDog.coordinate }
+        ? { key: focusRequest.key, coordinate: cardDog.coordinate, always: !!focusRequest.always }
         : null,
     // Asked once per opening, after the card has its height.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1309,6 +1394,8 @@ export default function MapScreen({
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
           trackBusy={trackBusy}
+          switcher={switcher}
+          reserve={reserve}
         />
       )}
       </View>

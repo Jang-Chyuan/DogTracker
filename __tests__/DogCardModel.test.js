@@ -35,15 +35,17 @@ test('distance and bearing, the shared distance steps, compass words', () => {
   expect(formatDistance(12400)).toBe('12.4 km');
 });
 
-test('A3: a fresh dog in range — 電量, 接收範圍, 活動量, no 位置 row', () => {
+test('A3: a fresh dog in range — always three rows: 接收範圍 (with the distance), 電量, 活動量', () => {
   const model = card(dog(), { range: range(RANGE_STATUS.IN) });
   expect(model.sourceLabel).toBe('訊號源 6');
-  expect(model.rows.map(item => item.key)).toEqual(['battery', 'range', 'activity']);
+  expect(model.rows.map(item => item.key)).toEqual(['range', 'battery', 'activity']);
   expect(row(model, 'battery')).toMatchObject({ value: '62%', tone: null });
-  expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null });
+  expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null, alert: null });
   expect(row(model, 'activity')).toMatchObject({ value: '—', pressable: true });
-  expect(model.headline).toMatchObject({ kind: 'distance', distance: '850 m', suffix: i18nT('c064') });
-  expect(model.headlineSpeech).toBe('小黑，東北方 850 公尺，離手機');
+  expect(model.headline).toEqual({ kind: 'distance', distance: '850 m', bearing: expect.any(Number),
+    compass: i18nT('c739'), phoneAge: null });
+  // TalkBack reads the distance with the first row.
+  expect(row(model, 'range').speech).toBe('接收範圍，在範圍內，東北方 850 公尺，離手機');
   // No receiver row, ever.
   expect(model.rows.some(item => item.label === i18nT('c075'))).toBe(false);
 });
@@ -53,18 +55,26 @@ test('快離開: amber, without a distance; out of range: red', () => {
     .toMatchObject({ value: i18nT('c067'), tone: 'warn' });
   expect(row(card(dog(), { range: range(RANGE_STATUS.OUT) }), 'range'))
     .toMatchObject({ value: i18nT('c078'), tone: 'crit' });
-  // A cloud dog (never judged by this phone): no row at all.
-  expect(card(dog(), { range: null }).rows.map(item => item.key)).toEqual(['battery', 'activity']);
+  // A cloud dog (never judged by this phone): 位置 「最後 HH:MM」, its
+  // newest position's time, still three rows.
+  const cloud = card(dog({ fixAt: new Date(2026, 9, 7, 9, 29).getTime() }), { range: null });
+  expect(cloud.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
+  expect(row(cloud, 'position')).toMatchObject({ value: '最後 09:29', tone: null, detail: null, alert: null });
+  expect(row(cloud, 'position').speech).toBe('位置，最後 09:29，東北方 850 公尺，離手機');
 });
 
-test('A3b: stale — 位置 row in red, distance to the last position', () => {
+test('A3b: stale — 位置 row in red, distance to the last position; out of range too: its own line in the row', () => {
   const model = card(dog({ batteryPercentage: 15 }), { freshness: stale, range: range(RANGE_STATUS.OUT) });
-  expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'range', 'activity']);
-  expect(row(model, 'position')).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit' });
+  expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
+  expect(row(model, 'position')).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit',
+    alert: i18nT('c078'), twoLine: true });
   expect(row(model, 'battery')).toMatchObject({ value: '15%・偏低', tone: 'crit' });
-  expect(model.headline.suffix).toBe('離手機・最後位置');
+  expect(model.headline.distance).toBe('850 m');
   expect(model.rows.map(item => item.speech))
-    .toEqual(['位置，沒有新位置，最後 09:05', '電量 15%，偏低', '接收範圍，不在接收範圍', '活動量，沒有資料']);
+    .toEqual(['位置，沒有新位置，最後 09:05，不在接收範圍，東北方 850 公尺，離手機', '電量 15%，偏低', '活動量，沒有資料']);
+  // In range or 快離開 while stale: the row says only 沒有新位置 (one line).
+  expect(row(card(dog(), { freshness: stale, range: range(RANGE_STATUS.NEAR) }), 'position'))
+    .toMatchObject({ value: '沒有新位置・最後 09:05', alert: null, twoLine: false });
 });
 
 test('battery: 20% is low, 21% is not, charging never is; unknown is 「—」', () => {
@@ -94,21 +104,24 @@ test('a battery reading 10 minutes older than the position carries its time', ()
     .toBe('62%');
 });
 
-test('A7b: held indoors — 位置 「室內」 (address line when known), 離手機・室內, no 接收範圍 row', () => {
+test('A7b: held indoors — 位置 「室內」 (address line when known), no 接收範圍 row', () => {
   const held = dog({ heldReason: '室內', heldSource: 'weak' });
   const freshness = { ...fresh, basis: 'packet' };
   const model = card(held, { freshness, range: range(RANGE_STATUS.NEAR), address: '桃園區中正路 1 號附近' });
   expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
   expect(row(model, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
-    speech: '位置，室內，桃園區中正路 1 號附近' });
-  expect(model.headline.suffix).toBe('離手機・室內');
-  // Out of range before it was held: the row stays, with the time it was confirmed.
-  const out = card(held, { freshness, range: { ...range(RANGE_STATUS.OUT), judgedAt: new Date(2026, 9, 7, 9, 5).getTime() } });
-  expect(row(out, 'range')).toMatchObject({ value: '不在接收範圍・最後確認 09:05', tone: 'crit' });
-  // Held and stale: 沒有新資料, 室內・最後資料.
-  const silent = card(held, { freshness: { ...stale, basis: 'packet' } });
-  expect(row(silent, 'position')).toMatchObject({ value: '沒有新資料・最後 09:05', tone: 'crit' });
-  expect(silent.headline.suffix).toBe('離手機・室內・最後資料');
+    speech: '位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
+  // Out of range before it was held: still one row, its last line says so,
+  // with the time it was confirmed (red 「!」, the 室內 words stay black).
+  const out = card(held, { freshness, address: '桃園區中正路 1 號附近',
+    range: { ...range(RANGE_STATUS.OUT), judgedAt: new Date(2026, 9, 7, 9, 5).getTime() } });
+  expect(out.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
+  expect(row(out, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
+    alert: '不在接收範圍・最後確認 09:05' });
+  // Held and stale: 沒有新資料 in red over the same address.
+  const silent = card(held, { freshness: { ...stale, basis: 'packet' }, address: '桃園區中正路 1 號附近' });
+  expect(row(silent, 'position')).toMatchObject({ value: '沒有新資料・最後 09:05', tone: 'crit',
+    detail: '桃園區中正路 1 號附近', twoLine: true });
 });
 
 // 2026-10-13: the card's 室內 minutes are the history's for the same hold
@@ -129,7 +142,7 @@ test('A7b: 室內・N 分 counts as the history does, apart from the 活動量 r
   const model = card(held, { freshness, address: '桃園區中正路 1 號附近', activity });
   // 09:03 → 09:29 on the clock: 26 minutes, as the history's 「室內・26 分」.
   expect(row(model, 'position')).toMatchObject({ value: '室內・26 分', detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: '位置，室內，26 分，桃園區中正路 1 號附近' });
+    speech: '位置，室內，26 分，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
   expect(row(model, 'activity')).toMatchObject({ value: i18nT('c069'), detail: '已 12 分鐘',
     speech: '活動量，休息中，活動量低已 12 分鐘' });
   // Without heldFrom (an older merged dog) it counts from heldSince; past an
@@ -156,12 +169,13 @@ test('the phone: none or over 10 minutes old is 手機沒有定位; 30 s to 10 m
   expect(phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 11 * MINUTE } }, NOW)).toBeNull();
   const model = card(dog(), { phone: null });
   expect(model.headline).toEqual({ kind: 'no-phone', text: i18nT("c726") });
-  expect(model.headlineSpeech).toBe('小黑，手機沒有定位');
+  expect(model.rows[0].speech).toBe('位置，最後 09:29，手機沒有定位');
   const threeMinutes = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * MINUTE - 5000 } }, NOW);
-  expect(cardHeadline({ dog: dog(), phone: threeMinutes, indoor: false, stale: true }).suffix)
-    .toBe('離手機・最後位置・手機位置 3 分鐘前');
+  expect(cardHeadline({ dog: dog(), phone: threeMinutes }).phoneAge).toBe('手機位置 3 分鐘前');
+  expect(card(dog(), { phone: threeMinutes, range: range(RANGE_STATUS.IN) }).rows[0].speech)
+    .toBe('接收範圍，在範圍內，東北方 850 公尺，離手機，手機位置 3 分鐘前');
   const twentySeconds = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 20000 } }, NOW);
-  expect(cardHeadline({ dog: dog(), phone: twentySeconds, indoor: false, stale: false }).suffix).toBe(i18nT('c064'));
+  expect(cardHeadline({ dog: dog(), phone: twentySeconds }).phoneAge).toBeNull();
 });
 
 test('活動量: judged at now; 「—」 when stale; old readings judged when they stopped, with their time', () => {
