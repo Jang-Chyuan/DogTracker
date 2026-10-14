@@ -424,6 +424,26 @@ export function placeMarkers(locations, nodes = null) {
     }));
 }
 
+// The places the map marks: the model's locations, plus a numbered stay the
+// list shows that is not among them (a presentation-only stay, e.g. the
+// phone's stationary one): the list and the map always number the same stays
+// (2026-10-14, HistoryRowSelection invariant). Cached per locations/nodes pair
+// so a cursor move keeps the same array.
+const markedLists = new WeakMap();
+function markedLocations(model) {
+  const locations = model.locations || emptyLocations;
+  const nodes = Array.isArray(model.nodes) ? model.nodes : null;
+  if (!nodes) return locations;
+  const cached = markedLists.get(nodes);
+  if (cached && cached.locations === locations) return cached.list;
+  const known = new Set(locations);
+  const extra = nodes.filter(n => ['stop', 'switch'].includes(n.type) && n.number != null && !known.has(n)
+    && Number.isFinite(n.latitude) && !locations.some(l => l.type === n.type && l.number === n.number));
+  const list = extra.length ? [...locations, ...extra].sort((a, b) => a.start - b.start) : locations;
+  markedLists.set(nodes, { locations, list });
+  return list;
+}
+
 // Cursor changes must not restart native projection of every stay. Snapshot
 // every input node, including hidden ones: in-place replay can make one visible.
 const markerProjections = new WeakMap();
@@ -529,7 +549,7 @@ export function historyMapPresentation(
   const dayPoints = model.dayPoints || points;
   // The list numbers stays and switch points (the same node objects); a
   // switch the list dropped has no number and is not drawn.
-  const places = stablePlaceMarkers(model.locations || emptyLocations, model.nodes);
+  const places = stablePlaceMarkers(markedLocations(model), model.nodes);
   const allIndoor = points.length > 0 && points.every(p => p.heldReason);
   subject = subject || (dayPoints.some(p => p.slave_id === 'phone')
     || model.edges?.some(e => ['walking', 'driving'].includes(e.mode)) ? 'phone' : 'dog');

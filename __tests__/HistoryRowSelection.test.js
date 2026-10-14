@@ -216,3 +216,17 @@ describe('numbered stays agree between the list and the map', () => {
     await act(async () => renderer.unmount());
   });
 });
+
+test('a numbered stay only the list has (presentation-only) is marked on the map too', () => {
+  const { historyMapPresentation } = require('../src/history/screen/HistoryMapModel');
+  const at = minutes => 1791331200000 + minutes * 60000;
+  const stop = (number, start, end, lon) => ({ type: 'stop', number, start: at(start), end: at(end), durationMs: (end - start) * 60000,
+    latitude: 25, longitude: lon });
+  const kept = stop(1, 10, 20, 121.0), only = { ...stop(2, 30, 40, 121.01), presentationOnly: 'phone-stationary' };
+  const points = [0, 10, 20, 30, 40, 50].map(m => ({ time: at(m), latitude: 25, longitude: 121 + m / 5000 }));
+  const model = { points, edges: [], locations: [kept], nodes: [kept, only] };
+  const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
+  expect(map.places.filter(p => p.kind === 'number').map(p => p.number)).toEqual([1, 2]);
+  // The same array on a cursor move (no new native projections).
+  expect(historyMapPresentation(model, { color: '#1A73E8', subject: 'phone', cursor: { point: points[2] } }).places).toBe(map.places);
+});
