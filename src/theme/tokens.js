@@ -457,9 +457,15 @@ export const size = {
     // The 走路／開車／移動／沒有資料 icon on the track (2026-10-14: 20 → 24dp,
     // the user found 20 small); 4dp of clear track above and below it.
     icon: 24,
-    // The down chevron under a stay that the next row leaves (2026-10-14):
-    // clearly there, lighter than the 24dp icons; 2dp of clear line above it, 4dp below.
+    // The down chevron on the line leaving a stay (2026-10-14): its 24-unit
+    // box (LeaveGeometry's shape inside it), lighter than the 24dp icons.
     leave: 16,
+    // Under the stay: 4dp clear, 13dp of the next row's line (two whole dots),
+    // 4dp clear, the chevron, 4dp clear, then that line again (at least 7dp
+    // in the stay's row, the rest in the movement row above its icon).
+    leaveGap: 4,
+    leaveLine: 13,
+    leaveBelow: 7,
     node: {
       start: 16,
       stop: 24,
@@ -556,10 +562,12 @@ export const size = {
     // The list's 走路／開車… icon: 3 × the screen's (size.timeline.icon), as
     // the rest of the track (#159 left it at 40 px, about 2×).
     transportGlyph: 72,
-    // The leaving chevron: 3 × size.timeline.leave.
+    // The leaving chevron: 3 × size.timeline.leave, and its line (3 ×
+    // size.timeline leaveGap / leaveLine / leaveBelow).
     leaveGlyph: 48,
-    // Its clear line above (2dp at 3×; below: transportIconPadding).
-    leaveInset: 6,
+    leaveGap: 12,
+    leaveLine: 39,
+    leaveBelow: 21,
     sectionRadius: 4,
     timeInset: 16,
     sectionTextInset: 28,
