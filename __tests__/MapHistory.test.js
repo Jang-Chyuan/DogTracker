@@ -186,3 +186,22 @@ test('historyDays: the local days with one dog\'s rows (local and the account\'s
     expect(await db.historyDays({ subject: 'phone' })).toEqual(['2026-10-02']);
   } finally { connection.close(); }
 });
+
+test('historyDogs: every dog this phone holds rows of, local and this account\'s cloud, so the history reaches dogs older than the live roster', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    expect(await db.historyDogs({ owner: 'me' })).toEqual([]);
+    await connection.executeAsync(`CREATE TABLE dog_status (id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
+      slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE supabase_dog_status (id INTEGER PRIMARY KEY, owner_user_id TEXT,
+      received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync('INSERT INTO dog_status(received_at,master_id,slave_id) VALUES(1,7,4),(2,7,4),(3,7,NULL),(4,7,0),(5,7,31)');
+    await connection.executeAsync(`INSERT INTO supabase_dog_status(owner_user_id,received_at,slave_id)
+      VALUES('me',1,9),('me',2,9),('me',3,40),('other',4,55)`);
+    expect(await db.historyDogs({ owner: 'me' })).toEqual([4, 9, 31, 40]);
+    // Signed out: only this phone's own receiver.
+    expect(await db.historyDogs()).toEqual([4, 31]);
+    expect(HISTORY_DATABASE_METHODS).toContain('historyDogs');
+  } finally { connection.close(); }
+});

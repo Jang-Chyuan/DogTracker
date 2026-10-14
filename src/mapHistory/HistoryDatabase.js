@@ -14,7 +14,9 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
-  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs'];
+// historyDogs lists at most this many dogs (each one is one indexed seek).
+export const HISTORY_DOGS_LIMIT = 200;
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
@@ -272,6 +274,37 @@ export function createHistoryDatabase(db) {
         }
       }
       return [...found].sort();
+    },
+    /**
+     * Every dog this phone holds rows of (this phone's receiver, and this
+     * account's downloaded cloud copy), ascending. The history's 「＋ 加入」
+     * offers the ones that have rows on the day shown, beside the dogs on the
+     * live map: the map only lists dogs heard in the last 14 days
+     * (CloudLatest ROSTER_WINDOW_MS), the history reaches older ones. One
+     * index seek per dog (slave_id leads both tables' indexes), not a scan.
+     */
+    async historyDogs({ owner = null } = {}) {
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      const found = new Set();
+      const walk = async (query, params) => {
+        let after = 0;
+        while (found.size < HISTORY_DOGS_LIMIT) {
+          const next = rows(await db.executeAsync(query, [after, ...params]))[0];
+          const slave = Number(next?.slave_id);
+          if (!Number.isInteger(slave) || slave <= after) return;
+          found.add(slave);
+          after = slave;
+        }
+      };
+      if (await table('dog_status')) {
+        await walk('SELECT slave_id FROM dog_status WHERE slave_id > ? ORDER BY slave_id LIMIT 1', []);
+      }
+      if (owner && await table('supabase_dog_status')) {
+        await walk(`SELECT slave_id FROM supabase_dog_status WHERE slave_id > ? AND owner_user_id = ?
+          ORDER BY slave_id LIMIT 1`, [owner]);
+      }
+      return [...found].sort((left, right) => left - right).slice(0, HISTORY_DOGS_LIMIT);
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card
