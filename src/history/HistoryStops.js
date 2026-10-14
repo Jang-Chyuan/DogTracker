@@ -267,6 +267,9 @@ function clippedVisit(visit, start, end, dayBoundary = false, limit = Infinity) 
  *   last visit; with the day baseline still in use, the whole day's ended
  *   visits judge every unmarked visit once more (判定表「固定終點的結算」).
  *   A fixed-end range keeps the day baseline once it took it.
+ * The phone (config.stayRatio null, 2026-10-14) has no baseline and no
+ * replay: every visit of stayMs or more is a stay, except one that is the
+ * whole range (還在原地).
  * `state` and `identity` are accepted for callers that keep them; the
  * replay itself is deterministic, so appending rows gives the same answer.
  */
@@ -282,39 +285,50 @@ export function historyStops(points, { start = -Infinity, end = Infinity,
       originalRepresentative: { latitude: v.latitude, longitude: v.longitude },
       ...anchors.get(v.id) } : v);
   const dayById = new Map(day.map(v => [v.id, v]));
-  const qualifies = (v, typical) => v.durationMs >= config.stayMs && v.durationMs >= typical * config.stayRatio;
+  // 2026-10-14 (user, phone: stayRatio null): no baseline — every visit of
+  // stayMs or more is a stay (「≥ 一般的 3 倍」 is the dog's only). Unless it
+  // is the whole range, as for alwaysStayMs below (還在原地).
+  const noBaseline = config.stayRatio == null;
+  const qualifies = (v, typical) => v.durationMs >= config.stayMs
+    && (noBaseline || v.durationMs >= typical * config.stayRatio);
   const marked = new Set();
   const judge = (list, typical) => { for (const v of list) if (!marked.has(v.id) && qualifies(v, typical)) marked.add(v.id); };
-  let { ready, fallback, typicalMs } = replayVisitDecisions(day, selected, config, following, judge);
+  let { ready, fallback, typicalMs } = noBaseline ? { ready: false, fallback: false, typicalMs: null }
+    : replayVisitDecisions(day, selected, config, following, judge);
   // The ongoing visit is judged again with every append (and at the end here).
   if (ready) judge(selected.filter(v => !v.completed), typicalMs);
+  const inRange = points.filter(p => p.time >= start && p.time <= end);
+  const first = inRange[0]?.time, last = inRange[inRange.length - 1]?.time;
+  // A closed phone range clips the displayed duration, not the stationary
+  // evidence already observed elsewhere in this day. Keep a day-confirmed
+  // long stay when its selected tail is shorter than alwaysStayMs. Actual
+  // visit gaps/departures were settled above, before this presentation clip.
+  const observedOf = v => (subject === 'phone' ? dayById.get(v.id) ?? v : v);
+  // The still-here exemption uses that same available visit interval:
+  // coarse boundary fixes must not turn a wholly stationary range into
+  // a numbered stop. A real gap cannot establish continuous still-here.
+  const coversRange = v => {
+    const observed = observedOf(v);
+    return subject === 'phone'
+      ? Math.max(observed.start, start) <= first && Math.min(observed.end, end) >= last
+        && !observed.gaps.some(g => g.start < last && g.end > first)
+      : v.start <= first && v.end >= last;
+  };
+  if (noBaseline) for (const v of selected) if (qualifies(v) && !coversRange(v)) marked.add(v.id);
   // 067: a visit of alwaysStayMs or more is a stay whatever the baseline —
   // unless it is the whole range: that is 還在原地 (only the time range, no
   // stay; 判定表「還在原地」).
   const unnumbered = new Set();
   if (config.alwaysStayMs) {
-    const inRange = points.filter(p => p.time >= start && p.time <= end);
-    const first = inRange[0]?.time, last = inRange[inRange.length - 1]?.time;
-    // A closed phone range clips the displayed duration, not the stationary
-    // evidence already observed elsewhere in this day. Keep a day-confirmed
-    // long stay when its selected tail is shorter than alwaysStayMs. Actual
-    // visit gaps/departures were settled above, before this presentation clip.
     for (const v of selected) {
       const original = dayById.get(v.id);
-      const observed = subject === 'phone' ? original ?? v : v;
-      // The still-here exemption uses that same available visit interval:
-      // coarse boundary fixes must not turn a wholly stationary range into
-      // a numbered stop. A real gap cannot establish continuous still-here.
-      const coversRange = subject === 'phone'
-        ? Math.max(observed.start, start) <= first && Math.min(observed.end, end) >= last
-          && !observed.gaps.some(g => g.start < last && g.end > first)
-        : v.start <= first && v.end >= last;
-      if (observed.durationMs >= config.alwaysStayMs && !coversRange) marked.add(v.id);
+      const observed = observedOf(v);
+      if (observed.durationMs >= config.alwaysStayMs && !coversRange(v)) marked.add(v.id);
       // A dog range wholly inside a day-confirmed visit follows the same
       // unnumbered still-here presentation. Never promote an unconfirmed
       // interval or hide a measured short walk, ride or actual gap.
       const displayConfirmed = (original?.durationMs ?? 0) >= config.alwaysStayMs;
-      if (displayConfirmed && coversRange && (subject === 'phone' || edges.length > 0)
+      if (displayConfirmed && coversRange(v) && (subject === 'phone' || edges.length > 0)
         && !inRange.some(p => p.phoneConfirmedMovement)
         && !edges.some(e => e.start >= first && e.end <= last
           && (e.countedDistanceM > 0 || e.mode === 'driving' || e.mode === 'ride'
