@@ -178,86 +178,89 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
     : row.key === 'activity'
     ? ACTIVITY_TONE[row.activityTone] || ACTIVITY_TONE.missing
     : colors.text;
-  // Three columns (2026-10-14): the label, a lane only for the 「!」 (the
-  // same width on every row, with or without one), the value. Label over
-  // value (the largest fonts): the lane first, level with the label line.
+  // Three columns (2026-10-14): the label, right-aligned so every label
+  // ends on one line; a lane only for the 「!」, right after it (the same on
+  // every row, with or without one); the value. Label, 「!」 and value share
+  // the first line; the lines under it (address, the second problem) stay
+  // in the value's column. Label over value (the largest fonts): the lane
+  // first, then the label and the value stacked beside it.
+  const scale = Math.max(1, fontScale);
+  const valueLine = type.value.lineHeight * scale;
   const label = (
-    <View style={[styles.labelCell, stacked ? null : { width: labelWidth }]}>
-      <Text style={styles.rowLabel} accessible={false}>
+    <View style={[styles.labelCell, stacked ? styles.labelCellStacked : {
+      width: labelWidth, marginTop: (valueLine - type.caption.lineHeight * scale) / 2 }]}>
+      <Text style={[styles.rowLabel, !stacked && styles.rowLabelEnd]} accessible={false}>
         {row.label}
       </Text>
     </View>
   );
   const lane = (
     <View
-      style={[styles.lane, stacked && [styles.laneStacked, {
-        marginTop: Math.max(0, (type.caption.lineHeight * Math.max(1, fontScale) - sizes.card.labelMark) / 2),
-      }]]}
+      style={[styles.lane, {
+        marginTop: ((stacked ? type.caption.lineHeight * scale : valueLine) - sizes.card.labelMark) / 2,
+      }]}
       testID="dog-card-mark-lane"
     >
       {markTone && <Mark tone={markTone} />}
     </View>
   );
-  const value = (
-      <View style={styles.rowValue}>
-        <View style={styles.rowTexts}>
-          {/* The first line: the value, and the distance beside it only. */}
-          {headline ? (
-            // The value's own width on one line, to see whether it fits.
-            <Text
-              style={[styles.value, styles.sample]}
-              numberOfLines={1}
-              accessible={false}
-              importantForAccessibility="no-hide-descendants"
-              onTextLayout={event => keep('value')(Math.max(0,
-                ...event.nativeEvent.lines.map(line => line.width)))}
-            >
-              {row.value}
-            </Text>
+  const head = (
+    <>
+      {/* The first line: the value, and the distance beside it only. */}
+      {headline ? (
+        // The value's own width on one line, to see whether it fits.
+        <Text
+          style={[styles.value, styles.sample]}
+          numberOfLines={1}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          onTextLayout={event => keep('value')(Math.max(0,
+            ...event.nativeEvent.lines.map(line => line.width)))}
+        >
+          {row.value}
+        </Text>
+      ) : null}
+      <View style={styles.firstLine}
+        onLayout={headline ? event => keep('room')(event.nativeEvent.layout.width) : undefined}>
+        <Text
+          style={[styles.value, { color: valueColor }]}
+          accessible={false}
+        >
+          {row.value}
+          {row.key === 'activity' && row.detail ? (
+            // 「休息中・已 12 分鐘」 (DESIGN.md 摘要卡片).
+            <Text style={styles.detailInline}>{`・${row.detail}`}</Text>
           ) : null}
-          <View style={styles.firstLine}
-            onLayout={headline ? event => keep('room')(event.nativeEvent.layout.width) : undefined}>
-            <Text
-              style={[styles.value, { color: valueColor }]}
-              accessible={false}
-            >
-              {row.value}
-              {row.key === 'activity' && row.detail ? (
-                // 「休息中・已 12 分鐘」 (DESIGN.md 摘要卡片).
-                <Text style={styles.detailInline}>{`・${row.detail}`}</Text>
-              ) : null}
-              {row.key === 'activity' && row.at ? (
-                <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
-              ) : null}
-            </Text>
-            {distance && !under ? distance : null}
-          </View>
-          {/* Under it, the whole width (under the distance too): the
-              address or coordinates, two lines at most; the second problem. */}
-          {row.key !== 'activity' && row.detail ? (
-            <Text
-              style={styles.detailLine}
-              numberOfLines={linesFor(2)}
-              accessible={false}
-            >
-              {row.detail}
-            </Text>
+          {row.key === 'activity' && row.at ? (
+            <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
           ) : null}
-          {/* Measuring only (an address still asked): the room of its lines. */}
-          {row.reserveLines && !row.detail ? (
-            <View style={[styles.detailRoom, {
-              height: row.reserveLines * type.small.lineHeight * Math.max(1, fontScale),
-            }]} />
-          ) : null}
-          {row.alert ? (
-            <Text style={[styles.alertLine, { color: TONE.crit.text }]} accessible={false}>
-              {row.alert}
-            </Text>
-          ) : null}
-          {distance && under ? distance : null}
-        </View>
+        </Text>
+        {distance && !under ? distance : null}
       </View>
+    </>
   );
+  // Under the first line, the whole width of the value's column (under the
+  // distance too): the address or coordinates, two lines at most; the
+  // second problem; the distance when it does not fit beside.
+  const rest = [
+    row.key !== 'activity' && row.detail ? (
+      <Text key="detail" style={styles.detailLine} numberOfLines={linesFor(2)} accessible={false}>
+        {row.detail}
+      </Text>
+    ) : null,
+    // Measuring only (an address still asked): the room of its lines.
+    row.reserveLines && !row.detail ? (
+      <View key="room" style={[styles.detailRoom, {
+        height: row.reserveLines * type.small.lineHeight * scale,
+      }]} />
+    ) : null,
+    row.alert ? (
+      <Text key="alert" style={[styles.alertLine, { color: TONE.crit.text }]} accessible={false}>
+        {row.alert}
+      </Text>
+    ) : null,
+    distance && under ? <View key="distance">{distance}</View> : null,
+  ].filter(Boolean);
   const content = (
     <View
       style={[
@@ -273,15 +276,23 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
           {lane}
           <View style={styles.stack}>
             {label}
-            {value}
+            <View style={styles.rowTexts}>
+              {head}
+              {rest}
+            </View>
           </View>
         </>
       ) : (
-        <>
-          {label}
-          {lane}
-          {value}
-        </>
+        <View style={styles.rowBody}>
+          <View style={styles.headLine}>
+            {label}
+            {lane}
+            <View style={styles.rowTexts}>{head}</View>
+          </View>
+          {rest.length ? (
+            <View style={{ marginLeft: labelWidth + sizes.card.markLane }}>{rest}</View>
+          ) : null}
+        </View>
       )}
       {row.pressable && (
         <Glyph name="chevron" color={colors.textMuted} size={sizes.icon.row} />
@@ -770,27 +781,24 @@ const getStyles = makeStyles(theme => {
     labelCell: {
       minWidth: sizes.card.labelWidth,
       paddingLeft: space.s,
-      paddingRight: space.xs,
       flexShrink: 0,
     },
-    // The 「!」 lane: the same width on every row, the 「!」 centred in it.
+    labelCellStacked: { paddingLeft: 0 },
+    // Every label ends on the same line, 4dp before the 「!」.
+    rowLabelEnd: { textAlign: 'right' },
+    // The 「!」 lane: 4dp after the label, the 16dp 「!」, 8dp before the value
+    // — the same on every row; level with the first line.
     lane: {
       width: sizes.card.markLane,
-      alignSelf: 'stretch',
-      alignItems: 'center',
-      justifyContent: 'center',
+      paddingLeft: space.xs,
+      alignSelf: 'flex-start',
       flexShrink: 0,
     },
-    laneStacked: { alignSelf: 'flex-start' },
+    rowBody: { flex: 1 },
+    headLine: { flexDirection: 'row', alignItems: 'flex-start' },
     // Label over value (the largest fonts), right of the lane.
     stack: { flex: 1, gap: space.xs },
     rowLabel: { ...type.caption, color: colors.textMuted },
-    rowValue: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: space.s,
-    },
     rowTexts: { flex: 1, minWidth: 0 },
     firstLine: { flexDirection: 'row', alignItems: 'flex-start' },
     value: { ...type.value, flex: 1, flexShrink: 1 },

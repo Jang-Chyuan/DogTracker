@@ -317,10 +317,11 @@ export const size = {
   },
   card: {
     avatar: 40,
-    // The status rows' columns (2026-10-14): the label, a lane only for the
-    // 「!」 (on every row), then the value.
-    labelWidth: 68,
-    markLane: 22,
+    // The status rows' columns (2026-10-14): the label (right-aligned; as
+    // wide as 「接收範圍」 needs), a lane only for the 「!」 (4 + 16 + 8dp, on
+    // every row), then the value — still 90dp from the row's start.
+    labelWidth: 62,
+    markLane: 28,
     labelMark: 16,
     // The direction arrow before the distance at the first row's right end.
     directionIcon: 16,

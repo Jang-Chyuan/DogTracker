@@ -210,13 +210,26 @@ test('three columns: the label, a lane only for the 「!」 (on every row), the 
   expect(lanes.map(lane => lane.findAll(node => /^dog-card-mark-(crit|warn)$/.test(node.props.testID ?? '')
     && node.props.background).length)).toEqual([1, 1, 0]);
   // The lane sits between the label and the value: label first, value last.
+  // Label, 「!」 and value share the first line; every label right-aligned in
+  // a column of one width, so they all end on one line and the 「!」 follow.
   for (const key of ['position', 'battery', 'activity']) {
     const row = jsonNode(renderer.toJSON(), node => node.props?.testID === `dog-card-row-${key}`);
-    const index = row.children.findIndex(node => node.props?.testID === 'dog-card-mark-lane');
+    const head = jsonNode(row, node => Array.isArray(node.children)
+      && node.children.some(child => child?.props?.testID === 'dog-card-mark-lane'));
+    const index = head.children.findIndex(node => node.props?.testID === 'dog-card-mark-lane');
     expect(index).toBe(1);
-    expect(flatten(row.children[0])).toMatch(/^(位置|電量|活動量)$/);
-    expect(StyleSheet.flatten(row.children[0].props.style).width).toBe(sizes.card.labelWidth);
+    expect(flatten(head.children[0])).toMatch(/^(位置|電量|活動量)$/);
+    expect(StyleSheet.flatten(head.children[0].props.style).width).toBe(sizes.card.labelWidth);
+    const text = jsonNode(head.children[0], node => node.type === 'Text');
+    expect(StyleSheet.flatten(text.props.style).textAlign).toBe('right');
   }
+  // The address and the second problem stay in the value's column.
+  const position = jsonNode(renderer.toJSON(), node => node.props?.testID === 'dog-card-row-position');
+  const alert = jsonNode(position, node => node.type === 'Text' && flatten(node) === i18nT('c078'));
+  expect(alert).toBeTruthy();
+  const under = jsonNode(position, node => StyleSheet.flatten(node.props?.style)?.marginLeft
+    === sizes.card.labelWidth + sizes.card.markLane);
+  expect(jsonNode(under, node => node === alert)).toBe(alert);
 });
 
 const jsonNode = (node, test) => {
