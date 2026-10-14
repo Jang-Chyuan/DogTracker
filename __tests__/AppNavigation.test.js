@@ -1,4 +1,5 @@
 import { getSplashState, resetSplashGate } from '../src/app/hideSplash';
+import { resetLaunchLink } from '../src/app/launchLink';
 import { t as i18nT } from '../src/i18n';
 import MapScreen from '../src/screens/MapScreen';
 import { layout } from '../src/theme/tokens';
@@ -1179,6 +1180,81 @@ test('start fixtures: first launch, restore past 10 s, expired at start, databas
   await advance(100);
   expect(signInPage()).toBe(false);
   expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
+});
+
+// The guide passed (done), opened again in the same JavaScript start: the
+// link that opened it (here the debug first-launch state) is not read twice.
+// Android hands the link back when it makes the app again after closing it
+// in the background; MainActivity drops it there (LaunchLink.kt).
+test('the launch link opens its state once per start: a remount shows the map, not the first-launch D1 again', async () => {
+  usedBefore();
+  mockAuth = { loading: false, user: null, available: true };
+  Linking.getInitialURL.mockResolvedValue('dogtracker://dev/fixture?name=onboarding-first-launch');
+  try {
+    await mount();
+    await advance(100);
+    expect(signInPage()).toBe(true);
+    await act(async () => renderer.unmount());
+    await mount();
+    await advance(100);
+    expect(signInPage()).toBe(false);
+    expect(progressBar()).toBe(false);
+    expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
+    // The notification's page likewise opens once.
+    resetLaunchLink();
+    Linking.getInitialURL.mockResolvedValue('dogtracker://notification/receiver-settings');
+    await act(async () => renderer.unmount());
+    await mount();
+    await advance(100);
+    expect(title()).toBe('返回，接收器');
+    await act(async () => renderer.unmount());
+    await mount();
+    await advance(100);
+    expect(renderer.root.findAllByProps({ testID: 'page-back' })).toHaveLength(0);
+  } finally { Linking.getInitialURL.mockResolvedValue(null); }
+});
+
+test('the guide passed, its preferences read slowly: D0 holds until they are in, then the map; never D1', async () => {
+  freshInstall();
+  usedBefore();
+  connection.sqlite.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('map_preferences', ?)")
+    .run(JSON.stringify({ mode: 'real', windowMinutes: 2, onboarding: 'done' }));
+  mockAuth = { loading: false, user: null, available: true };
+  // A new launch screen for this start (the gate is per process).
+  resetSplashGate();
+  const execute = NativeModules.BleBackground.executeDatabase;
+  const original = execute.getMockImplementation();
+  execute.mockImplementation((query, params) => (query.includes('FROM app_settings')
+    ? new Promise(resolve => setTimeout(resolve, 15000)).then(() => original(query, params))
+    : original(query, params)));
+  await act(async () => { renderer = Renderer.create(<App />); });
+  for (let second = 0; second < 14; second += 1) {
+    await advance(1000);
+    expect(signInPage()).toBe(false);
+    expect(page('permissions-page')).toBe(false);
+    expect(getSplashState().phase).toBe('waiting');
+  }
+  expect(renderer.root.findByType(MapScreen).props.tracking.preferences.ready).toBe(false);
+  await advance(12000);
+  expect(renderer.root.findByType(MapScreen).props.tracking.preferences).toMatchObject({ ready: true,
+    value: { onboarding: 'done' } });
+  expect(signInPage()).toBe(false);
+  expect(progressBar()).toBe(false);
+  expect(preferences().onboarding).toBe('done');
+});
+
+test('the guide passed, its preferences cannot be read at the start: the map, never D1', async () => {
+  freshInstall();
+  mockAuth = { loading: false, user: null, available: true };
+  const execute = NativeModules.BleBackground.executeDatabase;
+  const original = execute.getMockImplementation();
+  execute.mockImplementation((query, params) => (query.includes('FROM app_settings')
+    ? Promise.reject(new Error('database is locked (code 5 SQLITE_BUSY)'))
+    : original(query, params)));
+  await mount();
+  await advance(100);
+  expect(signInPage()).toBe(false);
+  expect(progressBar()).toBe(false);
 });
 
 test('an update from a version without the guide, signed out, with dog data but no saved preferences: the map', async () => {

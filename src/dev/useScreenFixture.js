@@ -2,6 +2,7 @@ import { logger } from '../logger';
 import { useEffect, useMemo, useState } from 'react';
 import { Linking, LogBox } from 'react-native';
 import { buildFixture, fixtureNameFromUrl, fixturePageFromUrl } from './ScreenFixtures';
+import { takeLaunchLink } from '../app/launchLink';
 
 // Debug builds only (__DEV__): listens for dogtracker://dev/fixture?name=…
 // (&page=<a FIXTURE_PAGES name> opens that settings page of the state) and
@@ -19,7 +20,8 @@ export function useScreenFixture(enabled = __DEV__) {
         setPage(next === 'off' ? null : fixturePageFromUrl(url));
       }
     };
-    Linking.getInitialURL().then(handle).catch(() => {});
+    // The link that opened the app, once per start (launchLink.js).
+    takeLaunchLink('fixture').then(handle).catch(() => {});
     const subscription = Linking.addEventListener('url', event => handle(event.url));
     return () => subscription.remove();
   }, [enabled]);
