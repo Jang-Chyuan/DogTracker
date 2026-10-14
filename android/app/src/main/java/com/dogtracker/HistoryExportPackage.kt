@@ -453,6 +453,14 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
     return android.graphics.Color.parseColor(value)
   }
 
+  // How far a numbered marker grows each side past its 27px circle for its
+  // text (stays at one place: 「1・3」); 0 for one number or a house.
+  private fun placeHalfWidth(place: JSONObject): Float {
+    if (place.optString("kind") == "indoor" || place.isNull("number")) return 0f
+    val text = place.get("number").toString()
+    return maxOf(0f, textPaint(34f, true, 0).measureText(text) / 2f - 18f)
+  }
+
   private fun textPaint(size: Float, bold: Boolean, colour: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textSize = size; typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT; color = colour
   }
@@ -754,7 +762,8 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
       for (i in 0 until places.length()) {
         val place = places.getJSONObject(i)
         val (px, py) = projector.toPixel(place.getDouble("latitude"), place.getDouble("longitude"))
-        placeRects.add(LabelBox(px - 33f, py - 33f, px + 33f, py + 33f))
+        val half = placeHalfWidth(place)
+        placeRects.add(LabelBox(px - 33f - half, py - 33f, px + 33f + half, py + 33f))
       }
     }
     val scale = if (op.optBoolean("scale")) ExportLabelLayout.scale(projector.metresPerPixel) else null
@@ -784,9 +793,13 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val place = places.getJSONObject(i)
         val (px, py) = projector.toPixel(place.getDouble("latitude"), place.getDouble("longitude"))
         val indoor = place.optString("kind") == "indoor"
-        canvas.drawCircle(px, py, 33f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
-        canvas.drawCircle(px, py, 27f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          color = if (indoor) color(op.getString("indoor")) else colour })
+        // Stays at one place share a marker (「1・3」): a capsule as wide as
+        // its numbers; one number stays a circle.
+        val half = placeHalfWidth(place)
+        canvas.drawRoundRect(RectF(px - 33f - half, py - 33f, px + 33f + half, py + 33f), 33f, 33f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+        canvas.drawRoundRect(RectF(px - 27f - half, py - 27f, px + 27f + half, py + 27f), 27f, 27f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (indoor) color(op.getString("indoor")) else colour })
         if (indoor) drawIcon(canvas, op.getJSONObject("house"), px - 21f, py - 21f, 42f, color(op.getString("onRoute")))
         else drawText(canvas, if (place.isNull("number")) "" else place.get("number").toString(), px, py - 22f, 44f, 34f,
           true, color(op.getString("onRoute")), "center")

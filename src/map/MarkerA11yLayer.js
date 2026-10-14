@@ -78,6 +78,8 @@ const clock = at => {
  * 10:05，30 分鐘，點兩下跳到開始」; an indoor hold 「室內，…」.
  */
 export function stopSpeech(place) {
+  // Stays at one place on one marker (「1・3」): each stay, in time order.
+  if (place.group?.length > 1) return place.group.map(member => stopSpeech({ ...member, group: null })).join('；');
   // A switch of transport is a moment, not a stay (the list's 「換交通方式」).
   if (place.type === 'switch') {
     const at = Number.isFinite(place.start) ? `，${clock(place.start)}` : '';

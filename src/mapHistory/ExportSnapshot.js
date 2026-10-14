@@ -6,8 +6,8 @@ import { timelinePresentation } from '../history/HistoryTimelinePresentation';
 // the plain data the GPX, CSV and PNG builders read (ExportBuilders.md). Pure:
 // the hook hands in the day's model (HistoryMultiModel.multiDayModel), the
 // dogs' looks and the addresses already looked up.
-import { historyMapPresentation, placeMarkers, routeLines, timeMarkers, uncrowded } from '../history/screen/HistoryMapModel';
-import { interruptionText, km, nodePill, nodeTimes, placeLines, sectionText, vehicleExclusion } from '../history/HistoryText';
+import { historyMapPresentation, listedTimeMarkers, placeMarkers, routeLines, timeMarkers, uncrowded } from '../history/screen/HistoryMapModel';
+import { interruptionText, km, leavesFrom, nodePill, nodeTimes, placeLines, sectionText, vehicleExclusion } from '../history/HistoryText';
 import { captureExportSnapshot } from './ExportData';
 import { exportLightTheme, exportRouteColor } from '../theme/exportPalette';
 
@@ -55,7 +55,8 @@ function lastPacket(models, range) {
 
 /**
  * The PNG list rows of one model (判定表「時間軸清單（匯出 PNG）」): the same
- * presentation as the screen; the end is 「結束」; a place without an
+ * presentation as the screen; the end is its time and place (no 「結束」, no
+ * 「現在」, 2026-10-14); a place without an
  * address shows its coordinates as on the screen (「24.9892, 121.3138」).
  * Document/map/raw exports retain their source data.
  */
@@ -70,12 +71,14 @@ export function exportTimelineRows(nodes, addressOf) {
     const found = addressOf(node);
     const lines = placeLines(node, found ? { state: 'found', text: found } : { state: 'none' });
     let pill = nodePill(node);
-    // 匯出的檔案一律寫實際時刻: the end is 「結束」 (its time is in the left column).
+    // 匯出的檔案一律寫實際時刻: the end is its time (the left column), with no
+    // 「現在」／「最後」 and, as on screen, no 「結束」 (2026-10-14).
     if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = nodePill({ ...node, label: t('c330') });
     const next = shown[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
       title: lines.title, coordinates: '', missing: lines.missing, pill,
       note: interruptionText(node), line: isSection(next) ? lineOf(next) : null,
+      leave: leavesFrom(node, next),
       start: node.start, end: node.end, latitude: node.latitude, longitude: node.longitude };
   });
 }
@@ -94,15 +97,16 @@ export function exportMapLayer(model, color, { multi = false, subject = 'dog' } 
   const places = (presentation?.places || []).length ? presentation.places : placeMarkers(model.locations || []);
   const allIndoor = model.points.length > 0 && model.points.every(p => p.heldReason);
   const stays = (model.locations || []).filter(n => ['stop', 'indoor', 'switch'].includes(n.type));
-  const times = multi ? timeMarkers(model.points, { allIndoor, stays, subject }).filter(marker => marker.end)
-    : uncrowded(timeMarkers(model.points, { allIndoor, stays, subject }), places);
+  // The ends the list has (a range ending in a stay: that stay's number).
+  const markers = listedTimeMarkers(timeMarkers(model.points, { allIndoor, stays, subject }), model.nodes);
+  const times = multi ? markers.filter(marker => marker.end) : uncrowded(markers, places);
   // A route of one fix (or one hold) is still a point on the map.
   const single = model.points.length === 1 ? [{ latitude: model.points[0].latitude, longitude: model.points[0].longitude }] : [];
   return {
     color,
     lines: lines.map(line => ({ width: line.width, vehicle: line.vehicle,
       coordinates: line.coordinates.map(p => [p.latitude, p.longitude]) })),
-    places: places.map(place => ({ kind: place.kind, number: place.number,
+    places: places.map(place => ({ kind: place.kind, number: place.label ?? place.number,
       latitude: place.coordinate.latitude, longitude: place.coordinate.longitude })),
     times: times.map(marker => ({ label: marker.label, end: marker.end, last: !!marker.last, time: marker.time,
       latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude })),

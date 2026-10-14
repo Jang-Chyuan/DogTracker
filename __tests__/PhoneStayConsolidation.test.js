@@ -202,14 +202,15 @@ describe('3. the hours around midnight are rows too', () => {
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
 
-  test('a past day ending with a long break: 「沒有資料 last–24:00」 after the end row', () => {
+  test('a past day ending with a long break: 「沒有資料 last–24:00」 after the last row', () => {
     const day = rows([['walk', 300], ['still', 2400]], { from: dayEnd - 3 * 3600000 });
     const next = rows([['still', 30]], { from: dayEnd + 6 * 3600000, session: 'fiction-session-2' });
     const model = timeline([...day, ...next]);
     const shown = listed(model);
     expect(shown.at(-1)).toMatchObject({ type: 'gap', start: day.at(-1).time, end: dayEnd, sessionChange: true });
     expect(sectionText(shown.at(-1)).rest).toBe(` ${sectionText(shown.at(-1)).rest.slice(1, 6)}–24:00`);
-    expect(shown.at(-2).terminalStay).toBeTruthy();
+    // 2026-10-14: the range ends in the stay, so the stay is the row before it.
+    expect(shown.at(-2)).toMatchObject({ type: 'stop', number: 1 });
     expectTiled(model, model.points[0].time, dayEnd);
   });
 
@@ -224,9 +225,9 @@ describe('3. the hours around midnight are rows too', () => {
     const before = timeline([...evening, ...morning]);
     const last = listed(before).at(-1);
     expect(listed(before).some(n => n.type === 'gap')).toBe(false);
-    expect(last).toMatchObject({ type: 'end', end: dayEnd, continuesNextDay: true });
-    expect(last.terminalStay).toMatchObject({ type: 'stop', start: home.time, end: dayEnd });
-    expect(nodePill(last).text).toBe(t('c127', { duration: listDuration(presentationDurationMs(last.terminalStay)) }));
+    // 2026-10-14: that stay is the last row itself (no end row), to 24:00.
+    expect(last).toMatchObject({ type: 'stop', start: home.time, end: dayEnd, continuesNextDay: true });
+    expect(nodePill(last).text).toBe(t('c127', { duration: listDuration(presentationDurationMs(last)) }));
     expectTiled(before, before.points[0].time, dayEnd);
     // The next day begins with that stay, 「接續前一天」, from 00:00.
     const next = historyTimeline([...evening, ...morning], { subject: 'phone', dayStart: dayEnd, dayEnd: dayEnd + 86400000,
@@ -296,10 +297,11 @@ describe('4. a still-here stay is in the list too', () => {
     const now = input.at(-1).time;
     const model = historyTimeline(input, { subject: 'phone', dayStart, dayEnd, today: true, now });
     expect(model.displayStays).toHaveLength(1);
-    const [first, last] = listed(model);
+    const shownRows = listed(model);
+    const [first] = shownRows;
+    // 2026-10-14: the range lies in the stay, so it is the one row (no end row).
+    expect(shownRows).toHaveLength(1);
     expect(first).toMatchObject({ type: 'stop', presentationOnly: 'still-here', number: null });
-    expect(last).toMatchObject({ type: 'end' });
-    expect(last.terminalStay).toBeUndefined();
     const minutes = listDuration(presentationDurationMs(first));
     expect(nodePill(first).text).toContain(minutes);
     // The map's stay label and the cursor read the same minutes.

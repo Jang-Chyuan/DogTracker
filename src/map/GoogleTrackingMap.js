@@ -560,15 +560,15 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         <RouteMarker
           key={place.key}
           coordinate={place.coordinate}
-          look={`${place.kind}:${place.number}`}
+          look={`${place.kind}:${place.label ?? place.number}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
-          label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number })}
+          label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.label ?? place.number })}
           onPress={onStopPress ? event => onStopPress(place, event) : undefined}
         >
           {place.kind === 'indoor' ? (
             <IndoorMarkerView />
           ) : (
-            <StopMarkerView number={place.number} color={route.color} />
+            <StopMarkerView number={place.number} label={place.label ?? null} color={route.color} />
           )}
         </RouteMarker>
       ))}

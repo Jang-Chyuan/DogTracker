@@ -12,13 +12,16 @@ import { size as sizes, border as borders, type, space, radius } from '../theme/
 
 const LABEL_LINE = type.mapLabel.lineHeight;
 
-/** A numbered stay or switch point: white, a 2dp ring and number in the route colour. */
-export function StopMarkerView({ number, color }) {
+/**
+ * A numbered stay or switch point: white, a 2dp ring and number in the route
+ * colour. Stays at one place share one marker (`label` 「1・3」): a capsule.
+ */
+export function StopMarkerView({ number, label = null, color }) {
   const styles = useStyles(getStyles);
   return (
-    <View style={[styles.stop, { borderColor: color }]}>
+    <View style={[styles.stop, label != null && styles.stopGroup, { borderColor: color }]}>
       <Text allowFontScaling={false} style={[styles.stopNumber, { color }]}>
-        {number}
+        {label ?? number}
       </Text>
     </View>
   );
@@ -241,6 +244,7 @@ const getStyles = makeStyles(theme => {
       alignItems: 'center',
       justifyContent: 'center',
     },
+    stopGroup: { width: 'auto', minWidth: sizes.stopMarker.size + borders.strong * 2, paddingHorizontal: space.xs },
     stopNumber: { ...type.stopNumber,   },
     indoor: { backgroundColor: colors.receiver, borderColor: colors.surface },
     time: { alignItems: 'center' },

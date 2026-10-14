@@ -145,9 +145,10 @@ describe('no 「接續隔天」 capsule', () => {
   const end = { type: 'end', start: T0 + 25 * MINUTE, end: T0 + 25 * MINUTE, latitude: 24.9892,
     longitude: 121.3132, label: i18nT('c330'), continuesNextDay: true };
 
-  test('a terminal stay running past midnight shows only its minutes', () => {
+  // 2026-10-14: the last stay is the last row (no end row), its minutes only.
+  test('a last stay running past midnight shows only its minutes', () => {
     const shown = timelinePresentation([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end]);
-    expect(shown.at(-1).terminalStay).toBeDefined();
+    expect(shown.at(-1)).toMatchObject({ type: 'stop', number: 2 });
     expect(nodePill(shown.at(-1))).toEqual({ text: '停 25 分', tone: 'stay' });
     // The PNG row is the same capsule.
     const rows = exportTimelineRows([move('walking', T0 - 5 * MINUTE, T0, 300), stay, end], () => '虛構地址');

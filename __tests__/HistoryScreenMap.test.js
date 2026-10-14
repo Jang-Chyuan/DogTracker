@@ -424,13 +424,14 @@ test('the invented edge model cannot reappear as an outside-range indoor dashed 
   expect(edges[0].countedDistanceM).toBeLessThan(30);
 });
 
-// 2026-10-14 (user): the initial stay is the list's first row (停留 1, no
-// 出發), so the map draws its number; the final stay merged into the end has none.
-test('a final stay collapsed in the list has no duplicate numbered map marker, the initial stay keeps its own; cursor moves reuse markers', () => {
+// 2026-10-14 (user): the first and the last stay are rows of their own
+// (停留 1 … 停留 3, no 出發, no end); stays at one place share one marker
+// (「1・3」) instead of numbers drawn on each other.
+test('stays at one place share one numbered marker; cursor moves reuse markers', () => {
   const first = { type: 'departure', start: at(0), end: at(0), latitude: 25, longitude: 121 };
   const initial = { type: 'stop', id: 'visit:fixture', number: 1, start: at(0), end: at(6), durationMs: 6 * MINUTE,
     latitude: 25.00001, longitude: 121, points: [{ ...first, time: first.start }], gaps: [] };
-  const middle = { ...initial, id: 'visit:second', number: 2, start: at(10), end: at(15) };
+  const middle = { ...initial, id: 'visit:second', number: 2, start: at(10), end: at(15), latitude: 25.01 };
   const final = { ...initial, id: 'visit:last', number: 3, start: at(20), end: at(25), durationMs: 5 * MINUTE };
   const end = { ...final, type: 'end', start: final.end, end: final.end, number: null };
   const model = { points: [], edges: [], locations: [first, initial, middle, final, end],
@@ -439,9 +440,10 @@ test('a final stay collapsed in the list has no duplicate numbered map marker, t
   const before = JSON.stringify(model);
   const presentation = () => historyMapPresentation(model, { color: colors.phone }).places;
   const markers = presentation();
-  expect(markers.map(n => n.number)).toEqual([1, 2]);
+  expect(markers.map(n => n.label ?? String(n.number))).toEqual(['1・3', '2']);
+  expect(markers[0]).toMatchObject({ number: 1, numbers: [1, 3] });
   expect(presentation()).toBe(markers);
   expect(JSON.stringify(model)).toBe(before);
-  const uncertain = { ...model, nodes: [first, { ...initial, points: [] }, ...model.nodes.slice(2)] };
-  expect(historyMapPresentation(uncertain, { color: colors.phone }).places.map(n => n.number)).toEqual([1, 2]);
+  // No time marker at either end: the numbers mark them.
+  expect(historyMapPresentation(model, { color: colors.phone }).times).toEqual([]);
 });

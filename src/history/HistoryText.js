@@ -123,7 +123,10 @@ export function nodePill(node) {
       if (node.continuesNextDay) return null;
       if (node.label === t("c656")) return { text: t('c331', { time: clock(node.closedAt) }), tone: 'closed' };
       if (node.label === t("c660")) return { text: t('c315', { time: clock(node.end) }), tone: 'plain' };
-      return { text: node.label, tone: 'plain' };
+      if (node.label === t('c130')) return { text: node.label, tone: 'plain' };
+      // 2026-10-14 (user): no 「結束」 anywhere — the end row of a range that
+      // ends moving is its time, its solid node and its address only.
+      return null;
     default:
       return null;
   }
@@ -209,10 +212,23 @@ export const spoken = text =>
  * One item per movement or gap: 「開車 12 分鐘，6.3 公里」,
  * 「走路 27 分鐘，1.7 公里」, 「沒有資料 10:29 到 10:41」.
  */
-export function sectionSpeech(section) {
+export function sectionSpeech(section, from = null) {
   const text = sectionText(section);
-  return spoken(`${text.lead}${text.time ? ` ${text.time}` : ''}${text.rest}`);
+  const leaving = leavesFrom(from, section) ? t('c1336', { place: leftPlace(from) }) : '';
+  return spoken(`${leaving}${text.lead}${text.time ? ` ${text.time}` : ''}${text.rest}`);
 }
+
+/**
+ * 2026-10-14 (user, option B): a movement row right after a stay (a stay, a
+ * 室內 hold) leaves it: the list draws a down chevron on the line under the
+ * stay (screen and PNG), and TalkBack starts the movement row with
+ * 「從停留 2 離開，」. Not after 出發, 恢復記錄 or a break, not into a break.
+ */
+export function leavesFrom(row, next) {
+  return ['stop', 'indoor'].includes(row?.type) && next?.type === 'movement';
+}
+const leftPlace = row => (row.type === 'indoor' ? t('c114')
+  : row.number != null ? t('c136', { duration: row.number }) : t('c136', { duration: '' }).trim());
 
 /**
  * One item per node: 「停留 2，大湳森林公園東側入口，09:41 到 10:09，28 分鐘」;

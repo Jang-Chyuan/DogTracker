@@ -130,7 +130,8 @@ describe('words (copy deck)', () => {
     expect(nodePill({ type: 'resume' }).text).toBe(i18nT('c335'));
     expect(nodePill({ type: 'switch' })).toBeNull();
     expect(nodePill({ type: 'end', label: i18nT('c130') }).text).toBe(i18nT('c130'));
-    expect(nodePill({ type: 'end', label: i18nT('c330') }).text).toBe(i18nT('c330'));
+    // 2026-10-14 (user): no 「結束」 — a plain end has no capsule.
+    expect(nodePill({ type: 'end', label: i18nT('c330') })).toBeNull();
     expect(nodePill({ type: 'end', label: i18nT("c660"), end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('最後 12:05');
     expect(nodePill({ type: 'end', label: i18nT("c656"), closedAt: new Date(2026, 9, 3, 10, 20).getTime() }))
       .toEqual({ text: '記錄已關閉 10:20', tone: 'closed' });
@@ -169,8 +170,8 @@ describe('fixtures', () => {
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
     expect(kinds).toEqual(['departure', 'walking', 'switch', 'driving', 'switch', 'walking', 'stop', 'end']);
-    // The last stay is the end row's (「結束 · 停 N 分」, #154): no number.
-    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2]);
+    // 2026-10-14: the last stay is a numbered row of its own (no end row).
+    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2, 3]);
     expect(model.sections.find(s => s.mode === 'driving').countedDistanceM).toBe(0);
   });
   test('history-gap: 沒有資料 twice, 恢復記錄 only after the 40-minute break', async () => {
@@ -382,8 +383,8 @@ describe('the history screen shows the list', () => {
     const ids = renderer.root.findAll(node => typeof node.type === 'string' && /^timeline-/.test(node.props.testID || ''))
       .map(node => node.props.testID);
     expect(ids).toEqual(['timeline-departure', 'timeline-movement-walking', 'timeline-switch', 'timeline-movement-driving',
-      // The cursor opens inside the last stay, represented by the single terminal endpoint: that row is lit.
-      'timeline-switch', 'timeline-movement-walking', 'timeline-end', 'timeline-selected']);
+      // The cursor opens inside the last stay, the last row (no end row): that row is lit.
+      'timeline-switch', 'timeline-movement-walking', 'timeline-stop', 'timeline-selected']);
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain(i18nT('c135'));
     expect(text).not.toContain('不算距離');

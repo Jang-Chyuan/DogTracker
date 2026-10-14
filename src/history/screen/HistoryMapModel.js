@@ -415,7 +415,6 @@ function hiddenPresentationStays(nodes) {
   if (!hiddenBoundaryStays.has(nodes)) {
     const shown = timelinePresentation(nodes), hidden = new Set();
     if (shown[0]?.departureStay) hidden.add(nodes[1]);
-    if (shown[shown.length - 1]?.terminalStay) hidden.add(nodes[nodes.length - 2]);
     hiddenBoundaryStays.set(nodes, hidden);
   }
   return hiddenBoundaryStays.get(nodes);
@@ -427,11 +426,56 @@ function stablePlaceMarkers(locations, nodes) {
     && locations.every((node, i) => markerFields.every((key, j) =>
       Object.is(node[key], cached.snapshot[i][j]))
       && Object.is(shownStayDurationMs(nodes, node), cached.snapshot[i][markerFields.length]))) return cached.places;
-  const places = placeMarkers(hidden?.size ? locations.filter(node => !hidden.has(node)) : locations, nodes)
-    .filter(place => place.kind === 'indoor' || place.number != null);
+  const places = groupSamePlaceStays(placeMarkers(hidden?.size ? locations.filter(node => !hidden.has(node)) : locations, nodes)
+    .filter(place => place.kind === 'indoor' || place.number != null));
   markerProjections.set(locations, { places, hidden,
     snapshot: locations.map(node => [...markerFields.map(key => node[key]), shownStayDurationMs(nodes, node)]) });
   return places;
+}
+
+/**
+ * 2026-10-14: the range's ends on the map follow the list. A range that begins
+ * with a stay (no 出發 row) or ends with one (no end row) has no separate
+ * start / end time marker there: the stay's number marks that place, so the
+ * labels of a day that starts and ends at home do not stack. Without a node
+ * list (a bare model) both ends are drawn.
+ */
+const listedEndsCache = new WeakMap();
+export function listedEnds(nodes) {
+  if (!Array.isArray(nodes) || !nodes.length) return { start: true, end: true };
+  if (!listedEndsCache.has(nodes)) {
+    const rows = timelinePresentation(nodes);
+    listedEndsCache.set(nodes, { start: rows.some(n => n.type === 'departure'), end: rows.some(n => n.type === 'end') });
+  }
+  return listedEndsCache.get(nodes);
+}
+/** The time markers without the ends the list does not have (listedEnds). */
+export function listedTimeMarkers(markers, nodes) {
+  const ends = listedEnds(nodes);
+  if (ends.start && ends.end) return markers;
+  const first = markers.find(marker => marker.end && !marker.last);
+  return markers.filter(marker => !(marker.last ? !ends.end : marker === first && !ends.start));
+}
+
+/**
+ * 2026-10-14: numbered stays at one place (the start and the end of a day at
+ * home, a café visited twice) are one marker with all their numbers
+ * (「1・3」), not numbers drawn on top of each other. One place: within the
+ * stay radius (HistoryConfig radiusM) of the group's first stay. The marker
+ * keeps the first stay's key, time and coordinate (a tap goes to it); `group`
+ * holds every stay for TalkBack (stopSpeech).
+ */
+export function groupSamePlaceStays(places, radiusM = configFor('phone').radiusM) {
+  const out = [];
+  for (const place of places) {
+    const host = place.kind === 'number' && place.type === 'stop' && out.find(other => other.kind === 'number'
+      && other.type === 'stop' && distanceMeters(other.coordinate, place.coordinate) <= radiusM);
+    if (!host) { out.push(place); continue; }
+    const group = [...(host.group || [host]), place];
+    out[out.indexOf(host)] = { ...host, group, numbers: group.map(p => p.number),
+      label: group.map(p => p.number).join('・') };
+  }
+  return out;
 }
 
 // Metres between two coordinates (equirectangular: the history is a few km).
@@ -498,12 +542,12 @@ export function historyMapPresentation(
     // a middle time only where the cursor has been; one too close to a number or another time is left
     // out (its label would sit on theirs).
     times: uncrowded(
-      timeMarkers(points, {
+      listedTimeMarkers(timeMarkers(points, {
         subject, allIndoor,
         stays: displayLocations.filter(n =>
           ['stop', 'indoor', 'switch'].includes(n.type),
         ),
-      })
+      }), model.nodes)
         // 途中的時間標記只畫走過的部分（游標之前）; the ends always.
         .filter(marker =>
           marker.end

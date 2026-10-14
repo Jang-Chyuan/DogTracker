@@ -23,9 +23,11 @@ test.each(['indoor', 'stop', 'departure', 'end', 'switch'])('%s uses identical s
   const layout = layoutRow(row, defaultMeasure);
   expect(layout.titleLines).toEqual(['24.9378, 121.2954']);
   expect(row.coordinates).toBe('');
-  expect(layout.items.map(item => item.kind)).toEqual(type === 'switch' ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
+  // 2026-10-14: the end has no capsule (no 「結束」), as a switch point.
+  const bare = type === 'switch' || type === 'end';
+  expect(layout.items.map(item => item.kind)).toEqual(bare ? [] : type === 'stop' ? ['pill', 'note'] : ['pill']);
   if (type === 'stop') expect(layout.items[1].text).toBe(row.note);
-  expect(layout.secondLines).toBe(type === 'switch' ? 0 : type === 'stop' ? 2 : 1);
+  expect(layout.secondLines).toBe(bare ? 0 : type === 'stop' ? 2 : 1);
   const found = placeLines(node, { state: 'found', text: address });
   expect(found).toMatchObject({ title: address, coordinates: missing.title });
   const foundRow = exportTimelineRows([node], () => address)[0];

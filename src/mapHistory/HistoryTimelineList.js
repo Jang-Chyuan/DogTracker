@@ -23,6 +23,7 @@ import {
   placeSpeech,
   sectionSpeech,
   sectionText,
+  leavesFrom,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
 import { withAlpha } from '../history/screen/HistoryMapModel';
@@ -191,6 +192,12 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
         {/* The line under a node is the next row's (判定表「時間軸清單」). */}
         <Track kind={lineOf(next)} color={color} from={12} />
         <View style={[styles.firstLineCenter, firstLine]} testID="place-node-first-line"><Node node={node} color={color} centered /></View>
+        {/* Leaving this stay (2026-10-14): a down chevron on the line under the node. */}
+        {leavesFrom(node, next) && (
+          <View style={[styles.leave, { top: firstLine.height / 2 + sizes.timeline.node.stop / 2 }]} testID="leave-chevron">
+            <Glyph name="leave" color={color} size={sizes.timeline.leave} />
+          </View>
+        )}
       </View>
       <View style={styles.placeOuter}>
         {/* The row the cursor is on: a pale fill of the route colour (H2). */}
@@ -222,7 +229,7 @@ const PlaceRow = React.memo(PlaceRowView, (before, after) =>
   && before.selected === after.selected && before.onPress === after.onPress
   && before.onRowLayout === after.onRowLayout && samePlace(before.place, after.place));
 
-function SectionRowView({ section, color, onPress }) {
+function SectionRowView({ section, from = null, color, onPress }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const text = sectionText(section);
@@ -235,7 +242,7 @@ function SectionRowView({ section, color, onPress }) {
       testID={`timeline-${section.type}-${section.mode}`}
       {...tap}
       accessibilityRole="button"
-      accessibilityLabel={sectionSpeech(section)}
+      accessibilityLabel={sectionSpeech(section, from)}
     >
       <View style={[styles.timeColumn, timeWidth()]} />
       <View style={[styles.trackColumn, styles.transportTrack]}>
@@ -294,6 +301,7 @@ function HistoryTimelineList({
           <SectionRow
             key={`s${node.start}-${index}`}
             section={node}
+            from={isSection(nodes[index - 1]) ? null : nodes[index - 1] ?? null}
             color={color}
             onPress={onPressNode}
           />
@@ -351,6 +359,8 @@ const getStyles = makeStyles(theme => {
     trackColumn: { width: TRACK_WIDTH, alignItems: 'center' },
     transportTrack: { justifyContent: 'center' },
     transportIcon: { backgroundColor: colors.elevated, paddingVertical: space.xs },
+    // The page colour around it: no dot of the line shows through.
+    leave: { position: 'absolute', backgroundColor: colors.elevated, paddingVertical: border.strong },
     track: {
       position: 'absolute',
       bottom: 0,

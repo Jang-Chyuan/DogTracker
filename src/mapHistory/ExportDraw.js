@@ -19,6 +19,8 @@ export const EXPORT_ICONS = {
   car: { stroke: 'M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7M7.8 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M18.3 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0' },
   dots: { fill: 'M6.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M13.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M20.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0' },
   house: { stroke: 'M4 11l8-7 8 7M6.5 9.5V20h11V9.5' },
+  // Leaving a stay: Glyph 'leave', filled.
+  leave: { fill: 'M2.76 9.24L5.24 6.76L12 13.53L18.76 6.76L21.24 9.24L12 18.47Z' },
 };
 
 const TRACK_X = S.timeColumn + S.trackColumn / 2;
@@ -94,8 +96,14 @@ function rowOps(block) {
   const nodeY = y + tokenSize.export.rowInset + S.addressLine / 2;
   // The line under a node starts below it: no dot half hidden by the node's edge.
   const nodeRadius = Math.max(...nodeOps(row, color, nodeY).filter(op => op.t === 'circle').map(op => op.r));
-  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: nodeY + nodeRadius }));
+  // Leaving a stay (2026-10-14): the down chevron right under the node, the
+  // line cleared around it as around the movement icons.
+  const leave = tokenSize.export.leaveGlyph, leaveTop = nodeY + nodeRadius + tokenSize.export.leaveInset;
+  const cleared = row.leave ? leaveTop + leave + tokenSize.export.leaveInset : nodeY + nodeRadius;
+  ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: cleared }));
   ops.push(...nodeOps(row, color, nodeY));
+  if (row.leave) ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop,
+    size: leave, color });
   // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
   block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X + block.titleX, y + tokenSize.export.rowInset + block.titleY + index * S.addressLine, S.addressLine,
