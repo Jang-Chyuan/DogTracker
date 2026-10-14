@@ -277,14 +277,17 @@ test.each(['coordinate', 'time', 'gap', 'number'])('a range that begins with a s
   expect(shown[0]).toMatchObject({ start: 0, latitude: stay.latitude, number: stay.number });
 });
 
-test('a range that begins moving keeps 出發; a detected departure takes the seconds of the stay it set off from', () => {
+test('a range that begins moving keeps 出發; the seconds of the stay a detected departure set off from are the walk\'s', () => {
   const departure = { type: 'departure', start: 0, end: 0, latitude: 24.9892, longitude: 121.3132 };
   expect(timelinePresentation([departure, walk(0, 120000), { ...terminalStay, number: 1 }])[0].type).toBe('departure');
   // The detected departure is the stay's last fix (the fix before the walk).
   const stay = { ...terminalStay, number: 1, start: 0, end: 50000, durationMs: 50000 };
   const shown = timelinePresentation([{ ...departure, detected: true }, stay, walk(50000, 400000)]);
   expect(shown.map(node => node.type)).toEqual(['departure', 'movement']);
-  expect(shown[0]).toMatchObject({ start: 0, end: 50000, departureStay: stay });
+  // 出發 shows no minutes, so it is a moment; the walk starts at it (the
+  // times add up: HistoryTimeClocks).
+  expect(shown[0]).toMatchObject({ start: 0, end: 0, departureStay: stay });
+  expect(shown[1]).toMatchObject({ start: 0, end: 400000 });
   expect(nodePill(shown[0]).text).toBe('出發');
 });
 

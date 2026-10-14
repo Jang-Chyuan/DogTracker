@@ -257,6 +257,7 @@ function presentationOf(all) {
   closeHoles(shown);
   startingStay(shown);
   endingStay(shown);
+  departingMove(shown);
   const indoor = indoorAtDeparture(nodes);
   // The first 室內 row is that hold (only 0 m rows come before it), even when
   // a folded short break gave it a new object.
@@ -310,6 +311,20 @@ function endingStay(shown) {
   const end = shown[shown.length - 1], stay = shown[shown.length - 2];
   if (end?.type === 'end' && pointRow(end) && end.closedAt == null
     && ['stop', 'indoor'].includes(stay?.type) && stay.end === end.start) shown.pop();
+}
+
+/**
+ * 2026-10-14 (#163 round 3, the times add up): 出發 shows no minutes, so the
+ * seconds of the stay it set off from (a detected departure, `departureStay`)
+ * are the first movement's time: 「06:59 出發」「走路 20 分」「07:19 …」, not
+ * 走路 19 分 with a minute nobody can see. 出發 is a moment again; the source
+ * stay is still unnumbered (endpointStays). Display only.
+ */
+function departingMove(shown) {
+  const [first, next] = shown;
+  if (first?.type !== 'departure' || !(first.end > first.start) || next?.type !== 'movement' || next.start !== first.end) return;
+  shown[1] = stretch(next, first.start, next.end, 0);
+  shown[0] = { ...first, end: first.start, durationMs: 0 };
 }
 
 const gapRow = node => node?.type === 'gap';

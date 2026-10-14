@@ -14,8 +14,9 @@ const isGap = row => row.type === 'gap';
 /**
  * The mismatches of a node list (historyTimeline's `nodes`), [] when every
  * total adds up: { at, kind, ... } with clock minutes only (no places).
- * Rows checked: stays, 室內, movements; a 出發 / end row is a moment. A gap
- * row says its own two clocks; rows meet end to start.
+ * Rows checked: stays, 室內, movements, and 出發 / end rows (they show no
+ * minutes, so they must span none). A gap row says its own two clocks; rows
+ * meet end to start.
  */
 export function timelineClockMismatches(nodes) {
   const rows = timelinePresentation(nodes);
@@ -26,9 +27,11 @@ export function timelineClockMismatches(nodes) {
     if (timed && next && next.start !== row.end && !(next.start === next.end && next.start === row.end)) {
       out.push({ at: i, kind: 'not-tiled', type: row.type, end: row.end, nextStart: next.start });
     }
-    if (!timed || isGap(row) || row.departureStay || row.type === 'departure' || row.type === 'end') return;
+    if (!timed || isGap(row)) return;
     const start = clockMinute(row.start), end = clockMinute(row.end);
-    const minutes = shownMinutes(row), breaks = breakMinutes(row);
+    // A 出發 / end row shows no minutes (「出發」 only): it must take none.
+    const moment = row.type === 'departure' || row.type === 'end';
+    const minutes = moment ? 0 : shownMinutes(row), breaks = moment ? 0 : breakMinutes(row);
     if (start + minutes + breaks !== end) {
       out.push({ at: i, kind: 'sum', type: row.type, start, minutes, breaks, end });
     }
