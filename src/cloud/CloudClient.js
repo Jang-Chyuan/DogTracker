@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cloudConfig } from './CloudConfig';
 import { createCloudSecureStorage } from './CloudSecureStorage';
 import { cloudDiagnosticFetch } from '../diagnostics/CloudAttemptDiagnostics';
+import { guardAuthRefresh } from './CloudRefreshGuard';
 
 let client;
 export function getCloudClient() {
@@ -16,7 +17,9 @@ export function getCloudClient() {
     client = createClient(cloudConfig.url, cloudConfig.publishableKey, {
       auth: { storage: createCloudSecureStorage(), persistSession: true,
         autoRefreshToken: true, detectSessionInUrl: false },
-      global: { fetch: cloudDiagnosticFetch(globalThis.fetch) },
+      // A captive portal or a Supabase hiccup answering the token refresh must
+      // not delete the stored sign-in (CloudRefreshGuard).
+      global: { fetch: cloudDiagnosticFetch(guardAuthRefresh(globalThis.fetch)) },
     });
   }
   return client;
