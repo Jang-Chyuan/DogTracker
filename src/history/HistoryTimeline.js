@@ -707,16 +707,19 @@ export function historyTimeline(rows = [], options = {}) {
   // 判定表「交通方式切換點」: stays and switch points share one numbering in
   // time order; holds, departure, resume and end are not numbered.
   // 2026-10-13 (user, #154): the numbers shown start at 1 and skip none. A
-  // stay the list shows inside 出發 or the end (「出發 · 停 N 分」「結束 ·
-  // 停 N 分」) has no number of its own (`listedWith`), and the map draws no
-  // marker for it; the stays and switch points after it count from 1.
+  // stay that is the range's start or end (the seconds inside 出發, or the
+  // first / last row: 2026-10-14) has no number of its own (`listedWith`),
+  // and the map draws its time marker, not a number; the others count from 1.
   const numbered = node => (node.type === 'stop' || node.type === 'switch') && !node.presentationOnly;
   let number = 0;
   for (const node of nodes) if (numbered(node)) node.number = ++number;
+  // 2026-10-14 (user, #163 round 3): the stays a range begins and ends with
+  // are its start and end (the hollow / solid circle), not numbered stays.
   const merged = endpointStays(nodes);
-  if ((merged.departure && numbered(merged.departure)) || (merged.end && numbered(merged.end))) {
-    if (merged.departure && numbered(merged.departure)) merged.departure.listedWith = 'departure';
-    if (merged.end && numbered(merged.end)) merged.end.listedWith = 'end';
+  const ends = [[merged.departure, 'departure'], [merged.start, 'start'], [merged.end, 'end']]
+    .filter(([node]) => node && numbered(node));
+  if (ends.length) {
+    for (const [node, listedWith] of ends) if (!node.listedWith) node.listedWith = listedWith;
     number = 0;
     for (const node of nodes) if (numbered(node)) node.number = node.listedWith ? null : ++number;
   }

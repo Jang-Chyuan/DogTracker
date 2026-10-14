@@ -545,13 +545,14 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         <RouteMarker
           key={marker.key}
           coordinate={marker.coordinate}
-          look={`${marker.label}:${marker.end}:${!!marker.last}`}
+          look={`${marker.label}:${marker.end}:${!!marker.last}:${!!marker.first}`}
           zIndex={20}
         >
           <TimeMarkerView
             label={marker.label}
             end={marker.end}
             last={!!marker.last}
+            first={!!marker.first}
             color={route.color}
           />
         </RouteMarker>

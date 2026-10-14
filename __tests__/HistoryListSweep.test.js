@@ -110,7 +110,7 @@ test('a stationary run that settles a few seconds after the first fix is the fir
 // 2026-10-13 (user, #154): the numbers shown start at 1 and skip none — list,
 // map markers, PNG list, GPX names. 2026-10-14 (user): the stays a range
 // begins and ends with are its first and last rows, numbered (no 出發, no end).
-test('the first stay is 停留 1 and the last stay keeps its number; no merged ends', () => {
+test('the first and last stays are the range\'s start and end; the stays between count from 1', () => {
   // A phone at home (5 s fixes), a walk, a stay elsewhere, a walk, a stay to the end.
   const base = new Date(2026, 0, 5, 8, 0).getTime();
   const rows = [];
@@ -128,30 +128,32 @@ test('the first stay is 停留 1 and the last stay keeps its number; no merged e
   const model = historyTimeline(rows, { subject: 'phone', dayStart, dayEnd: dayStart + 86400000,
     manualRange: { start: rows[0].time, end: rows.at(-1).time } });
   const shown = timelinePresentation(model.nodes);
-  expect(shown[0]).toMatchObject({ type: 'stop', number: 1, start: rows[0].time });
+  // 2026-10-14 (round 3): the first and the last stay are the range's start
+  // and end (the hollow / solid circle, no number); no 出發, no end row.
+  expect(shown[0]).toMatchObject({ type: 'stop', number: null, start: rows[0].time });
   expect(shown.some(n => n.type === 'departure' || n.departureStay)).toBe(false);
-  // 2026-10-14: the last stay is a numbered row too; no end row.
-  expect(shown.at(-1)).toMatchObject({ type: 'stop', number: 3 });
+  expect(shown.at(-1)).toMatchObject({ type: 'stop', number: null });
   expect(shown.some(n => n.type === 'end' || n.terminalStay)).toBe(false);
-  // The list: three numbered stays, 1 to 3.
-  expect(shown.filter(n => n.number != null).map(n => n.number)).toEqual([1, 2, 3]);
+  // The list: the one stay in between is 1.
+  expect(shown.filter(n => n.number != null).map(n => n.number)).toEqual([1]);
   expect(model.locations.filter(n => n.type === 'stop').map(n => [n.number, n.listedWith ?? null]))
-    .toEqual([[1, null], [2, null], [3, null]]);
-  // The map draws the same numbers.
+    .toEqual([[null, 'start'], [1, null], [null, 'end']]);
+  // The map draws the same numbers (the ends are its time markers).
   const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
-  expect(map.places.filter(p => p.kind === 'number').map(p => p.number)).toEqual([1, 2, 3]);
+  expect(map.places.filter(p => p.kind === 'number').map(p => p.number)).toEqual([1]);
   // The PNG list is the screen's list, with no 出發 pill.
   const png = exportTimelineRows(model.nodes, () => '虛構地址');
-  expect(png.filter(r => r.number != null).map(r => r.number)).toEqual([1, 2, 3]);
+  expect(png.filter(r => r.number != null).map(r => r.number)).toEqual([1]);
   expect(png.some(r => r.type === 'departure' || r.pill?.text?.includes(t('c124')))).toBe(false);
   // GPX: every stay is still a waypoint; the merged ones are named without a number.
   const snapshot = buildExportSnapshot({ day: { subjects: [{ id: 'phone', model }] },
     range: { start: rows[0].time, end: rows.at(-1).time }, subject: 'phone' });
   const names = [...buildGPX(snapshot).matchAll(/<wpt[^>]*><time>[^<]*<\/time><name>([^<]*)<\/name>/g)].map(m => m[1]);
   const numbered = number => new RegExp(`^${t('c793', { prefix: '', number, value: '\\d+' })}$`);
+  const unnumbered = new RegExp(`^${t('c1310', { prefix: '', value: '\\d+' })}$`);
   expect(names).toHaveLength(3);
-  expect(names[0]).toMatch(numbered(1));
-  expect(names[1]).toMatch(numbered(2));
-  expect(names[2]).toMatch(numbered(3));
+  expect(names[0]).toMatch(unnumbered);
+  expect(names[1]).toMatch(numbered(1));
+  expect(names[2]).toMatch(unnumbered);
   expect(names.some(name => name.includes(t('c124')) || name.includes(t('c330')))).toBe(false);
 });

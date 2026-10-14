@@ -736,13 +736,19 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
         val marker = times.getJSONObject(i)
         val (px, py) = projector.toPixel(marker.getDouble("latitude"), marker.getDouble("longitude"))
         val end = marker.optBoolean("end")
-        val r = if (end) 20f else 15f
+        val r = if (marker.optBoolean("first") && marker.optBoolean("last")) 31f else if (end) 20f else 15f
+        if (marker.optBoolean("last") && marker.optBoolean("first")) {
+          // A range wholly at one place: the end inside the start's ring.
+          canvas.drawCircle(px, py, 31f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
+          canvas.drawCircle(px, py, 27.4f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = 7.2f; color = colour })
+        }
         if (marker.optBoolean("last")) {
           // The end: solid in the route colour inside a ring of it at
           // opacity.endRing (0.33), as the list's end node and the map's.
-          canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          canvas.drawCircle(px, py, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(84, Color.red(colour), Color.green(colour), Color.blue(colour)) })
-          canvas.drawCircle(px, py, r - 7.2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colour })
+          canvas.drawCircle(px, py, 12.8f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colour })
         } else {
           canvas.drawCircle(px, py, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
           canvas.drawCircle(px, py, r - (if (end) 3.6f else 2.4f), Paint(Paint.ANTI_ALIAS_FLAG).apply {

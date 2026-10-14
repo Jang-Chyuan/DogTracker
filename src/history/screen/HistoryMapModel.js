@@ -434,27 +434,18 @@ function stablePlaceMarkers(locations, nodes) {
 }
 
 /**
- * 2026-10-14: the range's ends on the map follow the list. A range that begins
- * with a stay (no 出發 row) or ends with one (no end row) has no separate
- * start / end time marker there: the stay's number marks that place, so the
- * labels of a day that starts and ends at home do not stack. Without a node
- * list (a bare model) both ends are drawn.
+ * 2026-10-14 (user, #163 round 3): the range's start and end are always the
+ * hollow and the solid time marker — the stays a range begins and ends with
+ * have no number, so no numbered marker sits on them. A start and an end at
+ * one place (home → home) are one marker, `first` and `last`: the solid end
+ * inside the start's hollow ring, 「00:00–09:25」, both visible, not two
+ * markers and labels on each other.
  */
-const listedEndsCache = new WeakMap();
-export function listedEnds(nodes) {
-  if (!Array.isArray(nodes) || !nodes.length) return { start: true, end: true };
-  if (!listedEndsCache.has(nodes)) {
-    const rows = timelinePresentation(nodes);
-    listedEndsCache.set(nodes, { start: rows.some(n => n.type === 'departure'), end: rows.some(n => n.type === 'end') });
-  }
-  return listedEndsCache.get(nodes);
-}
-/** The time markers without the ends the list does not have (listedEnds). */
-export function listedTimeMarkers(markers, nodes) {
-  const ends = listedEnds(nodes);
-  if (ends.start && ends.end) return markers;
-  const first = markers.find(marker => marker.end && !marker.last);
-  return markers.filter(marker => !(marker.last ? !ends.end : marker === first && !ends.start));
+export function listedTimeMarkers(markers, radiusM = configFor('phone').radiusM) {
+  const head = markers.find(marker => marker.end && !marker.last), tail = markers.find(marker => marker.last);
+  if (!head || !tail || distanceMeters(head.coordinate, tail.coordinate) > radiusM) return markers;
+  return markers.filter(marker => marker !== head).map(marker => (marker === tail
+    ? { ...tail, first: true, label: `${head.label}–${tail.label}` } : marker));
 }
 
 /**
@@ -547,7 +538,7 @@ export function historyMapPresentation(
         stays: displayLocations.filter(n =>
           ['stop', 'indoor', 'switch'].includes(n.type),
         ),
-      }), model.nodes)
+      }))
         // 途中的時間標記只畫走過的部分（游標之前）; the ends always.
         .filter(marker =>
           marker.end

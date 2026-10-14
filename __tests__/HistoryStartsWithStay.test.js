@@ -1,17 +1,20 @@
 // 2026-10-14 (user decisions, #163): a range is listed as its stays and
 // movements, with no merged ends.
-// - Begins with a stay: no 「出發」. That stay is the first row, 停留 1, with
-//   its minutes and address (list, map, TalkBack, PNG, GPX). 出發 is the start
-//   of a range that begins moving (a walk first, or the detected departure).
-// - Ends with a stay: that stay is the last row, numbered, and there is no
-//   end row and no end time marker. A range that ends moving keeps its end
+// - Begins with a stay: no 「出發」 row. That stay is the first row, with its
+//   minutes and address; its node is the hollow start circle and it has no
+//   number (round 3). 出發 is the start of a range that begins moving (a walk
+//   first, or the detected departure).
+// - Ends with a stay: that stay is the last row, its node the solid end
+//   circle, no number; no end row. A range that ends moving keeps its end
 //   row: its time, solid node and address, and no 「結束」 anywhere.
+// - The stays in between are numbered from 1. On the map the ends are the
+//   hollow / solid time markers (one marker when they are at one place).
 // - Every stay → movement: a down chevron under the stay (list and PNG), and
 //   TalkBack says 「從停留 N 離開，」 on the movement row.
 // Invented phone days near Taoyuan station only.
 import { historyTimeline } from '../src/history/HistoryTimeline';
-import { timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
-import { leavesFrom, nodePill, placeSpeech, sectionSpeech } from '../src/history/HistoryText';
+import { rangeEndRows, timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
+import { clock, leavesFrom, nodePill, placeSpeech, sectionSpeech } from '../src/history/HistoryText';
 import { groupSamePlaceStays, historyMapPresentation } from '../src/history/screen/HistoryMapModel';
 import { stopSpeech } from '../src/map/MarkerA11yLayer';
 import { buildExportSnapshot, exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
@@ -76,30 +79,42 @@ function expectTiled(shown, from, to) {
   for (let i = 1; i < timed.length; i++) expect(timed[i].start).toBe(timed[i - 1].end);
 }
 
-test('a day starting and ending with a stay: 停留 1 … 停留 N, no 出發 and no end row, numbered everywhere', () => {
+test('a day starting and ending with a stay: start circle, 停留 1, end circle; no 出發 / end rows', () => {
   const rows = day([['still', 20 * 60], ['walk', 10 * 60], ['still', 15 * 60], ['back', 10 * 60], ['still', 20 * 60]],
     dayStart + 8 * 60 * MINUTE);
   const model = whole(rows);
   const { shown, png } = expectNoEndWords(model);
   expect(kinds(shown)).toEqual(['stop', 'movement', 'stop', 'movement', 'stop']);
-  expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, 2, 3]);
+  expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, 1, null]);
   expect(shown[0]).toMatchObject({ start: rows[0].time });
   expect(nodePill(shown[0]).text).toBe(t('c127', { duration: '20 分' }));
-  expect(placeSpeech(shown[0], '虛構起點')).toMatch(new RegExp(`^${t('c136', { duration: 1 })}，虛構起點，`, 'u'));
+  // TalkBack reads the row as it is (no 出發 / 結束): 「停留，地址，…」.
+  expect(placeSpeech(shown[0], '虛構起點')).toMatch(/^停留，虛構起點，/u);
+  expect(placeSpeech(shown[2], '虛構地點')).toMatch(new RegExp(`^${t('c136', { duration: 1 })}，虛構地點，`, 'u'));
   expectTiled(shown, rows[0].time, rows.at(-1).time);
-  // The PNG list and GPX names carry the same numbers (#154).
-  expect(png.filter(r => r.number != null).map(r => r.number)).toEqual([1, 2, 3]);
+  // The list's start / end circles: the first and the last row.
+  expect(rangeEndRows(shown)).toEqual({ start: 0, end: 4 });
+  // The PNG list and GPX names carry the same numbers (#154); the start and
+  // end stays are 「停留・N 分」 (c1310), no number.
+  expect(png.filter(r => r.number != null).map(r => r.number)).toEqual([1]);
+  expect(png.filter(r => r.kind === 'place').map(r => [r.rangeStart, r.rangeEnd])).toEqual([[true, false], [false, false], [false, true]]);
   const names = waypointNames(model);
-  [1, 2, 3].forEach((number, i) => expect(names[i]).toMatch(numberedName(number)));
-  // The map: stays 1 and 3 are one place (home), one marker 「1・3」; stay 2
-  // its own. No start or end time marker: the numbers mark them.
+  const unnumbered = new RegExp(`^${t('c1310', { prefix: '', value: '\\d+' })}$`);
+  expect(names).toHaveLength(3);
+  expect(names[0]).toMatch(unnumbered);
+  expect(names[1]).toMatch(numberedName(1));
+  expect(names[2]).toMatch(unnumbered);
+  // The map: only stay 1 is a number; the range's start and end (home, one
+  // place) are one time marker, the solid end inside the start's ring.
   const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
-  expect(map.places.map(p => p.label ?? String(p.number))).toEqual(['1・3', '2']);
-  expect(stopSpeech(map.places[0])).toMatch(new RegExp(`^${t('c136', { duration: 1 })}，.*；${t('c136', { duration: 3 })}，`, 'u'));
-  expect(map.times.some(marker => marker.end)).toBe(false);
+  expect(map.places.map(p => p.label ?? String(p.number))).toEqual(['1']);
+  expect(stopSpeech(map.places[0])).toMatch(new RegExp(`^${t('c136', { duration: 1 })}，`, 'u'));
+  const ends = map.times.filter(marker => marker.end);
+  expect(ends).toHaveLength(1);
+  expect(ends[0]).toMatchObject({ first: true, last: true, label: expect.stringMatching(/^\d\d:\d\d–\d\d:\d\d$/u) });
   const exported = snapshotOf(model).subjects[0].map;
-  expect(exported.times.some(marker => marker.end)).toBe(false);
-  expect(exported.places.map(p => String(p.number))).toEqual(['1・3', '2']);
+  expect(exported.places.map(p => String(p.number))).toEqual(['1']);
+  expect(exported.times.filter(marker => marker.end)).toEqual([expect.objectContaining({ first: true, last: true })]);
 });
 
 test('every stay → movement leaves the stay: a chevron under the stay and 「從停留 N 離開，」', () => {
@@ -109,11 +124,18 @@ test('every stay → movement leaves the stay: a chevron under the stay and 「�
   const shown = timelinePresentation(model.nodes);
   expect(shown.map((n, i) => leavesFrom(n, shown[i + 1]))).toEqual([true, false, true, false, false]);
   const speech = speechOf(shown);
-  expect(speech[1]).toMatch(new RegExp(`^${t('c1336', { place: t('c136', { duration: 1 }) })}走路`, 'u'));
-  expect(speech[3]).toMatch(new RegExp(`^${t('c1336', { place: t('c136', { duration: 2 }) })}走路`, 'u'));
+  // The first stay has no number: 「從停留離開，」; stay 1 「從停留 1 離開，」.
+  expect(speech[1]).toMatch(new RegExp(`^${t('c1336', { place: '停留' })}走路`, 'u'));
+  expect(speech[3]).toMatch(new RegExp(`^${t('c1336', { place: t('c136', { duration: 1 }) })}走路`, 'u'));
   // The PNG draws the same chevron (ExportDraw) where the row says `leave`.
   const png = exportTimelineRows(model.nodes, () => '虛構地址');
   expect(png.filter(r => r.kind === 'place').map(r => r.leave)).toEqual([true, true, false]);
+  // The small departure time beside the chevron: the stay's end clock, which
+  // is the movement row's start (HistoryTimeClocks checks the sums).
+  const places = png.filter(r => r.kind === 'place');
+  expect(places[0].leaveTime).toBe(clock(shown[1].start));
+  expect(places[1].leaveTime).toBe(clock(shown[3].start));
+  expect(places[2].leaveTime).toBeNull();
   // Not after 出發, not into a break.
   expect(leavesFrom({ type: 'departure' }, { type: 'movement' })).toBe(false);
   expect(leavesFrom({ type: 'stop', number: 1 }, { type: 'gap' })).toBe(false);
@@ -132,6 +154,9 @@ test('a day starting and ending with a walk keeps 出發 and a bare end row: tim
     const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
     expect(map.times[0]).toMatchObject({ end: true });
     expect(map.times.at(-1)).toMatchObject({ end: true, last: true });
+    // 出發 and the end row are rows: the stay between them is 1 as it is.
+    expect(rangeEndRows(shown)).toEqual({ start: null, end: null });
+    expect(map.places.map(p => p.number)).toEqual([1]);
   }
 });
 
@@ -151,11 +176,12 @@ test('today\'s live end keeps 「現在」 (a moving end), and a stay going on n
 describe('a day like 10/13: home from 00:00, a walk, a short stay, the walk home, home', () => {
   const rows = day([['still', 7 * 60 * 60], ['walk', 15 * 60], ['still', 10 * 60], ['back', 15 * 60], ['still', 60 * 60]]);
 
-  test('the whole day: 停留 1 from 00:00, the walk, 停留 2, the walk home, 停留 3 to the end', () => {
+  test('the whole day: home from 00:00 (start circle), the walk, 停留 1, the walk home, home (end circle)', () => {
     const model = whole(rows);
     const { shown } = expectNoEndWords(model);
     expect(kinds(shown)).toEqual(['stop', 'movement', 'stop', 'movement', 'stop']);
-    expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, 2, 3]);
+    expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, 1, null]);
+    expect(rangeEndRows(shown)).toEqual({ start: 0, end: 4 });
     expect(shown[0]).toMatchObject({ start: dayStart });
     expect(Math.round(presentationDurationMs(shown[0]) / MINUTE)).toBe(7 * 60);
     expect(nodePill(shown.at(-1)).text).toBe(t('c127', { duration: '1 時' }));
@@ -174,18 +200,20 @@ describe('a day like 10/13: home from 00:00, a walk, a short stay, the walk home
       // Only 「出發」: the home stay's last seconds are that row's time, unnumbered.
       expect(nodePill(shown[0]).text).toBe(DEPARTURE);
       expect(shown[0].departureStay.number ?? null).toBeNull();
-      expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, 2]);
+      expect(shown.filter(n => n.type === 'stop').map(n => n.number)).toEqual([1, null]);
+      expect(rangeEndRows(shown)).toEqual({ start: null, end: 4 });
       const map = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' });
-      expect(map.places.map(p => p.number)).toEqual([1, 2]);
-      // The start is drawn (出發 is listed); the end is stay 2 itself.
-      expect(map.times.filter(marker => marker.end).map(marker => !!marker.last)).toEqual([false]);
+      expect(map.places.map(p => p.number)).toEqual([1]);
+      // The start is the 出發 time marker at the walk's start, the end the
+      // solid one at home (the same place: one marker).
+      expect(map.times.filter(marker => marker.end)).toEqual([expect.objectContaining({ first: true, last: true })]);
     }
   });
 
-  test('a range dragged into the home stay starts with that stay, 停留 1', () => {
+  test('a range dragged into the home stay starts with that stay (the start circle)', () => {
     const model = timeline(rows, { manualRange: { start: rows[0].time + 6 * 60 * MINUTE, end: rows.at(-1).time } });
     const { shown } = expectNoEndWords(model);
-    expect(shown[0]).toMatchObject({ type: 'stop', number: 1, start: rows[0].time + 6 * 60 * MINUTE });
+    expect(shown[0]).toMatchObject({ type: 'stop', number: null, start: rows[0].time + 6 * 60 * MINUTE });
     expect(Math.round(presentationDurationMs(shown[0]) / MINUTE)).toBe(60);
   });
 });
@@ -198,7 +226,12 @@ test('a single-stay day is one row, the stay', () => {
   expect(nodePill(shown[0]).text).toBe(t('c127', { duration: '59 分' }));
   // A range wholly in that stay (displayStays): unnumbered, as the map's label.
   expect(shown[0].number).toBeNull();
-  expect(historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' }).times).toEqual([]);
+  // No marker of its own (unnumbered): one time marker carries both ends —
+  // the solid end in the start's ring, 「08:00–08:59」 — not two labels.
+  const times = historyMapPresentation(model, { color: '#1A73E8', subject: 'phone' }).times;
+  expect(times).toHaveLength(1);
+  expect(times[0]).toMatchObject({ first: true, last: true, label: expect.stringMatching(/^\d\d:\d\d–\d\d:\d\d$/u) });
+  expect(rangeEndRows(shown)).toEqual({ start: 0, end: 0 });
 });
 
 test('numbered stays at one place share one marker; switch points and far stays do not', () => {
@@ -207,4 +240,38 @@ test('numbered stays at one place share one marker; switch points and far stays 
   const grouped = groupSamePlaceStays([at(1, 0), at(2, 400), at(3, 10), at(4, 5, 'switch')]);
   expect(grouped.map(p => p.label ?? String(p.number))).toEqual(['1・3', '2', '4']);
   expect(grouped[0]).toMatchObject({ key: 'stop1', number: 1, numbers: [1, 3] });
+});
+
+test('on screen: the start / end circles replace the first and last nodes; the departure time beside each chevron', async () => {
+  const React = require('react');
+  const Renderer = require('react-test-renderer');
+  const { StyleSheet } = require('react-native');
+  const HistoryTimelineList = require('../src/mapHistory/HistoryTimelineList').default;
+  const { AddressLookupContext } = require('../src/placement/AddressLookup');
+  const rows = day([['still', 20 * 60], ['walk', 10 * 60], ['still', 15 * 60], ['back', 10 * 60], ['still', 20 * 60]],
+    dayStart + 8 * 60 * MINUTE);
+  const model = whole(rows);
+  const shown = timelinePresentation(model.nodes);
+  const lookup = { lookup: () => null, subscribe: () => () => {} };
+  let renderer;
+  await Renderer.act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+    <HistoryTimelineList model={model} color="#1A73E8" />
+  </AddressLookupContext.Provider>); });
+  const host = id => renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === id);
+  const firstLines = host('place-node-first-line');
+  expect(firstLines).toHaveLength(3);
+  const views = line => line.findAll(node => typeof node.type === 'string').map(node => StyleSheet.flatten(node.props.style) || {});
+  const texts = line => line.findAll(node => typeof node.type === 'string' && typeof node.props.children === 'number');
+  // The first node: the hollow 出發 circle (a route-colour border, no number).
+  expect(views(firstLines[0]).some(style => style.borderColor === '#1A73E8')).toBe(true);
+  expect(texts(firstLines[0])).toHaveLength(0);
+  // The middle stay keeps its number 1.
+  expect(texts(firstLines[1]).map(node => node.props.children)).toEqual([1]);
+  // The last node: the solid end circle (route-colour fill, no number).
+  expect(views(firstLines[2]).some(style => style.backgroundColor === '#1A73E8')).toBe(true);
+  expect(texts(firstLines[2])).toHaveLength(0);
+  // The small time beside each chevron: when it left, the next row's start.
+  expect(host('leave-chevron')).toHaveLength(2);
+  expect(host('leave-time').map(node => node.props.children)).toEqual([clock(shown[1].start), clock(shown[3].start)]);
+  await Renderer.act(async () => renderer.unmount());
 });

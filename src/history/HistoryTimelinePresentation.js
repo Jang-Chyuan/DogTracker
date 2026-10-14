@@ -53,11 +53,20 @@ function stretch(node, start, end, unlocated) {
 }
 const alignedDuration = node => {
   const duration = node.durationMs ?? node.end - node.start;
+  if (!Number.isFinite(node.start) || !Number.isFinite(node.end) || !Number.isFinite(duration)) return null;
+  const span = Math.max(0, Math.floor(node.end / MINUTE) - Math.floor(node.start / MINUTE)) * MINUTE;
   // Displayed clocks have minute precision; never turn a gap into observed time.
-  const complete = Number.isFinite(node.start) && Number.isFinite(node.end)
-    && Number.isFinite(duration) && Math.abs(duration - (node.end - node.start)) < 1
+  const complete = Math.abs(duration - (node.end - node.start)) < 1
     && !node.gaps?.length && !node.displayRange?.gaps?.length && !(node.interruptionMs > 0);
-  return complete ? Math.max(0, Math.floor(node.end / MINUTE) - Math.floor(node.start / MINUTE)) * MINUTE : null;
+  if (complete) return span;
+  // 2026-10-14 (#163, the times add up): a stay interrupted inside shows its
+  // clocks less the 「不含中斷 N 分」 it notes, so 到 + 停 + 不含中斷 = 離開
+  // to the minute; still the observed time within a minute.
+  const breakMs = node.type === 'stop' && node.interruptionMs > 0 ? node.interruptionMs : 0;
+  if (breakMs && Math.abs(duration + breakMs - (node.end - node.start)) < 1) {
+    return Math.max(0, span - Math.round(breakMs / MINUTE) * MINUTE);
+  }
+  return null;
 };
 
 /** Shared display copy only: visible pills, marker speech and cursor labels. */
@@ -102,15 +111,43 @@ export function timelinePresentation(all = []) {
 }
 
 /**
- * The source stay the list shows inside 出發 (a range that begins moving: the
- * seconds of the stay it set off from), as the input's own object, or null.
- * historyTimeline numbers the stays without it (2026-10-13, #154: the numbers
- * shown start at 1 and skip none). 2026-10-14: no stay goes into the end any
- * more (`end` is always null): the last stay is a numbered row of its own.
+ * 2026-10-14 (user, #163 round 3): the range's start and end stay on the
+ * track even without a 出發 / end row: the first row's node is the hollow
+ * start circle and the last row's the solid end circle (a day of one stay:
+ * both on one row), with the row's own minutes and address and no number.
+ * The rows (timelinePresentation's) that carry them: { start, end } indexes,
+ * or null where a 出發 / end row (or a movement or a break) is there instead.
+ * The first row after a day-boundary 「沒有資料」 counts as the first,
+ * likewise at the end.
+ */
+export function rangeEndRows(rows = []) {
+  const place = row => row && !['movement', 'gap', 'departure', 'end'].includes(row.type) && !row.departureStay;
+  const first = rows[0]?.dayBoundary === 'start' ? 1 : 0;
+  const final = rows.length > 1 && rows[rows.length - 1]?.dayBoundary === 'end' ? rows.length - 2 : rows.length - 1;
+  return { start: place(rows[first]) ? first : null, end: final >= 0 && place(rows[final]) ? final : null };
+}
+
+/**
+ * The source stays (the input's own objects, or null) that are the range's
+ * ends rather than numbered stays: `departure`, the seconds of the stay a
+ * range that begins moving set off from (shown inside 出發); `start` and
+ * `end`, the stays the range begins and ends with — their rows keep their
+ * minutes and address, and their track node is the range's hollow start /
+ * solid end circle instead of a number (2026-10-14, user, #163 round 3).
+ * historyTimeline numbers the stays without them (#154: the numbers shown
+ * start at 1 and skip none).
  */
 export function endpointStays(all = []) {
-  const { departureSource } = presentationOf(all);
-  return { departure: departureSource, end: null };
+  const { departureSource, listed } = presentationOf(all);
+  const ends = rangeEndRows(listed);
+  // The source stay a row shows: inside its span (a row may have grown over
+  // the seconds beside it).
+  const sourceOf = (row, fromEnd) => {
+    if (row?.type !== 'stop') return null;
+    const inside = all.filter(n => n.type === 'stop' && n.start >= row.start && n.end <= row.end);
+    return (fromEnd ? inside[inside.length - 1] : inside[0]) ?? null;
+  };
+  return { departure: departureSource, start: sourceOf(listed[ends.start], false), end: sourceOf(listed[ends.end], true) };
 }
 
 function presentationOf(all) {
@@ -149,7 +186,7 @@ function presentationOf(all) {
   const startsWithStay = first?.type === 'departure' && initialStay?.type === 'stop'
     // The model's first stay: numbered 1, or (#154) left unnumbered because
     // this row shows it.
-    && (initialStay.number === 1 || initialStay.listedWith === 'departure' || stationaryRun(initialStay))
+    && (initialStay.number === 1 || ['departure', 'start'].includes(initialStay.listedWith) || stationaryRun(initialStay))
     && (first.start === initialStay.start || settlingRun)
     && !initialStay.gaps?.length && !initialStay.displayRange?.gaps?.length
     && (samePlace(first, initialStay) || firstBelongsToStay || stationaryRun(initialStay));

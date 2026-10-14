@@ -136,11 +136,10 @@ test('an existing qualified stop retains its number without a duplicate presenta
   const model = timeline([...firstRun, ...walkAway]);
   const stop = model.locations.find(n => n.type === 'stop');
   expect(stop).toBeDefined();
-  // 2026-10-14 (user): the range begins with it: it is the first row, 停留 1
-  // (no 出發, #154 numbers from 1).
-  expect(stop).toMatchObject({ number: 1 });
-  expect(stop.listedWith).toBeUndefined();
-  expect(timelinePresentation(model.nodes)[0]).toMatchObject({ type: 'stop', number: 1 });
+  // 2026-10-14 (user, round 3): the range begins with it: it is the first
+  // row, the start circle, no number (no 出發).
+  expect(stop).toMatchObject({ number: null, listedWith: 'start' });
+  expect(timelinePresentation(model.nodes)[0]).toMatchObject({ type: 'stop', number: null });
   expect(model.nodes.filter(n => n.type === 'stop')).toHaveLength(1);
   expect(model.nodes.some(n => n.presentationOnly)).toBe(false);
 });

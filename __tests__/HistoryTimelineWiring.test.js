@@ -170,8 +170,8 @@ describe('fixtures', () => {
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
     expect(kinds).toEqual(['departure', 'walking', 'switch', 'driving', 'switch', 'walking', 'stop', 'end']);
-    // 2026-10-14: the last stay is a numbered row of its own (no end row).
-    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2, 3]);
+    // 2026-10-14: the last stay is the last row, the end circle (no number).
+    expect(model.nodes.filter(n => n.number).map(n => n.number)).toEqual([1, 2]);
     expect(model.sections.find(s => s.mode === 'driving').countedDistanceM).toBe(0);
   });
   test('history-gap: 沒有資料 twice, 恢復記錄 only after the 40-minute break', async () => {

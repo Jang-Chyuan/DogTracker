@@ -51,6 +51,15 @@ function trackOps(kind, color, from, to, clear = null) {
 // 停留和停在原處節點 64px).
 function nodeOps(row, color, cy) {
   const cx = TRACK_X;
+  // 2026-10-14 (#163 round 3): the range's first / last row is its start /
+  // end circle, whatever the row (as on screen); both on one row: the solid
+  // end inside the start's ring.
+  if (row.rangeStart && row.rangeEnd) {
+    return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.departureBorder },
+      { t: 'circle', cx, cy, r: S.nodeSize / 2 - tokenSize.export.departureBorder * 2, fill: color }];
+  }
+  if (row.rangeStart) return nodeOps({ type: 'departure' }, color, cy);
+  if (row.rangeEnd) return nodeOps({ type: 'end' }, color, cy);
   switch (row.type) {
     case 'departure':
       return [{ t: 'circle', cx, cy, r: tokenSize.export.departureRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.departureBorder }];
@@ -102,8 +111,13 @@ function rowOps(block) {
   const cleared = row.leave ? leaveTop + leave + tokenSize.export.transportIconPadding : nodeY + nodeRadius;
   ops.push(...trackOps(row.line, color, nodeY, y + block.height, { top: nodeY, bottom: cleared }));
   ops.push(...nodeOps(row, color, nodeY));
-  if (row.leave) ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop,
-    size: leave, color });
+  if (row.leave) {
+    ops.push({ t: 'icon', name: 'leave', icon: EXPORT_ICONS.leave, x: TRACK_X - leave / 2, y: leaveTop, size: leave, color });
+    // When it left: smaller and muted, in the time column beside the chevron.
+    if (row.leaveTime) ops.push(text(row.leaveTime, S.timeColumn - tokenSize.export.timeInset, leaveTop,
+      tokenSize.export.endTimeLine, tokenSize.export.endTimeFont, colors.textMuted, { align: 'right' }));
+  }
+
   // Timeline times show only the start.
   ops.push(text(row.times[0], S.timeColumn - tokenSize.export.timeInset, y + tokenSize.export.rowInset, S.addressLine, S.timeFont, colors.text, { bold: true, align: 'right' }));
   block.titleLines.forEach((line, index) => ops.push(text(line, PLACE_X + block.titleX, y + tokenSize.export.rowInset + block.titleY + index * S.addressLine, S.addressLine,
@@ -203,7 +217,7 @@ export function measuredCharacters(snapshot) {
   for (const subject of snapshot.subjects) {
     add(subject.name); add(subject.distanceKm);
     for (const row of subject.timeline || []) [row.title, row.coordinates, row.missing, row.note, row.pill?.text,
-      row.lead, row.time, row.rest].forEach(add);
+      row.lead, row.time, row.rest, row.leaveTime].forEach(add);
   }
   add(t("c786"));
   return [...all].join('');

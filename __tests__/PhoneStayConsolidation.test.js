@@ -81,8 +81,9 @@ describe('1. drift without a measured speed is no departure', () => {
 
   test('the stay is one numbered stay; the speedless minutes are its time', () => {
     const model = timeline(rows(script));
-    // 2026-10-14 (user): the range begins with it: the first row, 停留 1, no 出發.
-    expect(stays(model).map(n => n.number)).toEqual([1]);
+    // 2026-10-14 (user, round 3): the range begins with it: the first row,
+    // the start circle, no number (no 出發).
+    expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
@@ -188,7 +189,7 @@ describe('3. the hours around midnight are rows too', () => {
     const shown = listed(model);
     expect(shown[0]).toMatchObject({ type: 'gap', start: dayStart, end: today[0].time, sessionChange: true });
     expect(sectionText(shown[0]).rest).toBe(' 00:00–00:40');
-    expect(shown[1]).toMatchObject({ type: 'stop', number: 1, start: today[0].time });
+    expect(shown[1]).toMatchObject({ type: 'stop', number: null, start: today[0].time });
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
 
@@ -199,7 +200,7 @@ describe('3. the hours around midnight are rows too', () => {
       .map(r => ({ ...r, longitude: r.longitude + 200 * METRE, raw_longitude: r.raw_longitude + 200 * METRE })), ...today]);
     const shown = listed(model);
     expect(shown.some(n => n.type === 'gap')).toBe(false);
-    expect(shown[0]).toMatchObject({ type: 'stop', number: 1, start: dayStart });
+    expect(shown[0]).toMatchObject({ type: 'stop', number: null, start: dayStart });
     expect(shown.some(n => n.type === 'departure')).toBe(false);
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
@@ -211,8 +212,9 @@ describe('3. the hours around midnight are rows too', () => {
     const shown = listed(model);
     expect(shown.at(-1)).toMatchObject({ type: 'gap', start: day.at(-1).time, end: dayEnd, sessionChange: true });
     expect(sectionText(shown.at(-1)).rest).toBe(` ${sectionText(shown.at(-1)).rest.slice(1, 6)}–24:00`);
-    // 2026-10-14: the range ends in the stay, so the stay is the row before it.
-    expect(shown.at(-2)).toMatchObject({ type: 'stop', number: 1 });
+    // 2026-10-14: the range ends in the stay, so the stay is the row before
+    // it, the end circle (no number).
+    expect(shown.at(-2)).toMatchObject({ type: 'stop', number: null });
     expectTiled(model, model.points[0].time, dayEnd);
   });
 
@@ -327,8 +329,9 @@ describe('5. a short real walk between two stays at one place', () => {
 
   test('is one stay; its metres stay in the list and the summary', () => {
     const model = timeline(excursion());
-    // 2026-10-14 (user): the range begins with it: the first row, 停留 1, no 出發.
-    expect(stays(model).map(n => n.number)).toEqual([1]);
+    // 2026-10-14 (user, round 3): the range begins with it: the first row,
+    // the start circle, no number (no 出發).
+    expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);

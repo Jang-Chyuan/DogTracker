@@ -303,7 +303,9 @@ test('minute precision aligns consecutive displayed clocks without changing obse
   expect(merged[0].durationMs).toBe(181000);
   expect(merged[0].displayDurationMs).toBe(240000);
   const interrupted = timelinePresentation([{ ...b, durationMs: 30000, interruptionMs: 29000 }]);
-  expect(interrupted[0].displayDurationMs).toBeUndefined();
+  // 2026-10-14: its clocks (00:02–00:02) less its interruption: the shown
+  // minutes add up with the 「不含中斷」 note (HistoryTimeClocks).
+  expect(interrupted[0].displayDurationMs).toBe(0);
 });
 
 

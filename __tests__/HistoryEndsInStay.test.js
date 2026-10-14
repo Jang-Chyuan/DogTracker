@@ -15,7 +15,7 @@ test.each([
   ['history-dog-ends-in-stay', 'dog', '現在'],
   ['history-ends-in-stay-finished', 'phone', '結束'],
   ['history-dog-ends-in-stay-finished', 'dog', '結束'],
-])('%s: the last stay is the last row, numbered; no end row', async (name, subject, label) => {
+])('%s: the last stay is the last row, the end circle; no end row', async (name, subject, label) => {
   const fixture = buildFixture(name);
   const target = historyTargetOf(fixture.history.preferences);
   const state = {};
@@ -38,15 +38,15 @@ test.each([
     const shown = timelinePresentation(nodes);
     const last = shown[shown.length - 1];
     expect(shown.some(node => node.type === 'end' || node.terminalStay)).toBe(false);
-    expect(last).toMatchObject({ type: 'stop', id: stay.id, number: stay.number });
-    expect(stay.number).toBeGreaterThan(0);
+    // Round 3: its node is the end circle — no number of its own.
+    expect(last).toMatchObject({ type: 'stop', id: stay.id, number: null });
+    expect(stay).toMatchObject({ number: null, listedWith: 'end' });
     expect(nodePill(last).text).toMatch(/^停 /u);
     // No 「結束」 anywhere in the list.
     expect(shown.some(node => nodePill(node)?.text?.includes('結束'))).toBe(false);
-    // The map: no end time marker on that stay; its number is there.
+    // The map: the solid end time marker marks it; no number there.
     const map = historyMapPresentation(state.screen.model, { color: '#1A73E8', subject });
-    expect(map.times.some(marker => marker.last)).toBe(false);
-    expect(map.places.some(place => (place.numbers ?? [place.number]).includes(stay.number))).toBe(true);
+    expect(map.times.filter(marker => marker.last)).toHaveLength(1);
     expect(nodes[nodes.length - 2]).toBe(stay);
   } finally { await act(async () => tree.unmount()); }
 });

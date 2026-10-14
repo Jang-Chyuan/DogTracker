@@ -45,7 +45,7 @@ export function IndoorMarkerView() {
  * route colour at opacity.endRing. An empty block of the label's height
  * above keeps the ring in the middle.
  */
-export function TimeMarkerView({ label, end, last = false, color }) {
+export function TimeMarkerView({ label, end, last = false, first = false, color }) {
   const { colors, opacity } = useTheme();
   const styles = useStyles(getStyles);
   const ring = end ? sizes.timeMarker.endSize : sizes.timeMarker.size;
@@ -55,7 +55,9 @@ export function TimeMarkerView({ label, end, last = false, color }) {
     <View style={styles.time}>
       <View style={styles.timeSpacer} />
       {last ? (
-        // Two views: a translucent border would show the fill under it.
+        // Two views: a translucent border would show the fill under it. A
+        // range wholly at one place (`first` too): inside the start's ring.
+        <View style={first ? [styles.centred, styles.bothEnds, { borderColor: color }] : null}>
         <View
           testID="time-marker-end"
           style={[{
@@ -66,6 +68,7 @@ export function TimeMarkerView({ label, end, last = false, color }) {
           }, styles.centred]}
         >
           <View style={{ width: ring, height: ring, borderRadius: ring / 2, backgroundColor: color }} />
+        </View>
         </View>
       ) : (
         <View
@@ -249,6 +252,8 @@ const getStyles = makeStyles(theme => {
     indoor: { backgroundColor: colors.receiver, borderColor: colors.surface },
     time: { alignItems: 'center' },
     centred: { alignItems: 'center', justifyContent: 'center' },
+    bothEnds: { padding: sizes.timeMarker.endBorder / 2, borderWidth: sizes.timeMarker.endBorder,
+      borderRadius: sizes.timeMarker.endSize * 2, backgroundColor: theme.colors.surface },
     timeSpacer: { height: LABEL_LINE + sizes.marker.labelGap },
     timeLabel: {
       marginTop: sizes.marker.labelGap,
