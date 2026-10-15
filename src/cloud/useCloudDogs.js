@@ -183,8 +183,14 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           && attempt.epoch === epoch && !attempt.blocked && fence.valid();
         const cachedFence = scheduler.current?.();
         const readOwner = latestFirst ? owner : blockCloud ? null : owner;
+        // The hold store already holds the snapshot contexts it was fed
+        // (contextVersions): only changed ones are read and parsed again
+        // (audit F8). Not when the store is about to be replaced below.
+        const holder = holdState.current;
+        const knownContexts = holder?.owner === owner && holder?.database === database
+          && !(now() - holder.polledAt > HOLD_LOOKBACK_MS) ? holder.contextVersions ?? null : null;
         const snapshot = latestFirst && readOwner ? await database.readLatestSnapshot(readOwner, {
-          bootstrap: cachedFence?.bootstrapAllowed ?? true,
+          bootstrap: cachedFence?.bootstrapAllowed ?? true, knownContexts,
           isCurrent: () => {
             const current = scheduler.current?.();
             return alive && publication.current === attempt && (!cachedFence ||
@@ -235,15 +241,23 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
               state.store = createHoldStore();
               state.store.seedRanges(judged);
             }
-            if (latestFirst && accept && snapshot && state.snapshotRevision !== snapshot.revision) {
+            // A read that left out contexts this store does not hold (it was
+            // replaced since) waits for the next poll's full read.
+            const complete = !(snapshot?.contextsKnown > 0) || state === holder;
+            if (latestFirst && accept && snapshot && complete && state.snapshotRevision !== snapshot.revision) {
               // Only independently downloaded snapshot context feeds live
               // holds. Historical backfill and metadata repairs stay outside.
-              const context = snapshot.context || [];
+              // Only the contexts that changed are fed again (the store drops
+              // rows it has seen, HoldStore), with every dog's newest packet.
+              const changed = snapshot.contexts ? Object.values(snapshot.contexts) : null;
+              const context = changed ? changed.flatMap(value => value.rows || []) : snapshot.context || [];
+              const seeds = changed ? changed.flatMap(value => value.seeds || []) : snapshot.seeds || [];
               const normalize = row => ({ ...row, source: 'cloud', time: row.track_at,
                 latitude: row.slave_lat, longitude: row.slave_lon });
               const live = new Map([...context, ...(snapshot.packets || [])].map(row => [row.event_id, row]));
-              state.store.ingest({ rows: [...live.values()].map(normalize), seeds: (snapshot.seeds || []).map(normalize) });
+              state.store.ingest({ rows: [...live.values()].map(normalize), seeds: seeds.map(normalize) });
               state.snapshotRevision = snapshot.revision;
+              state.contextVersions = snapshot.contextVersions ?? null;
             }
             state.store.ingest(accept ? batch : {
               rows: batch.rows?.filter(row => row.source !== 'cloud'),
@@ -266,7 +280,13 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
           ranges = state.store.ranges();
           // Each dog's battery judged over the same rows (BatteryPlausibility).
           batteries = state.store.batteries();
-          await database.saveRangeState?.(owner, ranges);
+          // Stored only when a judgement changed (audit F8: two statements on
+          // the archive connection on every 10 s poll, changed or not).
+          const judged = JSON.stringify(ranges);
+          if (database.saveRangeState && state.savedRanges !== judged) {
+            await database.saveRangeState(owner, ranges);
+            state.savedRanges = judged;
+          }
         }
         const baseline = !acceptsCloud() && acceptsBaseline();
         if (acceptsCloud() || baseline) {

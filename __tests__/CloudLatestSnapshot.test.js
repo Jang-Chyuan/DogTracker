@@ -41,7 +41,8 @@ test('one atomic full replacement removes inaccessible dogs and survives reopen,
   database = createCloudDatabase(connection); await database.initialize();
   expect((await database.readLatestSnapshot('a')).rows.map(row => row.slave_id)).toEqual([6]);
   await database.publishLatestSnapshot('a', snapshot([], 4000));
-  expect(await database.readLatestSnapshot('a')).toEqual({ revision: 3, cutoff: 4000, verified: true, rows: [], packets: [], context: [], seeds: [] });
+  expect(await database.readLatestSnapshot('a')).toEqual({ revision: 3, cutoff: 4000, verified: true, rows: [], packets: [], context: [], seeds: [],
+    contexts: {}, contextVersions: {}, contextsKnown: 0 });
   expect((await database.readLatestSnapshot('b')).packets.map(row => row.slave_id)).toEqual([8]);
 });
 
@@ -107,7 +108,7 @@ test('metadata read never fetches or decodes context JSON but the ordinary offli
   await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: fix('current'), fix: fix('current'), context: [fix('known')] }]));
   await connection.executeAsync("UPDATE cloud_latest_snapshot SET context_json='{synthetic-invalid-context' WHERE owner_user_id='a'");
   connection.executeAsync.mockClear();
-  const fullSnapshotReads = () => connection.executeAsync.mock.calls.filter(([query]) => query.includes('d.context_json')).length;
+  const fullSnapshotReads = () => connection.executeAsync.mock.calls.filter(([query]) => /^\s*SELECT\b[^]*\bcontext_json\b/.test(query)).length;
   expect(await database.readLatestSnapshot('a', { metadataOnly: true })).toEqual({ revision: 1 });
   expect(fullSnapshotReads()).toBe(0);
   await expect(database.readLatestSnapshot('a')).rejects.toThrow(SyntaxError);
@@ -150,4 +151,65 @@ test('positions-only reads keep state, packet and last valid fix atomic without 
   await expect(database.readLatestSnapshot('a')).rejects.toThrow(SyntaxError);
   await database.publishLatestSnapshot('a', snapshot([]));
   expect(await database.readLatestSnapshot('a', { positionsOnly: true })).toMatchObject({ revision: 2, verified: true, rows: [], packets: [] });
+});
+
+// Audit F8: every 10 s poll read and parsed every dog's half-hour context
+// (twice), and each stored context row carried its whole remote JSON.
+describe('stored context cost', () => {
+  const payload = row => ({ ...row, raw_payload: JSON.stringify({ event_id: row.event_id, payload: { lat: 25000000 } }) });
+  const stored = async () => (await connection.executeAsync(
+    'SELECT slave_id,packet_json,fix_json,context_json,context_version FROM cloud_latest_snapshot ORDER BY slave_id')).results;
+
+  test('the remote JSON is not stored with the map set; what is read back is unchanged', async () => {
+    const context = [payload(fix('c1', 4, 900)), payload(fix('c2', 4, 950))];
+    await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: payload(fix('p')), fix: payload(fix('p')),
+      context, seeds: [payload(fix('s1', 4, 100))] }]));
+    const [dog] = await stored();
+    for (const text of [dog.packet_json, dog.fix_json, dog.context_json]) expect(text).not.toContain('raw_payload');
+    const read = await database.readLatestSnapshot('a');
+    expect(read.context.map(row => row.event_id)).toEqual(['c1', 'c2']);
+    expect(read.seeds.map(row => row.event_id)).toEqual(['s1']);
+    expect(read.contexts[4].rows).toEqual(read.context);
+    expect(read.packets[0]).toMatchObject({ event_id: 'p', source: 'cloud' });
+    expect(read.packets[0].raw_payload).toBeUndefined();
+  });
+
+  test('knownContexts: only changed contexts are read and parsed; a token changes with its context only', async () => {
+    const dogs = (packet, context6) => [
+      { slaveId: 4, packet: fix(`p4-${packet}`), fix: fix(`p4-${packet}`), context: [fix('c4', 4, 900)], seeds: [] },
+      { slaveId: 6, packet: fix(`p6-${packet}`, 6), fix: fix(`p6-${packet}`, 6), context: context6, seeds: [] },
+    ];
+    await database.publishLatestSnapshot('a', snapshot(dogs(1, [fix('c6', 6, 900)])));
+    const first = await database.readLatestSnapshot('a');
+    expect(Object.keys(first.contexts)).toEqual(['4', '6']);
+    expect(first.contextsKnown).toBe(0);
+    // New packets for both, a new context for dog 6 only.
+    await database.publishLatestSnapshot('a', snapshot(dogs(2, [fix('c6', 6, 900), fix('c6b', 6, 950)]), 3000));
+    connection.executeAsync.mockClear();
+    const parse = jest.spyOn(JSON, 'parse');
+    const second = await database.readLatestSnapshot('a', { knownContexts: first.contextVersions });
+    const contextTexts = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes('"rows"')).length;
+    parse.mockRestore();
+    expect(second.contextVersions[4]).toBe(first.contextVersions[4]);
+    expect(second.contextVersions[6]).not.toBe(first.contextVersions[6]);
+    expect(Object.keys(second.contexts)).toEqual(['6']);
+    expect(second.contextsKnown).toBe(1);
+    expect(second.context.map(row => row.event_id)).toEqual(['c6', 'c6b']);
+    // Parsed once, and dog 4's context never left SQLite.
+    expect(contextTexts).toBe(1);
+    expect(second.packets.map(row => row.event_id)).toEqual(['p4-2', 'p6-2']);
+    // Nothing changed: no context read at all.
+    const third = await database.readLatestSnapshot('a', { knownContexts: second.contextVersions });
+    expect(third).toMatchObject({ contexts: {}, context: [], seeds: [], contextsKnown: 2 });
+  });
+
+  test('a dog removed and added again, or a deleted data set, never matches an old token', async () => {
+    await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: fix('p'), fix: fix('p'), context: [], seeds: [] }]));
+    const before = await database.readLatestSnapshot('a');
+    await database.publishLatestSnapshot('a', snapshot([], 3000));
+    await database.publishLatestSnapshot('a', snapshot([{ slaveId: 4, packet: fix('p'), fix: fix('p'), context: [], seeds: [] }], 4000));
+    const after = await database.readLatestSnapshot('a', { knownContexts: before.contextVersions });
+    expect(after.contextVersions[4]).not.toBe(before.contextVersions[4]);
+    expect(Object.keys(after.contexts)).toEqual(['4']);
+  });
 });
