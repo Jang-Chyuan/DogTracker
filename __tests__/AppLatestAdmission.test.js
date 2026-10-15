@@ -74,7 +74,7 @@ test('real App binding starts latest HTTP and durable map ACK before local migra
   await mount();
   expect(tracking.cloudReady).toBe(true); expect(tracking.ready.real).toBe(false);
   expect(tracking.initialSnapshotReady).toBe(false); expect(applied()).toEqual([]);
-  expect(sync).toMatchObject({ mapAttempt: 1, snapshotPending: true });
+  expect(sync).toMatchObject({ mapAttempt: 1, busy: true, snapshotPending: false });
   expect(network.calls.some(call => call.phase === 'masters')).toBe(true);
   expect(network.calls.some(call => ['packet', 'fix'].includes(call.phase))).toBe(true);
   native.resolve(); await advance(1);

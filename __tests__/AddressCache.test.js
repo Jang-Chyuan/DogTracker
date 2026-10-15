@@ -55,3 +55,58 @@ test('SQLite persists failed timestamps and prunes old entries without changing 
     connection.close();
   }
 });
+
+// Audit L5: the saved addresses name where the dogs and this phone stayed,
+// home too, so 刪除我的路線, 刪除全部狗資料 and signing out forget them.
+test('clear forgets every address in memory and on the phone, and drops answers still on their way', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const store = createAddressCache({ connection });
+    let answer;
+    const native = {
+      reverseGeocode: jest.fn(async latitude =>
+        latitude === 25
+          ? JSON.stringify([{ ...point, line: '桃園市桃園區中正路1號' }])
+          : new Promise(resolve => { answer = resolve; }),
+      ),
+    };
+    const lookup = createAddressLookup({ native, store });
+    const listener = jest.fn();
+    lookup.subscribe(listener);
+    lookup.lookup(point);
+    await flush();
+    expect(lookup.lookup(point)).toBe('桃園區中正路 1 號附近');
+    // Another place is still being asked, and one waits behind nothing.
+    const far = { latitude: 26, longitude: 121 };
+    expect(lookup.lookup(far)).toBeUndefined();
+    await flush();
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(2);
+    listener.mockClear();
+    await lookup.clear();
+    expect(connection.sqlite.prepare('SELECT count(*) AS n FROM address_cache').get().n).toBe(0);
+    // Places on screen are told, and ask again.
+    expect(listener).toHaveBeenCalled();
+    // The answer asked before the deletion is neither kept nor saved.
+    answer(JSON.stringify([{ ...far, line: '桃園市大園區大觀路2號' }]));
+    await flush();
+    expect(connection.sqlite.prepare('SELECT count(*) AS n FROM address_cache').get().n).toBe(0);
+    // The first place is asked again rather than answered from memory.
+    expect(lookup.lookup(point)).toBeUndefined();
+    await flush();
+    expect(native.reverseGeocode).toHaveBeenCalledTimes(3);
+    expect(await createAddressCache({ connection }).find(point)).toMatchObject({ value: '桃園區中正路 1 號附近' });
+  } finally {
+    connection.close();
+  }
+});
+
+test('clear on an empty phone and without a store does not fail', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createAddressCache({ connection }).clear();
+    expect(connection.sqlite.prepare('SELECT count(*) AS n FROM address_cache').get().n).toBe(0);
+    await expect(createAddressLookup({ native: null }).clear()).resolves.toBeUndefined();
+  } finally {
+    connection.close();
+  }
+});

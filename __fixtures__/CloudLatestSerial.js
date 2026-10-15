@@ -1,9 +1,11 @@
 // Independent pre-pipeline oracle pinned to 6d47f23f. Keep its serial
-// discovery/dog execution unchanged; only import paths and export name differ.
+// discovery/dog execution unchanged; only import paths and export name differ,
+// plus the roster window of the key seek (audit F4, ROSTER_WINDOW_MS).
 import { t } from '../src/i18n';
 import { cloudError } from '../src/cloud/CloudErrors';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import { validCloudFix } from '../src/cloud/CloudLatestSnapshot';
+import { ROSTER_WINDOW_MS } from '../src/cloud/CloudLatest';
 
 const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at';
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
@@ -43,7 +45,8 @@ export async function downloadCloudLatestSerial({ client, masterIds, cutoff, sig
     .lt('received_at', new Date(cutoff).toISOString());
   let after = null;
   for (;;) {
-    let keys = base('slave_id').order('slave_id', { ascending: true }).limit(1);
+    let keys = base('slave_id').gte('received_at', new Date(cutoff - ROSTER_WINDOW_MS).toISOString())
+      .order('slave_id', { ascending: true }).limit(1);
     if (after !== null) keys = keys.gt('slave_id', after);
     const key = await read(keys);
     if (!key) break;

@@ -143,6 +143,12 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
       // The Master ID from the QR code; the service stops on packets from any
       // other Master. 0 = not set (an older pairing without a QR Master ID).
       putInt("expectedMasterId", prefs.getInt("expectedMasterId", 0))
+      // The link's negotiated MTU (0: not connected yet) and how frames arrived
+      // in this service run (BleForegroundService.dump has the same).
+      putInt("mtu", BleForegroundService.mtu)
+      putInt("framerResyncs", BleForegroundService.framerResyncs)
+      putInt("largestFrame", BleForegroundService.largestFrame)
+      putInt("framesWithoutMasterId", BleForegroundService.framesWithoutMasterId)
       putString("lastStatus", prefs.getString("lastStatus", ""))
       putString("lastPayload", prefs.getString("lastPayload", ""))
       // When the user switched the receiver off and when it delivered again

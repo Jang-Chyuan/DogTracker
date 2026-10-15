@@ -42,6 +42,12 @@ export function createAddressCache({ connection, limit = 500 } = {}) {
         );
       return candidates[0] || null;
     },
+    // 刪除我的路線, 刪除全部狗資料 and signing out (AddressLookup.clear): the
+    // saved addresses name where the dogs and this phone stayed, home too.
+    async clear() {
+      const database = await db();
+      await database.executeAsync('DELETE FROM address_cache');
+    },
     async save(entry) {
       if (!entry?.anchor || entry.pending) return;
       const database = await db();

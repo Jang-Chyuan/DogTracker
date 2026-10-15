@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
+import { useOlderHistoryDogs } from '../mapHistory/useOlderHistoryDogs';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { LivePhoneReader, createLivePhoneFeed } from '../map/LivePhoneFeed';
@@ -30,6 +31,7 @@ import {
   receiverRangeRing,
 } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
+import { cloudRowsOnPhoneClock, serverClock } from '../cloud/ServerClock';
 import { localReception } from '../alerts/LocalReception';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
@@ -406,6 +408,18 @@ export default function MapScreen({
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ride = useMemo(() => currentRide, [rideKey]);
+  // The cloud rows and packets stay as last accepted while a download
+  // publishes or a return catches up (AtomicDogSnapshot); this phone's own
+  // receiver data (BLE packets, holds, ranges, batteries) and the feed's
+  // point are merged live, so the BLE dog, its card and its alerts never wait
+  // for the cloud.
+  cloudDogs = atomicDogs.current.select({
+    owner: cloudOwner, cloudDogs: incomingCloudDogs,
+    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
+    // Context can advance the engine revision before its reader returns.
+    // A same-generation applied latest remains an atomic live snapshot.
+    success: latestApplied ? incomingCloudDogs?.cloudCommit : completedMapRevision(cloudSync),
+  }).cloudDogs;
   // A dog the live tracker cannot hold from the rows it sees (a cold start's
   // half hour, inside a stay that began last night) is held where and since
   // the history holds it, so the map's 「室內」, the card's 位置 row and the
@@ -424,13 +438,25 @@ export default function MapScreen({
     () => (Object.keys(historyHolds).length ? { ...historyHolds, ...cloudDogs?.holds } : cloudDogs?.holds),
     [historyHolds, cloudDogs?.holds],
   );
+  // Downloaded rows on this phone's clock before they meet the BLE rows
+  // (ServerClock): a skewed server or teammate clock must not make an old
+  // fix look current or let it beat a newer BLE fix.
+  const serverOffset = serverClock.offset();
+  const phoneClockRows = useMemo(
+    () => cloudRowsOnPhoneClock(cloudDogs?.rows, serverOffset),
+    [cloudDogs?.rows, serverOffset],
+  );
+  const phoneClockPackets = useMemo(
+    () => cloudRowsOnPhoneClock(cloudDogs?.packets, serverOffset),
+    [cloudDogs?.packets, serverOffset],
+  );
   const mergedDogs = useMemo(
     () =>
       mergeDogMarkers({
         point,
         samples: positionSamples,
-        cloudRows: cloudDogs?.rows,
-        packetRows: cloudDogs?.packets,
+        cloudRows: phoneClockRows,
+        packetRows: phoneClockPackets,
         holds: liveHolds,
         statuses: cloudDogs?.statuses,
         batteries: cloudDogs?.batteries,
@@ -441,8 +467,8 @@ export default function MapScreen({
     [
       point,
       positionSamples,
-      cloudDogs?.rows,
-      cloudDogs?.packets,
+      phoneClockRows,
+      phoneClockPackets,
       liveHolds,
       cloudDogs?.statuses,
       cloudDogs?.batteries,
@@ -452,15 +478,7 @@ export default function MapScreen({
       fixture,
     ],
   );
-  const dogSnapshot = atomicDogs.current.select({
-    owner: cloudOwner, dogs: mergedDogs, cloudDogs,
-    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
-    // Context can advance the engine revision before its reader returns.
-    // A same-generation applied latest remains an atomic live snapshot.
-    success: latestApplied ? cloudDogs.cloudCommit : completedMapRevision(cloudSync),
-  });
-  const dogs = dogSnapshot.dogs;
-  cloudDogs = dogSnapshot.cloudDogs;
+  const dogs = mergedDogs;
   const noDogs =
     !historical &&
     showsNoDogs({
@@ -810,21 +828,30 @@ export default function MapScreen({
     avatars,
     screen.map,
   ]);
-  // The dogs that can be added (「＋ 加入」): every dog that has ever had a
-  // position, by collar number (never-fixed sources are not dogs yet).
-  const historyCandidates = useMemo(
-    () =>
-      historical
-        ? dogs
-            .filter(dog => dog.coordinate)
-            .map(dog => ({
-              id: dog.slaveId,
-              name: displayName(dog.slaveId, dogAliases),
-              avatar: avatars[dog.slaveId] ?? null,
-            }))
-        : [],
-    [historical, dogs, dogAliases, avatars],
-  );
+  // The dogs that can be added (「＋ 加入」): every dog on the live map that
+  // has had a position, by collar number (never-fixed sources are not dogs
+  // yet), and the older dogs this phone holds rows of on the day shown
+  // (useOlderHistoryDogs: the live map only lists dogs heard in the last 14
+  // days, the history still reaches older ones).
+  const olderIds = useOlderHistoryDogs({
+    active: historical,
+    knownDogs: history?.knownDogs,
+    mapDogIds: dogs.map(dog => dog.slaveId),
+    checkDay: screen.checkDay,
+    day: screen.dayKey,
+  });
+  const historyCandidates = useMemo(() => {
+    if (!historical) return [];
+    const candidate = id => ({
+      id,
+      name: displayName(id, dogAliases),
+      avatar: avatars[id] ?? null,
+    });
+    return [
+      ...dogs.filter(dog => dog.coordinate).map(dog => candidate(dog.slaveId)),
+      ...olderIds.map(candidate),
+    ];
+  }, [historical, dogs, olderIds, dogAliases, avatars]);
   // ---- the dog's card (A3) ------------------------------------------------
   // The card belongs to a dog drawn on the live map: it goes when the dog
   // does (a dog that never had a position has no card).
@@ -1013,25 +1040,34 @@ export default function MapScreen({
       onStep: stepDog,
     };
   }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
-  const [trackBusy, setTrackBusy] = useState(false);
-  // 看軌跡: today's path of this dog. The query is stored first, so the
-  // history page never opens on the previous one.
-  const openTrackHistory = async () => {
-    if (!cardDog || !history?.save || trackBusy) return;
+  // The history page opens at once (2026-10-15 audit): whom it shows travels
+  // with the route (App's openTrackFrom), so it never waits for the old
+  // history query (useMapHistory.save) to be stored. That query is written in
+  // the background, only for what still reads it (a screen fixture's history
+  // page, the receivers 看軌跡 lists); a slow write (the shared SQLite
+  // connection busy, e.g. the sync after a resume) or a failed one never
+  // holds or swallows the tap.
+  const rememberQuery = useCallback(query => {
+    Promise.resolve().then(() => history?.save?.(query)).catch(() => {});
+  }, [history]);
+  // Only while the live map is in front does a tap open the history.
+  const liveInFront = useRef(false);
+  liveInFront.current = active && !historical;
+  // 看軌跡: today's path of this dog.
+  const openTrackHistory = () => {
+    if (!cardDog || !liveInFront.current) return;
     const dog = cardDog;
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
     // Every receiver known to have heard this dog, so a day relayed by several
     // receivers is not cut down to the one heard last.
-    const heard = (history.devices || [])
+    const heard = (history?.devices || [])
       .filter(pair => pair.slave === dog.slaveId)
       .map(pair => pair.master);
     const masters = [
       ...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])]),
     ];
-    setTrackBusy(true);
-    const generation = cardGeneration.current;
-    const saved = await history.save({
+    if (history?.preferences) rememberQuery({
       ...history.preferences,
       timeMode: 'fixed',
       startAt: start.getTime(),
@@ -1041,40 +1077,24 @@ export default function MapScreen({
       source: dog.fixSource === 'cloud' ? 'cloud' : 'ble',
       masters: masters.length ? masters : history.preferences.masters,
     });
-    setTrackBusy(false);
-    // The card was closed or another dog opened meanwhile: stay on the map.
-    if (!saved || generation !== cardGeneration.current) return;
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
   // The route pill reflects recording/permission, not temporary GPS silence.
   const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone }));
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
-  const [routeBusy, setRouteBusy] = useState(false);
-  // Only while the live map is still in front does a finished save navigate.
-  const liveInFront = useRef(false);
-  liveInFront.current = active && !historical;
   // Tapping it opens my route: today's recorded route of this phone in the
   // history page (the whole day, so it grows while recording and ends at the
-  // last fix when recording stops), no dogs. The query is stored first, like
-  // 看軌跡.
-  const openMyRoute = useCallback(async () => {
-    if (!history?.save || routeBusy) return;
+  // last fix when recording stops), no dogs. At once, like 看軌跡.
+  const openMyRoute = useCallback(() => {
+    if (!liveInFront.current) return;
     const start = startOfToday(now);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-    setRouteBusy(true);
-    const saved = await history.save({
-      ...history.preferences,
-      timeMode: 'fixed',
-      startAt: start,
-      endAt: end.getTime(),
-      phone: true,
-      client: false,
-    });
-    setRouteBusy(false);
-    if (saved && liveInFront.current) onOpenHistory?.(null);
-  }, [history, routeBusy, now, onOpenHistory]);
+    if (history?.preferences) rememberQuery({ ...history.preferences, timeMode: 'fixed', startAt: start,
+      endAt: end.getTime(), phone: true, client: false });
+    onOpenHistory?.(null);
+  }, [history, now, onOpenHistory, rememberQuery]);
   // ---- a notification tapped (058b) ----------------------------------------
   // 判定表「通知本體和「打開地圖」按鈕」: the body opens the most severe
   // problem (a dog: its card); 「打開地圖」 only the live map, everything
@@ -1098,7 +1118,6 @@ export default function MapScreen({
       handledNotification.current = request.key;
       openDog(request.dogId);
     } else if (request.screen === 'my-route') {
-      if (!history?.save) return;
       handledNotification.current = request.key;
       openMyRoute();
     } else handledNotification.current = request.key;
@@ -1403,7 +1422,6 @@ export default function MapScreen({
           onEdit={() => setCardPage('edit')}
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
-          trackBusy={trackBusy}
           switcher={switcher}
           reserve={reserve}
         />

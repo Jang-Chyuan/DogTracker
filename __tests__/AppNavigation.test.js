@@ -22,6 +22,8 @@ import { createBleService } from '../src/ble/BleService';
 import NativeTrackingPlatform from '../specs/NativeTrackingPlatform';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
+import { createAddressCache } from '../src/placement/AddressCache';
+import { addressLookup } from '../src/placement/AddressLookup';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
 
 
@@ -448,6 +450,9 @@ test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, kee
   connection.sqlite.prepare(`INSERT INTO supabase_dog_status (received_at, master_id, slave_id, slave_lat, slave_lon)
     VALUES (?, 9, 6, 25.01, 121.3)`).run(Date.now() - 60000);
   connection.sqlite.exec(`INSERT OR REPLACE INTO dog_avatars (slave_id, value) VALUES (4, '{"kind":"art"}')`);
+  // A stay's saved address (audit L5: it names where the dog stayed).
+  await createAddressCache({ connection }).save({ anchor: { latitude: 25.01, longitude: 121.3 }, value: '某處附近' });
+  const forget = jest.spyOn(addressLookup, 'clear');
   await act(async () => renderer.root.findByType(MapScreen).props.tracking
     .saveTrackingPreferences({ noDataCardDismissed: true }));
   expect(rows('dog_status')).toHaveLength(1);
@@ -472,6 +477,8 @@ test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, kee
   expect(rows('supabase_dog_status')).toHaveLength(0);
   expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM dog_avatars').get().count).toBe(1);
   expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM app_settings').get().count).toBe(settingsBefore);
+  expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM address_cache').get().count).toBe(0);
+  expect(forget).toHaveBeenCalledTimes(1);
   // A6's ✕ comes back (判定表「A6 的 ✕ 什麼時候重來」).
   expect(preferences().noDataCardDismissed).toBe(false);
   // Every reader started over, on S7, saying it went through.
@@ -481,6 +488,27 @@ test('刪除全部狗資料 (S7) on SQLite: asks, deletes only the dog rows, kee
   await act(async () => expect(onBack()).toBe(true));
   expect(renderer.root.findByType(MapScreen).props.active).toBe(true);
   expect(renderer.root.findAllByType(Marker)).toHaveLength(0);
+});
+
+test('signing out (S3, confirmed) forgets the saved stay addresses after the sign-out', async () => {
+  const signOut = jest.fn(async () => {});
+  mockAuth = { ...mockAuth, user: { id: 'test-account', email: 'tim@example.com' }, signOut };
+  await mount();
+  await advance(100);
+  await createAddressCache({ connection }).save({ anchor: { latitude: 25.01, longitude: 121.3 }, value: '家附近' });
+  const forget = jest.spyOn(addressLookup, 'clear');
+  await press('設定');
+  await tap('settings-row-account');
+  await tap('account-sign-out');
+  expect(forget).not.toHaveBeenCalled();
+  const confirm = renderer.root.findByProps({ testID: 'sign-out-dialog' })
+    .findAll(node => node.props.accessibilityLabel === '登出' && typeof node.props.onPress === 'function')[0];
+  await act(async () => confirm.props.onPress());
+  await advance(10);
+  expect(signOut).toHaveBeenCalledTimes(1);
+  expect(forget).toHaveBeenCalledTimes(1);
+  expect(signOut.mock.invocationCallOrder[0]).toBeLessThan(forget.mock.invocationCallOrder[0]);
+  expect(connection.sqlite.prepare('SELECT COUNT(*) count FROM address_cache').get().count).toBe(0);
 });
 
 test('S7/S8 fixtures: diagnostics states, the delete question with rows to upload, Wi-Fi', async () => {

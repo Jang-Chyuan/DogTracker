@@ -5,11 +5,23 @@ import { isFinalCloudPage } from './CloudPaging';
 import { validCloudFix } from './CloudLatestSnapshot';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { inheritCloudDiagnosticSignal, beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
+import { serverClock } from './ServerClock';
 
 const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at';
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
 const NONZERO = 'payload->lat.neq.0,payload->lon.neq.0';
 const CONTEXT_PAGE = 500;
+// The live map's cloud roster: dogs with a row received in the last 14 days
+// (server `received_at`, which also bounds late phone uploads). Without a
+// bound every slave_id ever stored under the user's Masters (old collars, lent
+// collars, test IDs) stayed on the roster for good, and each one costs 2-5
+// requests every 30 s plus its half-hour context (audit F4). 14 days covers a
+// collar left charging in the kennel over a long holiday (Lunar New Year with
+// its weekends is about 9-10 days) or a two-week break between field
+// rotations, while a collar unheard for longer is no longer part of the team
+// in the field. Its rows stay in the local archive: the history still lists
+// it on the days it has data (HistoryDatabase.historyDogs).
+export const ROSTER_WINDOW_MS = 14 * 24 * 60 * 60000;
 const stamp = text => {
   const time = Date.parse(text);
   const fraction = /\.(\d{1,6})(?:Z|[+-]\d{2}:\d{2})$/.exec(text)?.[1] || '';
@@ -26,11 +38,19 @@ const compare = (left, right) => compareStamp(effective(left), effective(right))
 // next-key seek, not a membership slave list or one reverse telemetry page.
 // Phone and fallback clocks are separate ordered streams. A late-uploaded old
 // phone packet therefore cannot replace a newer Wi-Fi packet or valid fix.
-export async function downloadCloudLatest({ client, masterIds, cutoff, signal, check = () => {} }) {
+//
+// `cutoff` is this phone's clock; received_at is the server's. The query is
+// cut at the same moment on the server's clock (`serverCutoff`, ServerClock),
+// so a phone running behind does not leave out the newest Wi-Fi rows.
+export async function downloadCloudLatest({ client, masterIds, cutoff, signal, check = () => {},
+  serverOffset = serverClock.offset() }) {
   if (!Number.isFinite(cutoff) || !Array.isArray(masterIds) || !masterIds.every(Number.isSafeInteger)) throw new Error(t('c588'));
   const masters = [...new Set(masterIds)];
   const dogs = [];
-  if (!masters.length) return { cutoff, dogs };
+  const serverCutoff = cutoff + (Number.isFinite(serverOffset) ? serverOffset : 0);
+  // Said only when it differs (a healthy clock keeps the snapshot as it was).
+  const cut = serverCutoff === cutoff ? { cutoff } : { cutoff, serverCutoff };
+  if (!masters.length) return { ...cut, dogs };
   const work = new AbortController();
   inheritCloudDiagnosticSignal(signal, work.signal);
   let failed = false, failure, stop;
@@ -63,7 +83,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     return data[0] || null;
   };
   const base = fields => client.from('dog_telemetry').select(fields).in('master_id', masters)
-    .lt('received_at', new Date(cutoff).toISOString());
+    .lt('received_at', new Date(serverCutoff).toISOString());
   const readDog = async ({ slave, fallbackHint }) => {
     const latest = async fixed => {
       // Each dog has at most two clock requests; its fix phase still waits
@@ -92,7 +112,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
           }
           if (row) {
             const mapped = mapCloudTelemetry(row);
-            if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= cutoff
+            if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= serverCutoff
               || (phone && (row.upload_source !== 'phone' || !Number.isFinite(Date.parse(row.phone_received_at))))
               || (fixed && !validCloudFix(mapped))) throw new Error(t('c588'));
             return { row, mapped };
@@ -130,9 +150,13 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     let after = null;
     for (;;) {
       // One serial cursor, with at most four discovered keys waiting for a
-      // worker. Backpressure bounds prefetch without limiting the dog roster.
+      // worker. Backpressure bounds prefetch; ROSTER_WINDOW_MS bounds the roster.
       while (queued.length >= prefetch) { await Promise.race([...active, stopped]); await guard(); }
-      let keys = base(FIELDS).order('slave_id', { ascending: true })
+      // Only key discovery is bounded: a dog on the roster still gets its
+      // newest valid fix however old (`latest(true)` below), so a collar
+      // that has had no GPS for days keeps its last known position.
+      let keys = base(FIELDS).gte('received_at', new Date(cutoff - ROSTER_WINDOW_MS).toISOString())
+        .order('slave_id', { ascending: true })
         .order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
       if (after !== null) keys = keys.gt('slave_id', after);
       const key = await read(keys, 'keys');
@@ -150,7 +174,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     // Promise.all preserves discovery order and never exposes partial dogs.
     const complete = await Promise.all(jobs);
     await guard();
-    return { cutoff, dogs: complete };
+    return { ...cut, dogs: complete };
   } catch (error) {
     throw fail(error);
   } finally {
@@ -165,6 +189,8 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
 // how far a timed-out or failed stage got: requests issued, dogs completed.
 export async function downloadCloudLatestContext({ client, masterIds, snapshot, signal, check = () => {}, progress }) {
   const { cutoff, dogs } = snapshot;
+  // The same snapshot's cut on the server's clock (downloadCloudLatest).
+  const serverCutoff = Number.isFinite(snapshot.serverCutoff) ? snapshot.serverCutoff : cutoff;
   const result = [];
   let stored = 0;
   const read = async query => {
@@ -180,19 +206,19 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
   };
   for (const dog of dogs) {
     const until = dog.packet.track_at + 1;
-    const from = Math.min(cutoff, until) - HOLD_LOOKBACK_MS;
+    const from = Math.min(serverCutoff, until) - HOLD_LOOKBACK_MS;
     const events = new Map(), seeds = new Map();
     for (const phone of [false, true]) {
       const clock = phone ? 'phone_received_at' : 'received_at';
       const base = () => {
         let query = client.from('dog_telemetry').select(FIELDS).in('master_id', masterIds)
-          .eq('slave_id', dog.slaveId).lt('received_at', new Date(cutoff).toISOString());
+          .eq('slave_id', dog.slaveId).lt('received_at', new Date(serverCutoff).toISOString());
         if (phone) query = query.eq('upload_source', 'phone').not('phone_received_at', 'is', null);
         return query;
       };
       const validate = row => {
         const mapped = mapCloudTelemetry(row);
-        if (mapped.slave_id !== dog.slaveId || !masterIds.includes(mapped.master_id) || mapped.received_at >= cutoff
+        if (mapped.slave_id !== dog.slaveId || !masterIds.includes(mapped.master_id) || mapped.received_at >= serverCutoff
           || (phone && (row.upload_source !== 'phone' || !Number.isFinite(Date.parse(row.phone_received_at)))))
           throw new Error(t('c588'));
         return mapped;
