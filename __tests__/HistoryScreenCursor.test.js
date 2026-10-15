@@ -37,6 +37,9 @@ test('a stay shorter than a minute is 「停留 不到 1 分」, as its list row
   const brief = { ...model, locations: [short, model.locations[1]] };
   expect(cursorLabel(brief, 10 * minute + 10000)[1]).toBe('停留 不到 1 分');
   expect(nodePill(short).text).toBe('停 不到 1 分');
+  // TalkBack reads the row the same way, never 「0 分鐘」.
+  const { placeSpeech } = require('../src/history/HistoryText');
+  expect(placeSpeech({ ...short, latitude: 25, longitude: 121 }, '某地址')).toMatch(/，不到 1 分鐘$/u);
   const numbered = { ...short, number: 2, latitude: 25, longitude: 121 };
   const nodes = [{ type: 'departure', start: 0, end: 0, latitude: 25, longitude: 121 },
     { ...model.sections[0], end: 10 * minute }, numbered,
