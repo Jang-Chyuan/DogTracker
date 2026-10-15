@@ -14,6 +14,8 @@ GPS 在室內會失去定位，或定位一直飄（幾十到幾百公尺）。�
 
 資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.historyDayRows()` 讀一天（往前多讀 30 分鐘當脈絡，第一次讀時另附區間前最後 40 筆好定位當 `seed`），`useHistoryScreen` 用 `createHistoryHolds({ seed })` 套用同一套規則。匯出用原始定位，不套用。
 
+重複的列（2026-10-15，稽核 F6）：雲端每 30 秒下載一次，每次都把每隻狗整整 30 分鐘的脈絡再交給 `HoldStore`。同一個封包（時間、Master、座標都一樣；手機自己上傳又從雲端回來的那一筆來源和事件 ID 不同，也是同一個封包）只餵追蹤器一次：`HoldStore` 記住每一列的 key，列離開視窗後還多記一小時（比 30 分鐘的脈絡還長），之後才忘掉；種子（seed）也一樣去重，沒有新種子就不重新 seed。以前一隻安靜的狗，最新那一筆每 30 秒都會被再加一次，而且永遠不會被裁掉，每一筆新列都要掃過這些重複的列，所以越用越慢。`sizes()` 回報每隻狗留了幾列、幾個種子、幾個 key，`__tests__/HoldStoreReplay.test.js` 鎖住它們不隨時間變多。
+
 ## 規則
 
 1. **好定位**：衛星 5 顆以上、HDOP 2 以下，而且前一筆也是好定位（90 秒內）。夾在弱定位中間的單獨一筆「好定位」通常是窗外反射，當弱定位處理。沒有衛星與 HDOP 欄位的舊資料照舊顯示。
@@ -100,7 +102,7 @@ REPORT=1 npm test -- --runInBand __tests__/IndoorHoldSimulation.test.js
 - 寫法（`ADDRESS_CONFIG`）：最近的地址點 50 m 內「桃園區中正路 1 號附近」；50–300 m「…附近（約 120 m）」（取整到 10 m）；更遠只寫區「大園區（附近沒有地址）」；連區都沒有就是 `null`。去掉郵遞區號、臺灣、縣市、里／村，簡體轉繁體，數字前後加空格。地理編碼的地址行在已經結束門牌的部分後面又多一個「號」時（「100號十三樓號」「21號之3號」「32號號」）拿掉最後那個「號」（2026-10-13）；正常的「21號」「21之3號」不變。
 - 同時最多查 3 筆（`ADDRESS_CONFIG.parallel`，`PlaceLookupModule.kt` 的執行緒也是 3 條），其餘排隊；每筆最多 15 秒（連查網路狀態一起算），一筆逾時時還在排隊的也一起算查不到（Geocoder 不回答時不讓後面每筆各等 15 秒）；沒網路不問 Geocoder；查不到、逾時、出錯一分鐘後才重查（卡片重新打開時馬上重查），重查中照舊算查不到（不再變回查詢中）。微調 50 m 內沿用同一個地址。
 - 為什麼不再一次一筆（2026-10-14，模擬器 emulator-5564、`history-busy-day-geocoder` 情境，16 個停留）：一筆一筆查，每筆 1.4–17 秒（中位數約 3.6 秒，主機很忙），16 筆全部查到共約 73 秒、沒有一筆失敗；但清單原本 5 秒後就把還在排隊的列算成查不到，18 列裡有 13 列顯示「地址暫時無法取得」，其實只是還沒輪到。匯出最多只等 5 秒，同樣大多寫空白。改成同時 3 筆後同一個情境 16 筆約 12 秒查完（每筆 0.9–5.2 秒），排隊中的列一直是 shimmer，沒有一列提早變座標。
-- 快取：記憶體＋`dogtracker.sqlite` 的 `address_cache`（最多 500 筆，借 Android 原生 SQLite owner），即時卡片和歷史清單共用 `AddressLookupContext` 預設的同一個 lookup；畫面情境用自己的 lookup（`src/dev/fixtureGeocoder.js`），不寫進這支手機的快取。
+- 快取：記憶體＋`dogtracker.sqlite` 的 `address_cache`（最多 500 筆，借 Android 原生 SQLite owner），即時卡片和歷史清單共用 `AddressLookupContext` 預設的同一個 lookup；畫面情境用自己的 lookup（`src/dev/fixtureGeocoder.js`），不寫進這支手機的快取。這些地址記的是狗和手機停留過的地方（包括家），所以「刪除我的路線」、「刪除全部狗資料」和登出都會用 `forgetAddresses()` 清掉記憶體和 `address_cache`；清之前還在查的答案回來也不會再存。
 - `useAddress(point)`：A7b 卡片第二行，字串或 `null`。第一次還在查是 `null`（不寫、不轉圈，列高不變）；真的查不到（沒有答案、沒網路、逾時、沒有 Geocoder）是停住點的座標「24.9892, 121.3138」（和清單相同），之後查到就換成地址。
 - `usePlaceNames(points)`：歷史清單每個節點 `{ state: 'pending' | 'found' | 'none', text }`；排隊中、查詢中（含讀手機裡存的地址）都是 `pending`（shimmer），不論等多久；真的查不到（沒有答案、沒網路、逾時）才是 `none`，清單在地址的位置寫座標（`HistoryText.coordinates`，「24.9892, 121.3138」；室內節點也查停住點地址、採同樣排法），之後查到照樣換成地址。「桃園區（附近沒有地址）」是查到（`found`）。
 - `lookupAddresses(points, { timeoutMs })`：匯出用，順序和輸入相同。清單已查到的直接從快取拿，一分鐘內查不到的不再問；其他的等到有答案或真的查不到，最多 `ADDRESS_CONFIG.exportWaitMs`（20 秒）；沒網路只用手機裡存的。拿不到地址的列，匯出 PNG 寫座標（和清單相同）；GPX、CSV 不變。

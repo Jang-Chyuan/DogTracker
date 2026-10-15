@@ -143,7 +143,9 @@ test('resume inside the refresh cooldown waits for the session instead of showin
   // No anonymous request, no failure: still 正在更新.
   expect(cloud.net.rest).toEqual([]);
   expect(shownFailure()).toEqual([]);
-  expect(states.at(-1)).toMatchObject({ snapshotPending: true, catchUp: { phase: 'catching-up' } });
+  // The attempt is under way (busy) but the map's dogs are not held for it:
+  // the latest store does not change before the publish.
+  expect(states.at(-1)).toMatchObject({ busy: true, snapshotPending: false, catchUp: { phase: 'catching-up' } });
   await jest.advanceTimersByTimeAsync(14000); await flush();
   expect(states.at(-1)).toMatchObject({ mapSuccessRevision: 2, error: '', authFailed: false, offline: false,
     catchUp: { phase: 'idle' } });
@@ -200,7 +202,7 @@ test('a server-refused token whose refresh is also refused reports auth once per
 test('going back to the background during the session wait releases the attempt at once', async () => {
   await backgroundRefreshFailure();
   await resume();
-  expect(states.at(-1)).toMatchObject({ busy: true, snapshotPending: true });
+  expect(states.at(-1)).toMatchObject({ busy: true, snapshotPending: false });
   const before = Date.now();
   engine.setForeground(false); cloud.client.auth.stopAutoRefresh(); await flush();
   expect(Date.now()).toBe(before);

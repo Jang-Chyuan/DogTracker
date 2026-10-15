@@ -1,4 +1,4 @@
-import { downloadCloudLatest } from '../src/cloud/CloudLatest';
+import { downloadCloudLatest, ROSTER_WINDOW_MS } from '../src/cloud/CloudLatest';
 import { downloadCloudLatestSerial } from '../__fixtures__/CloudLatestSerial';
 
 const CUT = Date.parse('2026-10-10T12:00:00Z');
@@ -24,7 +24,7 @@ function rest(events) {
         if (method === 'eq') return prop === value;
         if (method === 'gt') return prop > value;
         if (method === 'lt') return Date.parse(prop) < Date.parse(value);
-        if (method === 'gte') return typeof prop === 'number' && prop >= value;
+        if (method === 'gte') return key.endsWith('_at') ? Date.parse(prop) >= Date.parse(value) : typeof prop === 'number' && prop >= value;
         if (method === 'lte') return typeof prop === 'number' && prop <= value;
         if (method === 'not') return prop != null;
         if (method === 'or') {
@@ -448,4 +448,34 @@ test('the pipelined snapshot exactly matches the independent committed serial or
     const expected = await downloadCloudLatestSerial({ client: rest(events).client, masterIds: [7, 9], cutoff: CUT });
     expect(await downloadCloudLatest({ client: rest(events).client, masterIds: [7, 9], cutoff: CUT })).toEqual(expected);
   }
+});
+
+// Audit F4: the roster used to be every slave_id ever stored, and each old
+// collar cost 2-5 requests every 30 s for good.
+test('the roster only lists dogs with a row in the last ROSTER_WINDOW_MS; a listed dog still gets its older last fix', async () => {
+  const ago = ms => new Date(CUT - ms).toISOString();
+  const DAY = 24 * 60 * 60000;
+  expect(ROSTER_WINDOW_MS).toBe(14 * DAY);
+  const rows = [
+    event(1, 4, 7, ago(15 * DAY)),
+    // No GPS for 20 days, but packets this morning: on the roster, at its old fix.
+    event(2, 6, 7, ago(20 * DAY)), event(3, 6, 7, ago(60 * 60000), { lat: 0, lon: 0 }),
+    event(4, 8, 9, ago(ROSTER_WINDOW_MS - 1000)),
+  ];
+  const { client } = rest(rows);
+  const result = await downloadCloudLatest({ client, masterIds: [7, 9], cutoff: CUT });
+  expect(result.dogs.map(dog => dog.slaveId)).toEqual([6, 8]);
+  expect(result.dogs[0]).toMatchObject({ packet: { sequence: 3 }, fix: { sequence: 2 } });
+});
+
+test('old collars on the roster no longer add requests to every latest download', async () => {
+  const recent = [event(1, 4, 7, '2026-10-10T11:00:00Z'), event(2, 6, 7, '2026-10-10T11:30:00Z')];
+  const old = Array.from({ length: 30 }, (_, index) =>
+    event(100 + index, 50 + index, 7, new Date(CUT - (15 + index) * 24 * 60 * 60000).toISOString()));
+  const without = rest(recent);
+  await downloadCloudLatest({ client: without.client, masterIds: [7], cutoff: CUT });
+  const withOld = rest([...recent, ...old]);
+  const result = await downloadCloudLatest({ client: withOld.client, masterIds: [7], cutoff: CUT });
+  expect(result.dogs.map(dog => dog.slaveId)).toEqual([4, 6]);
+  expect(withOld.calls).toHaveLength(without.calls.length);
 });

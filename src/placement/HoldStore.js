@@ -10,8 +10,10 @@ export const HOLD_LOOKBACK_MS = 30 * 60000;
 // late row does not reset where it stands or the time it went inside.
 const HELD_LOOKBACK_MS = 6 * 60 * 60000;
 const MAX_SEEDS = 200;
-const sameRow = (left, right) => left.time === right.time && left.master_id === right.master_id
-  && Number(left.latitude) === Number(right.latitude) && Number(left.longitude) === Number(right.longitude);
+// One packet, whichever way it came: the same time, Master and coordinate.
+// The phone's own upload comes back from the cloud with the BLE row's time
+// (another source and event, the same packet), so this is not the event id.
+const rowKey = row => `${row.time}|${row.master_id}|${Number(row.latitude)}|${Number(row.longitude)}`;
 
 // The receiver-range judgement of a row, given whether the dog is held at it.
 const rangeRow = (row, held) => ({
@@ -69,6 +71,26 @@ function step(state, rows, index) {
   state.battery = advanceBattery(state.battery, batteryReading(row, row.time));
 }
 
+// Keeps the newest MAX_SEEDS seeds, and their keys with them.
+function addSeeds(state, rows) {
+  state.seeds = state.seeds.concat(rows);
+  if (state.seeds.length > MAX_SEEDS) {
+    state.seeds = state.seeds.slice(-MAX_SEEDS);
+    state.seedKeys = new Set(state.seeds.map(rowKey));
+  }
+}
+
+// Lets go of the keys of rows older than `before`: an hour behind the window
+// (or behind its newest row), further back than a snapshot context replays.
+// Keys are added in time order but for late rows, so this stops at the first
+// newer one; a late key behind it goes when the keys before it do.
+function forget(state, before) {
+  for (const [key, time] of state.seen) {
+    if (time >= before) break;
+    state.seen.delete(key);
+  }
+}
+
 /**
  * One tracker per dog for the live map. Rows arrive in batches from the BLE
  * table and the downloaded cloud copy; each dog's rows are merged and fed in
@@ -86,8 +108,12 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
   const dogs = new Map();
   function dog(slaveId) {
     if (!dogs.has(slaveId)) {
+      // `seen`: the key of every row fed (rowKey -> time), kept a while after
+      // the row leaves the window, so a replayed one is known (forget);
+      // `seedKeys`: the keys of `seeds`.
       dogs.set(slaveId, { tracker: createHoldTracker(config, options), rows: [], seeds: [], touched: 0,
-        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null });
+        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null,
+        seen: new Map(), seedKeys: new Set() });
     }
     return dogs.get(slaveId);
   }
@@ -108,17 +134,34 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       for (const [slaveId, batch] of bySlave) {
         const state = dog(slaveId);
         batch.rows.sort((left, right) => left.time - right.time);
-        if (batch.seeds.length) {
-          state.seeds = state.seeds.concat(batch.seeds).slice(-MAX_SEEDS);
+        // The live map hands every snapshot's whole half-hour context (and its
+        // seeds) in again, every 30 s (useCloudDogs). Rows and seeds already
+        // fed are dropped here, so a silent dog's rows are not appended again
+        // and again (audit F6: its newest row, equal to lastTime, used to pass
+        // and pile up, never trimmed, scanned whole for every row).
+        const freshSeeds = batch.seeds.filter(row => {
+          const key = rowKey(row);
+          if (state.seedKeys.has(key)) return false;
+          state.seedKeys.add(key);
+          return true;
+        });
+        if (freshSeeds.length) {
+          addSeeds(state, freshSeeds);
+          // The whole batch, as before: a new seed is trusted by its neighbours.
           state.tracker.seed(batch.seeds);
-          state.touched = Math.max(state.touched, ...batch.seeds.map(row => row.time));
+          state.touched = Math.max(state.touched, ...freshSeeds.map(row => row.time));
         }
         // The phone's own upload comes back from the cloud with the BLE row's
         // time: the same row again, not a late one.
+        batch.rows = batch.rows.filter(row => {
+          const key = rowKey(row);
+          if (state.seen.has(key)) return false;
+          state.seen.set(key, row.time);
+          return true;
+        });
+        if (!batch.rows.length) continue;
         const lastTime = state.tracker.lastTime();
-        batch.rows = batch.rows.filter(row => row.time >= lastTime
-          || !state.rows.some(seen => sameRow(seen, row)));
-        const late = batch.rows.length && batch.rows[0].time < lastTime;
+        const late = batch.rows[0].time < lastTime;
         state.rows = state.rows.concat(batch.rows).sort((left, right) => left.time - right.time);
         const newest = state.rows.length ? state.rows[state.rows.length - 1].time : 0;
         const heldSince = state.tracker.current(newest)?.since;
@@ -126,9 +169,14 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
           ? Math.max(newest - HELD_LOOKBACK_MS, Math.min(newest - HOLD_LOOKBACK_MS, heldSince - HOLD_LOOKBACK_MS))
           : newest - HOLD_LOOKBACK_MS;
         // Good fixes leaving the window stay as seeds, so a replay still knows them.
-        const leaving = state.rows.filter(row => row.time < keepFrom && fixQuality(row, config) === 'good');
-        if (leaving.length) state.seeds = state.seeds.concat(leaving).slice(-MAX_SEEDS);
+        const leaving = state.rows.filter(row => row.time < keepFrom && fixQuality(row, config) === 'good'
+          && !state.seedKeys.has(rowKey(row)));
+        if (leaving.length) {
+          leaving.forEach(row => state.seedKeys.add(rowKey(row)));
+          addSeeds(state, leaving);
+        }
         state.rows = state.rows.filter(row => row.time >= keepFrom);
+        forget(state, Math.min(keepFrom, newest - HOLD_LOOKBACK_MS) - HOLD_LOOKBACK_MS);
         if (late) {
           // A Master uploading late, or a slow download: replay the window in
           // time order instead of dropping what came in behind.
@@ -153,7 +201,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
             else step(state, state.rows, index);
           }
         }
-        if (batch.rows.length) state.touched = Math.max(state.touched, newest);
+        state.touched = Math.max(state.touched, newest);
       }
     },
     holds(now) {
@@ -195,6 +243,15 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       const result = {};
       for (const [slaveId, state] of dogs) {
         if (state.range.status != null) result[slaveId] = state.range;
+      }
+      return result;
+    },
+    // How much each dog keeps: window rows, seeds and remembered row keys
+    // (diagnostics and tests: none of them may grow with a long session).
+    sizes() {
+      const result = {};
+      for (const [slaveId, state] of dogs) {
+        result[slaveId] = { rows: state.rows.length, seeds: state.seeds.length, keys: state.seen.size };
       }
       return result;
     },

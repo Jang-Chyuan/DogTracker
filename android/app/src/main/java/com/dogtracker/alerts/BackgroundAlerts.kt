@@ -33,11 +33,13 @@ object BackgroundAlerts {
   private const val DOGS = "dogs"
   private const val PREFERENCES = "preferences"
   private const val RECEIVER_BATTERY = "receiverBattery"
+  private const val OTHERS = "others"
   // After the app leaves the screen, its last step may still be under way.
   const val HANDOVER_MS = 3000L
 
   private val lock = Any()
   private var dogs: MutableMap<Int, AlertDog>? = null
+  private var otherDogs: Map<Int, OtherDog>? = null
   private var receiverBattery: Int? = null
 
   // ---- whose turn: MainActivity reports the screen ----------------------------
@@ -67,6 +69,9 @@ object BackgroundAlerts {
       AlertCodec.readDogs(org.json.JSONArray(prefs.getString(DOGS, "[]")))
     } catch (_: Exception) { emptyMap() }
     receiverBattery = if (prefs.contains(RECEIVER_BATTERY)) prefs.getInt(RECEIVER_BATTERY, 0) else null
+    otherDogs = try {
+      AlertCodec.readOthers(org.json.JSONArray(prefs.getString(OTHERS, "[]")))
+    } catch (_: Exception) { emptyMap() }
     return loaded.toMutableMap().also { dogs = it }
   }
 
@@ -99,25 +104,24 @@ object BackgroundAlerts {
   /**
    * The app's view of this phone's dogs and its 提醒 settings (while in
    * front, each time they change). The names, holds and range judgements are
-   * the app's; times and batteries keep whichever is newer.
+   * the app's; times and batteries keep whichever is newer (HandOver.merge).
+   * A dog the app counts as this phone's while a teammate's cloud row of it
+   * is newer is still handed over, so it keeps its name and judgement.
    */
-  fun handOver(context: Context, json: String) = synchronized(lock) {
+  fun handOver(context: Context, json: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
     val value = JSONObject(json)
     val known = loadDogs(context)
     val incoming = AlertCodec.readDogs(value.optJSONArray("dogs"))
-    for ((id, dog) in incoming) {
-      val mine = known[id]
-      // Whichever saw this phone's newest packet of the dog keeps what came
-      // from the packets (times, position, hold, range, battery); the name
-      // is always the app's.
-      val mineNewer = mine != null && (mine.range.lastLocalAt ?: mine.packetAt ?: 0) >
-        (dog.range.lastLocalAt ?: dog.packetAt ?: 0)
-      known[id] = if (mine != null && mineNewer) mine.copy(name = dog.name) else dog
-    }
-    // A dog the app no longer counts as this phone's (only heard through the
-    // cloud now, or forgotten after 24 hours) is not checked here either.
-    known.keys.retainAll(incoming.keys)
+    val others = AlertCodec.readOthers(value.optJSONArray("others"))
+    val merged = HandOver.merge(known, incoming, now, others)
+    known.clear()
+    known.putAll(merged)
+    // The other dogs' names and judgements, for a packet of one of them
+    // while the app is away (onPacket); not checked here until then.
+    val waiting = others.filterKeys { it !in merged }
+    otherDogs = waiting
     val edit = prefs(context).edit().putString(DOGS, AlertCodec.writeDogs(known.values).toString())
+      .putString(OTHERS, AlertCodec.writeOthers(waiting.values).toString())
     value.optJSONObject("preferences")?.let { edit.putString(PREFERENCES, it.toString()) }
     edit.apply()
   }
@@ -129,7 +133,9 @@ object BackgroundAlerts {
   fun onPacket(context: Context, data: JSONObject, receivedAt: Long) = synchronized(lock) {
     val packet = AlertCodec.readPacket(data, receivedAt) ?: return@synchronized
     val known = loadDogs(context)
-    known[packet.slaveId] = Dogs.apply(known[packet.slaveId], packet)
+    // A dog the app last counted as the cloud's starts from its name and
+    // range judgement, not from nothing.
+    known[packet.slaveId] = Dogs.apply(HandOver.start(known[packet.slaveId], otherDogs?.get(packet.slaveId)), packet)
     prefs(context).edit().putString(DOGS, AlertCodec.writeDogs(known.values).toString()).commit()
     AlertCodec.readReceiverBattery(data)?.let { receiverBattery = it }
   }
@@ -175,6 +181,7 @@ object BackgroundAlerts {
   fun reset(context: Context) = synchronized(lock) {
     prefs(context).edit().clear().commit()
     dogs = null
+    otherDogs = null
     receiverBattery = null
   }
 

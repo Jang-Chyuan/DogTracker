@@ -41,6 +41,7 @@ test('cloud dogs fall back to now before the first download and after 10 minutes
   const failing = since => ({ lastDownloadAt: NOW - (since + 0.5) * MINUTE, failingSince: NOW - since * MINUTE });
   expect(cloudClock(failing(9), NOW)).toBe(NOW - 9.5 * MINUTE);
   expect(cloudClock(failing(11), NOW)).toBe(NOW);
+  // (A fix the last download brought: older than that download.)
   expect(dogFreshness(cloud(15), { now: NOW, cloud: failing(9) }).stale).toBe(false);
   expect(dogFreshness(cloud(15), { now: NOW, cloud: failing(11) }).stale).toBe(true);
 });

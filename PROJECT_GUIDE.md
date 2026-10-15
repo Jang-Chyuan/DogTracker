@@ -67,7 +67,7 @@ android/app/src/main/java/com/dogtracker/
 ├─ HistoryExportPackage.kt、ExportLifecycle.kt、ExportLabelLayout.kt、HistoryExportCleanup.kt  匯出繪圖、分享與清理
 ├─ PlaceLookupModule.kt                  地址查詢
 ├─ AlertNotificationsModule.kt、AlertNotificationsPackage.kt、NotificationChannels.kt  通知橋接
-├─ alerts/  BackgroundAlerts.kt、AlertRules.kt、AlertPoster.kt、IndoorHold.kt  背景提醒與停住判斷
+├─ alerts/  BackgroundAlerts.kt、HandOver.kt、AlertRules.kt、AlertPoster.kt、IndoorHold.kt  背景提醒、App 交接與停住判斷
 ├─ cloud/   CloudHistoryWorker.kt、CloudSyncSchedule.kt、CloudSyncPackage.kt、SearchRelayService.kt  背景雲端工作
 └─ location/  LocationTrackerService.kt、LocationTrackerStore.kt、LocationTrackerPackage.kt、LocationPipeline.kt、DisplayLocation.kt  手機定位與記錄
 ```
@@ -113,7 +113,7 @@ android/app/src/main/java/com/dogtracker/
 - `serviceUuid` 必須符合 DogTracker BLE Service UUID。
 - `profile` 可省略；省略時使用 `default`。
 
-掃描成功只代表設定格式有效。連線後收到第一筆資料時，App 還會比對 QR 的 `masterId` 與 BLE payload 的 Master ID；不一致時會中止該次連線。
+掃描成功只代表設定格式有效。連線後收到第一筆資料時，App 還會比對 QR 的 `masterId` 與 BLE payload 的 Master ID；payload 寫的是另一台 Master 才中止該次連線。沒有 Master ID（缺欄位、null、不是整數）的資料不算不一致，照常處理並計入診斷（`framesWithoutMasterId`）。
 
 ## 共用 DogStatus 模型
 

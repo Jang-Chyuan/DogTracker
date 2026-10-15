@@ -14,8 +14,32 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
-  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays'];
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs'];
+// historyDogs lists at most this many dogs (each one is one indexed seek).
+export const HISTORY_DOGS_LIMIT = 200;
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
+// Each dog's name by collar number, on this phone only. The names used to sit
+// inside the history query's JSON row (map_history_settings), so one field
+// of the query failing validateHistory hid every name, and the next rename
+// wrote the defaults plus that one name back, deleting the others.
+const NAME_TABLE = 'CREATE TABLE IF NOT EXISTS dog_names (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
+const SETTINGS_TABLE = 'CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)';
+// One move of the old names per connection, even when two opens race.
+const namesMoved = new WeakMap();
+const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
+// A save's names: a name is written, an empty one removes that dog's name
+// (back to 狗 N). A dog left out of the map keeps the name it has, so a save
+// made from preferences that never loaded cannot delete the other names.
+function nameChanges(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return Object.entries(value).filter(([id]) => /^[1-9]\d*$/.test(id)).flatMap(([id, alias]) => {
+    if (alias != null && typeof alias !== 'string') return [];
+    const name = normalizeDogAliases({ [id]: alias || '' })[id];
+    return name
+      ? [{ query: 'INSERT OR REPLACE INTO dog_names(slave_id,value) VALUES(?,?)', params: [Number(id), name] }]
+      : [{ query: 'DELETE FROM dog_names WHERE slave_id=?', params: [Number(id)] }];
+  });
+}
 // Several dogs can be out with several Masters, so both are lists.
 export const HISTORY_PRESET_HOURS = Object.freeze([1, 3, 6, 12, 24]);
 export const HISTORY_DEFAULTS = { phone: true, client: true, source: 'ble', hours: 3,
@@ -63,17 +87,59 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
-// myLocationTracker's optional columns 「今天 x km」 reads (phoneRouteSince).
-const PHONE_ROUTE_COLUMNS = ['raw_speed_kmh', 'speed_accuracy_mps', 'session_id', 'odometer_m'];
+// myLocationTracker's optional columns the history logic reads: the raw fix
+// PhoneMotion runs on (latitude/longitude are the pipeline's, held on the
+// anchor while the phone stands still), the phone's own measured speed (067),
+// the detector's state, the recording session and its odometer (2026-10-13).
+// 「今天 x km」 (phoneRouteSince) and the history list (historyDayRows) read
+// this one list, so both run the same detector on the same fixes and the pill
+// says the summary's number (2026-10-15: without the raw fix the pill was up
+// to 100 m off the summary on real days).
+export const PHONE_MODEL_COLUMNS = Object.freeze(['raw_latitude', 'raw_longitude', 'speed_kmh', 'raw_speed_kmh',
+  'speed_accuracy_mps', 'motion_state', 'session_id', 'odometer_m']);
+const PHONE_TEXT_COLUMNS = new Set(['motion_state', 'session_id']);
+// The CSV export's other columns (判定表「CSV」: 照 main 的欄位), my route only.
+const PHONE_EXPORT_COLUMNS = ['location_at', 'accuracy_meters', 'altitude_meters', 'heading_degrees',
+  'display_source', 'display_location_at'];
 export function createHistoryDatabase(db) {
   // myLocationTracker's speed columns, read once per open database.
   let phoneSpeedColumns = null;
+  // The names' own table. The first open after the upgrade creates it
+  // together with the names the history row held, in one transaction, so a
+  // crash in between leaves the old row to move again next time.
+  function ensureNames() {
+    if (!namesMoved.has(db)) {
+      namesMoved.set(db, (async () => {
+        await db.executeAsync(SETTINGS_TABLE);
+        if (rows(await db.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='dog_names'")).length) return;
+        const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
+        const old = normalizeDogAliases(saved ? parseJson(saved.value)?.dogAliases : null);
+        await db.executeBatchAsync([{ query: NAME_TABLE, params: [] }, ...nameChanges(old)]);
+      })().catch(error => { namesMoved.delete(db); throw error; }));
+    }
+    return namesMoved.get(db);
+  }
+  async function loadNames() {
+    await ensureNames();
+    return normalizeDogAliases(Object.fromEntries(
+      rows(await db.executeAsync('SELECT slave_id, value FROM dog_names')).map(row => [String(row.slave_id), row.value])));
+  }
   return {
+    // The history query plus every dog's name (`dogAliases`, from dog_names).
     async load() {
-      await db.executeAsync('CREATE TABLE IF NOT EXISTS map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
+      await db.executeAsync(SETTINGS_TABLE);
       await db.executeAsync('CREATE INDEX IF NOT EXISTS idx_history_client ON dog_status(master_id, slave_id, received_at, id)');
+      const dogAliases = await loadNames();
       const saved = rows(await db.executeAsync('SELECT value FROM map_history_settings WHERE id=1'))[0];
-      return validateHistory(saved ? JSON.parse(saved.value) : {});
+      // The names the row held before dog_names existed are not read again.
+      const query = { ...((saved && parseJson(saved.value)) || {}) };
+      delete query.dogAliases;
+      // A stored query that no longer validates (a damaged row, a field from
+      // another version) falls back to the defaults; the v3 screen takes its
+      // target from the route, and the names do not depend on it.
+      let settings;
+      try { settings = validateHistory(query); } catch { settings = validateHistory({}); }
+      return { ...settings, dogAliases };
     },
     /**
      * Each dog's face, by collar number, on this phone only (like its name).
@@ -98,15 +164,22 @@ export function createHistoryDatabase(db) {
       else await db.executeAsync('DELETE FROM dog_avatars WHERE slave_id=?', [slaveId]);
       return value;
     },
+    // `dogAliases`, when given, writes the names it carries (an empty one
+    // removes that name); the dogs it leaves out keep theirs.
     async save(value) {
-      const settings = validateHistory(value);
-      await db.executeAsync('INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', [JSON.stringify(settings)]);
-      return settings;
+      const { dogAliases, ...query } = value || {};
+      const settings = validateHistory(query);
+      await ensureNames();
+      await db.executeBatchAsync([
+        { query: 'INSERT OR REPLACE INTO map_history_settings(id,value) VALUES(1,?)', params: [JSON.stringify(settings)] },
+        ...nameChanges(dogAliases)]);
+      return { ...settings, dogAliases: await loadNames() };
     },
     /**
      * This phone's own recorded positions from `since` on, after the cursor
      * { time, id } (oldest first, at most `limit`): what 「今天 x km」 adds up.
-     * The pipeline's coordinates, not the display animation's.
+     * The pipeline's coordinates (not the display animation's) with the
+     * model's columns (PHONE_MODEL_COLUMNS), as historyDayRows reads them.
      */
     async phoneRouteSince(since, cursor = null, limit = 2000) {
       const exists = rows(await db.executeAsync(
@@ -114,29 +187,26 @@ export function createHistoryDatabase(db) {
       if (!exists.length) return [];
       const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
       const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
-      // The phone's own measured speed (067: drift it did not walk is not
-      // counted) and the recorder's odometer with its recording session
-      // (2026-10-13: the per-second path of a walk), when this install's
-      // table has the columns.
       // Kept once every column is there: the recorder adds a missing one when
       // it opens the table (an app update), possibly after the first read.
       let columns = phoneSpeedColumns;
       if (!columns) {
         const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
-        columns = PHONE_ROUTE_COLUMNS.filter(name => names.has(name));
-        if (columns.length === PHONE_ROUTE_COLUMNS.length) phoneSpeedColumns = columns;
+        columns = PHONE_MODEL_COLUMNS.filter(name => names.has(name));
+        if (columns.length === PHONE_MODEL_COLUMNS.length) phoneSpeedColumns = columns;
       }
-      const optional = value => (value == null ? null : Number(value));
+      // Each column the table has is a key of every row (null when the row
+      // has none), as on historyDayRows' rows: the logic tells a recorder
+      // that measured nothing (null) from an old one without the column.
+      const value = (name, raw) => (raw == null ? null : PHONE_TEXT_COLUMNS.has(name) ? String(raw) : Number(raw));
       return rows(await db.executeAsync(
         `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
           columns.map(name => `, ${name}`).join('')} FROM myLocationTracker
          WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
          ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
         .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
-          longitude: Number(row.longitude), accuracy: optional(row.accuracy),
-          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps),
-          ...(row.session_id != null ? { session_id: String(row.session_id) } : {}),
-          ...(row.odometer_m != null ? { odometer_m: Number(row.odometer_m) } : {}) }));
+          longitude: Number(row.longitude), accuracy: row.accuracy == null ? null : Number(row.accuracy),
+          ...Object.fromEntries(columns.map(name => [name, value(name, row[name])])) }));
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
@@ -151,9 +221,14 @@ export function createHistoryDatabase(db) {
      * time, so a download of older rows is seen), and polling re-reads a few
      * rows, not the day. The dog's hold model also gets
      * the last good fixes before the window (`seed`), like the history map.
-     * @returns {{ rows, seed, after }}
+     * `verify` (my route): a reader that kept its rows while the screen was
+     * closed or the app was away first checks that the rows it already read
+     * are all still there (a cheap count on the time index); when they are
+     * not (刪除我的路線, an edit), the day is read again from the start and
+     * the answer says `replaced`: its rows stand for the whole day.
+     * @returns {{ rows, seed, after, replaced? }}
      */
-    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {}, signal = null }) {
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {}, signal = null, verify = false }) {
       // A read the screen no longer wants (‹ › moved on) stops before its
       // next query instead of reading the rest of the day.
       const stopped = () => {
@@ -166,7 +241,7 @@ export function createHistoryDatabase(db) {
       // A few minutes past midnight tell whether the last stay or hold goes on
       // the next day (`continuesNextDay`); they are not part of this day.
       const until = Number(end) + HISTORY_DAY_AFTER_MS;
-      const cursors = { ...after };
+      let cursors = { ...after };
       // By id, not time: a cloud download can add rows older than the newest
       // one read (判定表「補下載完成」), and those must be read too.
       async function pages(key, sql, params) {
@@ -188,14 +263,24 @@ export function createHistoryDatabase(db) {
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
         if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
-        // The CSV export's columns ride along (判定表「CSV」: 照 main 的欄位).
+        // The model's columns (the same as 「今天 x km」's) and the CSV
+        // export's (判定表「CSV」: 照 main 的欄位).
         const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
-        const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
-          'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
-          'display_source', 'display_location_at', 'odometer_m'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
+        const phoneExtra = [...PHONE_EXPORT_COLUMNS, ...PHONE_MODEL_COLUMNS]
+          .filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const select = `SELECT id, recorded_at AS time, latitude, longitude,
           accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker`;
+        let replaced = false;
+        if (verify && cursors.phone) {
+          stopped();
+          const held = rows(await db.executeAsync(`SELECT COUNT(*) AS n FROM myLocationTracker
+            WHERE recorded_at >= ? AND recorded_at < ? AND id <= ?`, [since, until, cursors.phone.id]))[0];
+          if (Number(held?.n) !== (cursors.phoneCount ?? 0)) { cursors = {}; replaced = true; }
+        }
         const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);
+        // The window's rows read so far (by id, up to the cursor): what
+        // `verify` compares the table with.
+        cursors.phoneCount = (cursors.phoneCount ?? 0) + found.length;
         // 2026-10-13: the fixes on the other side of the day, however far —
         // the last one before the context window (once) and, until one is
         // found, the first one after it — so the list can show the time
@@ -215,7 +300,8 @@ export function createHistoryDatabase(db) {
             if (next.length) cursors.phoneAfter = true;
           }
         }
-        return { rows: [...before, ...found, ...next].map(phoneHistoryRow), seed: [], after: cursors };
+        return { rows: [...before, ...found, ...next].map(phoneHistoryRow), seed: [], after: cursors,
+          ...(replaced ? { replaced: true } : {}) };
       }
       const out = [], seed = [];
       const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));
@@ -258,8 +344,17 @@ export function createHistoryDatabase(db) {
       const found = new Set();
       const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
       if (subject === 'phone') {
+        // Not a DISTINCT over every row (80 000 at the recorder's cap, each
+        // converted to local time, on the connection the day's own read
+        // waits for): from each day's first fix, the time index jumps
+        // straight to the next local day's first one.
+        const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
         if (await table('myLocationTracker')) {
-          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('recorded_at')} AS day FROM myLocationTracker`)));
+          add(rows(await db.executeAsync(`WITH RECURSIVE first(t) AS (
+              SELECT MIN(recorded_at) FROM myLocationTracker
+              UNION ALL SELECT (SELECT MIN(recorded_at) FROM myLocationTracker
+                WHERE recorded_at >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
+            SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`)));
         }
       } else {
         if (await table('dog_status')) {
@@ -272,6 +367,37 @@ export function createHistoryDatabase(db) {
         }
       }
       return [...found].sort();
+    },
+    /**
+     * Every dog this phone holds rows of (this phone's receiver, and this
+     * account's downloaded cloud copy), ascending. The history's 「＋ 加入」
+     * offers the ones that have rows on the day shown, beside the dogs on the
+     * live map: the map only lists dogs heard in the last 14 days
+     * (CloudLatest ROSTER_WINDOW_MS), the history reaches older ones. One
+     * index seek per dog (slave_id leads both tables' indexes), not a scan.
+     */
+    async historyDogs({ owner = null } = {}) {
+      const table = async name => rows(await db.executeAsync(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
+      const found = new Set();
+      const walk = async (query, params) => {
+        let after = 0;
+        while (found.size < HISTORY_DOGS_LIMIT) {
+          const next = rows(await db.executeAsync(query, [after, ...params]))[0];
+          const slave = Number(next?.slave_id);
+          if (!Number.isInteger(slave) || slave <= after) return;
+          found.add(slave);
+          after = slave;
+        }
+      };
+      if (await table('dog_status')) {
+        await walk('SELECT slave_id FROM dog_status WHERE slave_id > ? ORDER BY slave_id LIMIT 1', []);
+      }
+      if (owner && await table('supabase_dog_status')) {
+        await walk(`SELECT slave_id FROM supabase_dog_status WHERE slave_id > ? AND owner_user_id = ?
+          ORDER BY slave_id LIMIT 1`, [owner]);
+      }
+      return [...found].sort((left, right) => left - right).slice(0, HISTORY_DOGS_LIMIT);
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card

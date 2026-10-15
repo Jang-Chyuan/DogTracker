@@ -6,6 +6,8 @@ import { createCloudSync } from './CloudSync';
 import { createCloudAuthRefreshLifecycle } from './CloudAuthRefreshLifecycle';
 import { storedSignIn } from './CloudSession';
 
+export const AUTH_REPORT_REPEAT_MS = 5 * 60000;
+
 // Foreground uses the existing 30-second scheduler; Android WorkManager owns
 // bounded background passes. Do not cancel durable jobs on a React unmount.
 // `onAuthFailure`: a pass was refused for the sign-in (401 / expired JWT);
@@ -30,11 +32,18 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
     catch { setStatus(current => ({ ...current, error: t("c596") })); return undefined; }
     let disposed = false;
     let eventSeen = false;
-    let refused = false;
+    let refused = false, reportedAt = 0;
     const sync = createCloudSync({ client, database, onChange: value => {
       setStatus(current => ({ ...current, ...value }));
-      // Once per refusal, not on every later publish of the same state.
-      if (value.authFailed && !refused) authFailure.current?.();
+      // Once per refusal, not on every later publish or attempt of the same
+      // state (it stays set until an attempt succeeds). A refusal that lasts
+      // is asked about again every AUTH_REPORT_REPEAT_MS: the verdict of a
+      // refresh that found no network earlier may have changed.
+      const at = Date.now();
+      if (value.authFailed && (!refused || at - reportedAt >= AUTH_REPORT_REPEAT_MS)) {
+        reportedAt = at;
+        authFailure.current?.();
+      }
       refused = !!value.authFailed;
     } });
     engine.current = sync;

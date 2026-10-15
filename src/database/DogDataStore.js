@@ -3,6 +3,7 @@ import { NativeModules } from 'react-native';
 import { withCloudSyncSlot } from '../cloud/CloudSyncSlot';
 import { withConnectionLock } from './connectionLock';
 import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication';
+import { forgetAddresses } from '../placement/AddressLookup';
 // 設定 → 進階 → 刪除全部狗資料 (design S7; 判定表「刪除全部狗資料」): only this
 // phone's dog position records and its downloaded copy. It does not touch
 // the cloud, the phone's own route, the dogs' names and faces, or any
@@ -14,9 +15,11 @@ import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication
 //   ble_upload_queue      positions this phone was to upload for a receiver:
 //                         the sent ones always (already in the cloud); the
 //                         ones not sent yet only with 「一起刪除」
+//   address_cache         the stays' resolved addresses (home too); the
+//                         lookup's memory with it (forgetAddresses)
 // Kept:
-//   myLocationTracker (手機路線), dog_avatars and map_history_settings (names,
-//   faces, history choices), app_settings, ble_upload_settings and
+//   myLocationTracker (手機路線), dog_names, dog_avatars and
+//   map_history_settings (names, faces, history choices), app_settings, ble_upload_settings and
 //   ble_upload_meta (upload routes, this phone's upload ID; the last upload
 //   time is kept there for S3), cloud_sync_state and cloud_sync_buckets
 //   (how far the download got: without them the next sync would download
@@ -25,7 +28,7 @@ import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication
 export const DOG_DATA_TABLES = Object.freeze(['dog_status', 'supabase_dog_status', 'receiver_range_state', 'history_download_state']);
 // Pending pages and their completion proof are also dog data. Keep published
 // sync cursors, but never let an abandoned pre-delete job resurrect positions.
-const deletedTables = [...DOG_DATA_TABLES,
+const deletedTables = [...DOG_DATA_TABLES, 'address_cache',
   // Before latest gained its own file, these snapshots lived in the archive.
   // Upgrades keep the tables: clear their all-account positions/context too.
   'cloud_latest_snapshot', 'cloud_snapshot_state', 'cloud_download_jobs', 'cloud_archive_publication',
@@ -97,6 +100,7 @@ export function createDogDataStore(connection, latestSnapshots = null) {
         if (latestSnapshots?.clearLatestAndRun)
           await latestSnapshots.clearLatestAndRun(() => withCloudSyncSlot(clearArchive));
         else await clearArchive();
+        await forgetAddresses();
         await NativeModules.HistoryExport?.clearExports?.();
       } catch (error) {
         fence?.failed?.();

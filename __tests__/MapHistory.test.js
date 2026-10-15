@@ -20,6 +20,79 @@ test('dog aliases persist locally and clearing one restores its device label', a
   } finally { connection.close(); }
 });
 
+// Audit M2/T4: the names used to live inside the history query's row, so one
+// field of it failing validateHistory hid every name and the next rename
+// deleted the others.
+const OLD_ROW = "INSERT OR REPLACE INTO map_history_settings VALUES (1, ?)";
+
+test('dog names move once from the old history row into their own table', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    connection.sqlite.exec('CREATE TABLE map_history_settings (id INTEGER PRIMARY KEY CHECK (id=1), value TEXT NOT NULL)');
+    connection.sqlite.prepare(OLD_ROW).run(JSON.stringify({ ...HISTORY_DEFAULTS, slaves: [6],
+      dogAliases: { 4: '豆豆', 6: ' 小黑 ', 8: '', bad: 'x' } }));
+    // Two opens at once (the app and a diagnostics read) move the names once.
+    const [loaded, again] = await Promise.all([createHistoryDatabase(connection).load(),
+      createHistoryDatabase(connection).load()]);
+    expect(loaded.dogAliases).toEqual({ 4: '豆豆', 6: '小黑' });
+    expect(again.dogAliases).toEqual({ 4: '豆豆', 6: '小黑' });
+    expect(loaded.slaves).toEqual([6]);
+    expect(connection.sqlite.prepare('SELECT slave_id, value FROM dog_names ORDER BY slave_id').all())
+      .toEqual([{ slave_id: 4, value: '豆豆' }, { slave_id: 6, value: '小黑' }]);
+    // Removing every name stays removed: the old row is not read again.
+    const db = createHistoryDatabase(connection);
+    await db.save({ ...loaded, dogAliases: { 4: '', 6: ' ' } });
+    expect((await createHistoryDatabase(connection).load()).dogAliases).toEqual({});
+    // A save no longer writes names into the history row.
+    const row = JSON.parse(connection.sqlite.prepare('SELECT value FROM map_history_settings').get().value);
+    expect(row.dogAliases).toBeUndefined();
+  } finally { connection.close(); }
+});
+
+test('a history row that fails validation keeps every dog name, and a rename keeps the others', async () => {
+  for (const damaged of [
+    JSON.stringify({ ...HISTORY_DEFAULTS, master: 1.5, masters: undefined }),
+    JSON.stringify({ ...HISTORY_DEFAULTS, slaves: [0] }),
+    JSON.stringify({ ...HISTORY_DEFAULTS, timeMode: 'later' }),
+    '{not json',
+  ]) {
+    const connection = createMemoryConnection();
+    try {
+      await createDogDatabase(connection).initialize();
+      const db = createHistoryDatabase(connection);
+      await db.load();
+      await db.save({ ...HISTORY_DEFAULTS, dogAliases: { 4: '豆豆', 6: '小黑', 8: '阿福' } });
+      connection.sqlite.prepare(OLD_ROW).run(damaged);
+      const loaded = await createHistoryDatabase(connection).load();
+      expect(loaded.dogAliases).toEqual({ 4: '豆豆', 6: '小黑', 8: '阿福' });
+      // The query falls back to the defaults instead of failing the load.
+      expect({ ...loaded, dogAliases: undefined }).toEqual({ ...HISTORY_DEFAULTS, dogAliases: undefined });
+      // The card's rename sends the loaded names plus the new one.
+      await db.save({ ...loaded, dogAliases: { ...loaded.dogAliases, 6: '小白' } });
+      expect((await db.load()).dogAliases).toEqual({ 4: '豆豆', 6: '小白', 8: '阿福' });
+      // Even a rename from preferences that never loaded (the defaults, no
+      // names) only touches its own dog.
+      const stored = await db.save({ ...HISTORY_DEFAULTS, dogAliases: { 4: '阿豆' } });
+      expect(stored.dogAliases).toEqual({ 4: '阿豆', 6: '小白', 8: '阿福' });
+    } finally { connection.close(); }
+  }
+});
+
+test('one bad name row hides only that name', async () => {
+  const connection = createMemoryConnection();
+  try {
+    await createDogDatabase(connection).initialize();
+    const db = createHistoryDatabase(connection);
+    await db.load();
+    connection.sqlite.exec("INSERT INTO dog_names VALUES (4, '豆豆'), (6, '   '), (8, '" + '名'.repeat(30) + "')");
+    expect((await db.load()).dogAliases).toEqual({ 4: '豆豆', 8: '名'.repeat(20) });
+    // A query that fails validation is still refused, and stores nothing.
+    await expect(db.save({ ...HISTORY_DEFAULTS, timeMode: 'later', dogAliases: { 4: '小白' } })).rejects.toThrow();
+    expect((await db.load()).dogAliases[4]).toBe('豆豆');
+  } finally { connection.close(); }
+});
+
 test('a fixed range is two timestamps, and old saved queries convert to one', () => {
   const start = new Date(2026, 8, 16, 23, 30).getTime();
   const p = { ...HISTORY_DEFAULTS, timeMode: 'fixed', startAt: start, endAt: start + 7200000 };
@@ -53,7 +126,7 @@ test('a day read includes its start and excludes its end, and saved settings sur
     const p = { ...HISTORY_DEFAULTS, phone: false, timeMode: 'fixed',
       startAt: start, endAt: start + 3 * 3600000 };
     await history.save(p);
-    expect(await history.load()).toEqual(p);
+    expect(await history.load()).toEqual({ ...p, dogAliases: {} });
     const since = start - HISTORY_DAY_CONTEXT_MS;
     const until = p.endAt + HISTORY_DAY_AFTER_MS;
     const insert = connection.sqlite.prepare('INSERT INTO dog_status(received_at,master_id,slave_id,slave_lat,slave_lon) VALUES(?,7,4,25,121)');
@@ -70,7 +143,7 @@ test('a day read isolates cloud owners and dogs and respects its time bounds', a
     await createDogDatabase(connection).initialize();
     await createCloudDatabase(connection).initialize();
     const history = createHistoryDatabase(connection);
-    expect(await history.load()).toEqual(HISTORY_DEFAULTS);
+    expect(await history.load()).toEqual({ ...HISTORY_DEFAULTS, dogAliases: {} });
     const sql = connection.sqlite;
     sql.exec('CREATE TABLE myLocationTracker(id INTEGER PRIMARY KEY, recorded_at INTEGER, latitude REAL, longitude REAL, speed_kmh REAL, accuracy_meters REAL)');
     sql.exec('INSERT INTO myLocationTracker(id,recorded_at,latitude,longitude) VALUES(1, 5000000, 25, 121)');
@@ -184,5 +257,24 @@ test('historyDays: the local days with one dog\'s rows (local and the account\'s
     expect(await db.historyDays({ subject: 'dog', slaveId: 4, owner: 'me' })).toEqual(['2026-10-03', '2026-10-06']);
     expect(await db.historyDays({ subject: 'dog', slaveId: 4 })).toEqual(['2026-10-03']);
     expect(await db.historyDays({ subject: 'phone' })).toEqual(['2026-10-02']);
+  } finally { connection.close(); }
+});
+
+test('historyDogs: every dog this phone holds rows of, local and this account\'s cloud, so the history reaches dogs older than the live roster', async () => {
+  const connection = createMemoryConnection();
+  try {
+    const db = createHistoryDatabase(connection);
+    expect(await db.historyDogs({ owner: 'me' })).toEqual([]);
+    await connection.executeAsync(`CREATE TABLE dog_status (id INTEGER PRIMARY KEY, received_at INTEGER, master_id INTEGER,
+      slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync(`CREATE TABLE supabase_dog_status (id INTEGER PRIMARY KEY, owner_user_id TEXT,
+      received_at INTEGER, track_at INTEGER, master_id INTEGER, slave_id INTEGER, slave_lat REAL, slave_lon REAL)`);
+    await connection.executeAsync('INSERT INTO dog_status(received_at,master_id,slave_id) VALUES(1,7,4),(2,7,4),(3,7,NULL),(4,7,0),(5,7,31)');
+    await connection.executeAsync(`INSERT INTO supabase_dog_status(owner_user_id,received_at,slave_id)
+      VALUES('me',1,9),('me',2,9),('me',3,40),('other',4,55)`);
+    expect(await db.historyDogs({ owner: 'me' })).toEqual([4, 9, 31, 40]);
+    // Signed out: only this phone's own receiver.
+    expect(await db.historyDogs()).toEqual([4, 31]);
+    expect(HISTORY_DATABASE_METHODS).toContain('historyDogs');
   } finally { connection.close(); }
 });

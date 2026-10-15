@@ -77,7 +77,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Install Android SDK packages
+      # Anchored so the Android unit-test job below runs the very same step.
+      - &install-android-sdk
+        name: Install Android SDK packages
         # Read the versions out of android/build.gradle rather than keeping a
         # second copy here that silently goes stale.
         run: |
@@ -178,3 +180,56 @@ jobs:
               --title "DogTracker v$VERSION" \
               --notes "$notes"
           fi
+
+  android-unit-tests:
+    name: Android unit tests
+    # Runs beside Test and lint rather than after it, so the Kotlin tests add
+    # no wall time to a pull request. The release APK still waits only on Test
+    # and lint, as before.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Caches the Gradle home (wrapper, dependencies, build cache). Like the
+      # release job, the cache is written by main runs and read by pull
+      # requests.
+      - uses: gradle/actions/setup-gradle@v6
+
+      - *install-android-sdk
+
+      - name: Install dependencies
+        # The React Native Gradle plugin and the native modules are included
+        # from node_modules.
+        run: npm ci
+
+      - name: Kotlin unit tests
+        # Includes PhoneMotionParityTest, AlertParityTest and the other JS/Kotlin
+        # parity checks against the fixtures in app/src/test/resources.
+        working-directory: android
+        env:
+          # A shallow checkout cannot count main's commits (scripts/app-version.js);
+          # the tests do not read the version, so a fixed override saves
+          # fetching the whole history.
+          APP_VERSION_NAME: 0.0.0
+          APP_VERSION_CODE: 1
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-report
+          path: android/app/build/reports/tests/testDebugUnitTest
+          retention-days: 7
+          if-no-files-found: ignore
