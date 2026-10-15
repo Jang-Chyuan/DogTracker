@@ -9,7 +9,9 @@ import { wifiSummary } from './useReceiverWifi';
  * S7 進階 (design S7): 接收器 Wi-Fi (the networks the receiver keeps, 「家裡、
  * 辦公室」) and 刪除全部狗資料 (red; asks first, saying what goes and what
  * stays). `wifi` is useReceiverWifi's answer, `deletion` useDeleteDogData's;
- * `deletedText` (「已刪除・10:21」) says the last deletion went through.
+ * `deletedText` (「已刪除・10:21」) says the last deletion went through;
+ * `retention` (「這支手機收到的保留到 10/09（最近 7 天）…」, useLocalRetention)
+ * how long they are kept.
  */
 export default function AdvancedSettings({
   wifi,
@@ -18,6 +20,7 @@ export default function AdvancedSettings({
   deletion,
   onWifi,
   deletedText = null,
+  retention = null,
 }) {
   const settingsStyles = useStyles(getSettingsStyles);
   const summary = wifiSummary(wifi, receiver, paired);
@@ -41,9 +44,9 @@ export default function AdvancedSettings({
           testID="advanced-delete"
           title={t('c249')}
           titleTone="danger"
-          detail={deletedText}
+          detail={[retention, deletedText].filter(Boolean).join('\n') || null}
           onPress={deletion.start}
-          label={[t('c249'), deletedText].filter(Boolean).join('，')}
+          label={[t('c249'), retention, deletedText].filter(Boolean).join('，')}
         />
       </GroupCard>
       <ConfirmDialog

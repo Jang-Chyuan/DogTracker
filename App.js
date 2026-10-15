@@ -52,6 +52,7 @@ import { accountPage } from './src/settings/AccountModel';
 import SettingsHome from './src/settings/SettingsHome';
 import ReceiverSettings from './src/settings/ReceiverSettings';
 import PhoneSettings from './src/settings/PhoneSettings';
+import { retentionLabels, useLocalRetention } from './src/settings/useLocalRetention';
 import AlertSettings from './src/settings/AlertSettings';
 import { alertsPage } from './src/alerts/AlertPreferences';
 import { useAlertPreferences } from './src/settings/useAlertPreferences';
@@ -456,6 +457,12 @@ function TrackerApp({ resume = null, onRestart }) {
     setAlertBackground(false);
   }, [fixture?.name]);
   const now = fixture ? fixture.now + alertClockOffset : settingsClock;
+  // 「保留到 M/D」 of 設定 → 手機 and 進階 (#198).
+  const retention = retentionLabels(useLocalRetention(
+    tracking.historyDatabase,
+    tracking.ready.real,
+    tracking.foreground && !fixture && (route.name === 'phone' || route.name === 'advanced'),
+  ), now);
   // Read on every page while in front: the alerts judge 接收器斷線 there too
   // (the history map itself draws no receiver: MapScreen gets null).
   const receiverState = useReceiverState(
@@ -1217,6 +1224,7 @@ function TrackerApp({ resume = null, onRestart }) {
       page = (
         <PhoneSettings
           page={phonePage(settingsData)}
+          retention={retention.route}
           fromUnrecorded={route.fromUnrecorded}
           onRecording={on => settingsData.recording.toggle?.(on)}
           onPermissions={() => Linking.openSettings()}
@@ -1284,6 +1292,7 @@ function TrackerApp({ resume = null, onRestart }) {
           deletion={deletion}
           onWifi={() => open('wifi')}
           deletedText={deletedAt ? t("c480", { value: formatClock(deletedAt) }) : null}
+          retention={retention.dogs}
         />
       );
       break;

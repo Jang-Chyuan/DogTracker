@@ -18,14 +18,11 @@ class LocationTrackerStore(context: Context) {
     private val writer by lazy { SerialWriter("PhoneLocationDb", capacity = 600) }
   }
   private val store = DogStatusStore.get(context)
-  // The newest 80,000 rows as written (id), not by recorded_at: a row dated
-  // ahead by a wall clock that was later set back would otherwise outlive
-  // every newer row.
-  private val trim = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker ORDER BY id DESC LIMIT -1 OFFSET 80000)"
+  // Kept 30 days, at most LocalRetention.ROUTE_CAP rows: LocalRetention
+  // prunes on its own thread, not inside every row's transaction.
   init {
     store.executeBatch(JSONArray().put(command("CREATE TABLE IF NOT EXISTS myLocationTracker (id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at INTEGER NOT NULL, location_at INTEGER NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy_meters REAL, altitude_meters REAL, speed_kmh REAL, heading_degrees REAL)"))
-      .put(command("CREATE INDEX IF NOT EXISTS idx_myLocationTracker_time ON myLocationTracker(recorded_at DESC, id DESC)"))
-      .put(command(trim)))
+      .put(command("CREATE INDEX IF NOT EXISTS idx_myLocationTracker_time ON myLocationTracker(recorded_at DESC, id DESC)")))
     synchronized(store) {
       val columns = store.executeSql("PRAGMA table_info(myLocationTracker)", JSONArray()).getJSONArray("results")
       val names = (0 until columns.length()).map { columns.getJSONObject(it).getString("name") }.toSet()
@@ -58,10 +55,10 @@ class LocationTrackerStore(context: Context) {
       .put(command("UPDATE myLocationTracker SET display_latitude=?,display_longitude=?,display_source=?,display_location_at=? WHERE id=last_insert_rowid()",
         JSONArray().put(display?.latitude ?: location.latitude).put(display?.longitude ?: location.longitude)
           .put(if (display == null) "pipeline" else "animated").put(display?.fixTime ?: location.timestamp)))
-      .put(command(trim))
     val queued = System.nanoTime()
     writer.submit {
       store.executeBatch(commands, DogStatusStore.LOCATION)
+      store.scheduleRetention()
       // From the looper's hand-over to the commit: how late the row lands, not a wait of the looper.
       DogStatusStore.waits.waited(DogStatusStore.LOCATION_DELAY, (System.nanoTime() - queued) / 1_000_000)
     }

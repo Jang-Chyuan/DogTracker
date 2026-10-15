@@ -12,34 +12,8 @@ jest.mock('../src/locationTracker/LocationTrackerService', () => ({
   startLocationTracker: jest.fn(), stopLocationTracker: jest.fn(),
 }));
 
-test('native SQLite statements cap at 80000 newest rows and roll back on retention failure', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt'), 'utf8');
-  const sql = prefix => source.match(new RegExp('"(' + prefix + '[^"]+)"'))[1];
-  const db = new DatabaseSync(':memory:');
-  try {
-    db.exec(sql('CREATE TABLE'));
-    db.exec(sql('CREATE INDEX'));
-    const insert = db.prepare(sql('INSERT INTO'));
-    db.exec('BEGIN');
-    for (let i = 0; i < 80002; i += 1) insert.run(i, i, 25, 121, 5, null, null, null);
-    db.exec(sql('DELETE FROM'));
-    db.exec('COMMIT');
-    expect(db.prepare('SELECT COUNT(*) AS n, MIN(recorded_at) AS oldest FROM myLocationTracker').get()).toMatchObject({ n: 80000, oldest: 2 });
-    // Timestamp ties remove the older id, not the more recently inserted row.
-    insert.run(2, 2, 25, 121, 5, null, null, null);
-    db.exec(sql('DELETE FROM'));
-    expect(db.prepare('SELECT id FROM myLocationTracker WHERE id = 3').get()).toBeUndefined();
-    db.exec("CREATE TRIGGER reject_trim BEFORE DELETE ON myLocationTracker BEGIN SELECT RAISE(ABORT, 'blocked'); END");
-    db.exec('BEGIN');
-    insert.run(999999, 999999, 25, 121, null, null, null, null);
-    expect(() => db.exec(sql('DELETE FROM'))).toThrow();
-    db.exec('ROLLBACK');
-    expect(db.prepare('SELECT COUNT(*) AS n FROM myLocationTracker').get().n).toBe(80000);
-    expect(db.prepare('SELECT id FROM myLocationTracker WHERE recorded_at = 999999').get()).toBeUndefined();
-  } finally { db.close(); }
-});
-
-test('a row dated ahead by a clock later set back is trimmed in its turn, not kept forever', () => {
+// Retention (30 days, a cap as written): __tests__/LocalRetention.test.js.
+test('the newest row is the one written last, whatever its time', () => {
   const source = fs.readFileSync(path.join(__dirname, '../android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt'), 'utf8');
   const sql = prefix => source.match(new RegExp('"(' + prefix + '[^"]+)"'))[1];
   const db = new DatabaseSync(':memory:');
@@ -48,15 +22,9 @@ test('a row dated ahead by a clock later set back is trimmed in its turn, not ke
     const insert = db.prepare(sql('INSERT INTO'));
     // The first row was written while the clock ran a day ahead.
     insert.run(86_400_000 + 1, 1, 25, 121, 5, null, null, null);
-    db.exec('BEGIN');
-    for (let i = 0; i < 80000; i += 1) insert.run(1000 + i, 1000 + i, 25, 121, 5, null, null, null);
-    db.exec(sql('DELETE FROM'));
-    db.exec('COMMIT');
-    expect(db.prepare('SELECT COUNT(*) n, MAX(recorded_at) newest FROM myLocationTracker').get())
-      .toMatchObject({ n: 80000, newest: 80999 });
-    // The newest row is the one written last, whatever its time.
+    for (let i = 0; i < 1000; i += 1) insert.run(1000 + i, 1000 + i, 25, 121, 5, null, null, null);
     const newest = source.match(/fun newestLocationAt[\s\S]*?executeSql\("([^"]+)"/)[1];
-    expect(db.prepare(newest).get().location_at).toBe(80999);
+    expect(db.prepare(newest).get().location_at).toBe(1999);
   } finally { db.close(); }
 });
 
