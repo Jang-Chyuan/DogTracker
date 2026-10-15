@@ -267,7 +267,11 @@ export default function MapScreen({
   const fixtureName = fixture?.name ?? null;
   const fixturePage = fixture?.openPage ?? null;
   const pendingPage = useRef(null);
+  // (debug) The fixture whose card state is in place: switching fixtures with
+  // the app open drew the previous fixture's card for a moment (2026-10-15).
+  const [cardFixture, setCardFixture] = useState(fixtureName);
   useEffect(() => {
+    setCardFixture(fixtureName);
     if (fixtureDog != null) {
       openDog(fixtureDog);
       // dog-edit opens the dog's edit sheet (A5) over its card, once the card is.
@@ -612,7 +616,7 @@ export default function MapScreen({
     [outage, tracking],
   );
   const selectedDogId =
-    selected?.kind === 'dog' && !historical ? selected.slaveId : null;
+    selected?.kind === 'dog' && !historical && cardFixture === fixtureName ? selected.slaveId : null;
   const dogAliases = history?.preferences.dogAliases;
   const previousMarkerStale = useRef({});
   const livePresentation = useMemo(() => {

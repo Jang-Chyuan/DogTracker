@@ -19,8 +19,16 @@ export const rawCoordinate = (row, subject = null) => subject?.kind === 'phone'
   Object.prototype.hasOwnProperty.call(row, 'raw_longitude') ? row.raw_longitude : row.longitude,
 );
 export const inInterval = (time, interval) => time >= interval.start && time < interval.end;
-export const subjectName = subject => subject.kind === 'phone' ? t('c132') : `${subject.name || t("c1009", { slaveId: subject.slaveId })}-${subject.slaveId}`;
-export const displayName = subject => subject.kind === 'phone' ? t('c132') : t("c782", { value: subject.name || t("c783", { value1: subject.slaveId }), slaveId: subject.slaveId });
+// A dog without a name of its own is 「狗 4」 after its 訊號源 number, as
+// everywhere in the app. That name already says the number, so the file name,
+// the GPX track and the PNG title do not add it again (it read 「狗 4-4」 and
+// 「狗 4（訊號源 4）」, 2026-10-15); a named dog keeps 「小黑-4」 / 「小黑（訊號源 4）」.
+const defaultDogName = subject => t('c1009', { slaveId: subject.slaveId });
+const unnamed = subject => !subject.name || subject.name === defaultDogName(subject);
+export const subjectName = subject => subject.kind === 'phone' ? t('c132')
+  : unnamed(subject) ? defaultDogName(subject) : `${subject.name}-${subject.slaveId}`;
+export const displayName = subject => subject.kind === 'phone' ? t('c132')
+  : unnamed(subject) ? defaultDogName(subject) : t("c782", { value: subject.name, slaveId: subject.slaveId });
 export function validateSnapshot(snapshot) {
   if (!Number.isFinite(snapshot.since) || !Number.isFinite(snapshot.until) || snapshot.since > snapshot.until) throw new Error(t("c784"));
   const day = time => { const p = localDateParts(time, snapshot.timeZone); return `${p.year}${p.month}${p.day}`; };

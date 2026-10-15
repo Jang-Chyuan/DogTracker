@@ -74,6 +74,45 @@ class ReceiverMasterIdTest {
     assertEquals(3, JSONObject(sql.inserts.single()["payload_json"] as String).getInt("mid"))
   }
 
+  // 2026-10-15: `"mid":"5"` passed the check but was never queued (the queue
+  // and the JS encoder wanted a number): the packet is stored and queued with
+  // its Master ID as the whole number.
+  @Test fun aMasterIdThatPassedTheCheckIsNormalisedToAWholeNumber() {
+    val text = ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":4,"mid":"5"}"""))!!
+    assertEquals(5, text.get("mid"))
+    val onlyMasterId = ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":4,"master_id":" 5 "}"""))!!
+    assertEquals(5, onlyMasterId.get("mid"))
+    assertEquals(5, onlyMasterId.get("master_id"))
+    // master_id wins, as in the check.
+    assertEquals(3, ReceiverMasterId.normalized(JSONObject("""{"master_id":3,"mid":5}"""))!!.get("mid"))
+    assertEquals(5, ReceiverMasterId.normalized(JSONObject("""{"mid":5.0}"""))!!.get("mid"))
+    // Already whole numbers, or nothing usable: left as they came.
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":4,"mid":5}""")))
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"master_id":5,"mid":5}""")))
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"mid":"x"}""")))
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"sid":4}""")))
+  }
+
+  @Test fun aStringMasterIdIsQueuedForUploadAsANumber() {
+    val sql = object : BleUploadQueue.Sql {
+      val inserts = mutableListOf<Map<String, Any?>>()
+      override fun first(sql: String, vararg args: String): String? = when {
+        sql.contains("key='owner'") -> "alice"
+        sql.contains("FROM ble_upload_settings") -> if (args.toList() == listOf("alice", "5")) "phone" else null
+        else -> null
+      }
+      override fun change(sql: String, vararg args: Any?) = 0
+      override fun insert(values: Map<String, Any?>) { inserts += values }
+    }
+    BleUploadQueue.recount()
+    val raw = """{"type":3,"sid":4,"seq":9,"mid":"5"}"""
+    assertEquals(ReceiverMasterId.Check.Same, ReceiverMasterId.check(JSONObject(raw), 5))
+    val packet = ReceiverMasterId.normalized(JSONObject(raw))!!
+    assertEquals("alice", BleUploadQueue.enqueue(sql, packet, packet.toString(), 1_000L) { "e1" })
+    assertEquals(5, sql.inserts.single()["master_id"])
+    assertEquals(5, JSONObject(sql.inserts.single()["payload_json"] as String).get("mid"))
+  }
+
   @Test fun frameCountsAreThisRunsOnly() {
     val run = ReceiverFrameStats()
     run.framed(framerResyncs = 2, framerLargest = 280)
