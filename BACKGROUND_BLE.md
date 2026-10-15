@@ -6,7 +6,7 @@ Android 的掃描使用 BLE PLX；選定裝置後，由 `BleForegroundService` �
 
 每筆 Notify 在 GATT callback 收到的當下就記下時間（`Arrival`），之後才排進 HandlerThread 和資料庫：資料庫忙著時排隊的封包仍保留各自的接收時間，每秒一筆的節流不會把它們當成同一秒丟掉。
 
-拼接 JSON 時（`BleJsonFramer`），一筆被截斷的 Notify（超過 MTU 或漏掉片段）不再讓後面的封包全部卡在未關閉的物件裡：已有未完成的物件時，若新的 Notify 以 `{` 開頭，而且它本身就是完整的物件，或距離上一段 ≥ 500 ms，就丟掉舊的半筆重新開始（`framerResyncs`）。接收器封包是沒有巢狀的扁平 JSON，同一筆的片段會連續送達，所以不會誤切。要求 MTU 320，協商結果與狀態記錄下來（小於 320 或失敗時寫 log）；`getState()` 與 `adb shell dumpsys activity service com.dogtracker/.BleForegroundService` 可看到 `mtu`、最長一筆 `largestFrame`、`framerResyncs`、`framesWithoutMasterId`，只含次數，不含位置。
+拼接 JSON 時（`BleJsonFramer`），一筆被截斷的 Notify（超過 MTU 或漏掉片段）不再讓後面的封包全部卡在未關閉的物件裡：已有未完成的物件時，若新的 Notify 以 `{` 開頭，而且它本身就是完整的物件，或距離上一段 ≥ 500 ms，就丟掉舊的半筆重新開始（`framerResyncs`）。接收器封包是沒有巢狀的扁平 JSON，同一筆的片段會連續送達，所以不會誤切。要求 MTU 320，協商結果與狀態記錄下來（小於 320 或失敗時寫 log）；`getState()` 與 `adb shell dumpsys activity service com.dogtracker/.BleForegroundService` 可看到 `mtu`、最長一筆 `largestFrame`、`framerResyncs`、`framesWithoutMasterId`，只含次數，不含位置。同一份 dumpsys 也列出資料庫鎖：BLE 與手機路線寫入等鎖的時間（`database lock waits`，p50／p95／最大值與超過 1、5、15 秒的次數）和各類工作持鎖的時間（`holds`：App 的批次交易 `batch`、單句寫入 `sql`、`pragma`、持鎖重讀的大結果 `read`）。
 
 服務在獨立 HandlerThread 處理 GATT 與資料；忽略已關閉連線的延遲 callback。連線／訂閱逾時 30 秒，失敗依 2–30 秒退避重連。30 秒沒有完整資料會顯示等待；90 秒沒有資料則重建 GATT。Wi-Fi 指令使用相同 GATT，等待 callback 完成，10 秒逾時。QR 的 Master ID 驗證也在原生存檔之前執行。
 
