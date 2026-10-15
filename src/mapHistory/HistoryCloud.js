@@ -98,9 +98,17 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
         await database.initialize();
         const ids = Array.isArray(slaveId) ? slaveId : [slaveId];
         const day = dayKey(new Date(dayStart));
-        const abort = new AbortController();
-        if (signal?.aborted) abort.abort();
-        signal?.addEventListener?.('abort', () => abort.abort());
+        // `abort` ends the sync slot's lease, `network` this download's
+        // requests. A cancel stops the requests at once; while a dog's window
+        // is being paged (`keeping`) the lease stays until the pages already
+        // saved are published as a completed prefix, so the next download of
+        // the day resumes from there (2026-10-15: a cancelled first download
+        // kept nothing and the day was downloaded again from its start).
+        const abort = new AbortController(), network = new AbortController();
+        let keeping = false;
+        const cancel = () => { network.abort(); if (!keeping) abort.abort(); };
+        if (signal?.aborted) cancel();
+        signal?.addEventListener?.('abort', cancel);
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
         const work = async (leaseCurrent, publishScoped) => {
@@ -142,37 +150,70 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           };
           if (restart.length && publishScoped) await publishScoped(markIncomplete);
           else if (restart.length) await markIncomplete();
+          const current = () => !network.signal.aborted && !abort.signal.aborted && leaseCurrent();
+          // What a cancelled window keeps: the proof of the rows received
+          // before `received` (all saved: pages run in reception order), and
+          // those rows, published with the lease like a finished day.
+          const keep = async (id, received, carry) => {
+            await database.setHistoryDownloadState?.(owner, id, day, true, historyCoverage(dayStart, dayEnd, received));
+            if (database.publishManualScope) {
+              const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
+              if (publishScoped) await publishScoped(commit);
+              else await commit();
+            }
+            if (carry) carried.add(carry);
+          };
           for (const id of ids) {
-            if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+            if (!current()) throw new Error(t("c576"));
+            // The reception time this dog's window is saved up to (exclusive).
+            let kept = null, carryDone = null;
             try {
               await database.beginManualScope?.(owner, id, day);
-              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              if (!current()) throw new Error(t("c576"));
               const carry = `${id}:${windowStart}`, carryStart = carried.has(carry) ? windowStart : carryFrom;
               if (carryStart < windowStart) count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(carryStart), endBefore: iso(windowStart), slaveId: id,
-                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+                signal: network.signal, isCurrent: current });
+              carryDone = carryStart < windowStart ? carry : null;
+              keeping = true;
+              if (!current()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database, owner,
                 startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
-                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
+                signal: network.signal, isCurrent: current,
+                onProgress: (processed, last) => { if (Number.isFinite(last?.received_at)) kept = last.received_at; } });
               // History is bucketed by track time: a phone packet of this day can
               // reach the cloud after the reception window. Before proving a
               // closed day complete, also fetch those late phone rows.
-              if (coverage.received_before < cutoff) count += await downloadCloudHistory({ client, database, owner,
-                startAt: iso(coverage.received_before), endBefore: iso(cutoff), slaveId: id,
-                phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
-                signal: abort.signal, isCurrent: () => !abort.signal.aborted && leaseCurrent() });
-              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              if (coverage.received_before < cutoff) {
+                // Interrupted here, the window is kept short of its end, so
+                // the next download fetches these again.
+                kept = coverage.received_before - 1;
+                count += await downloadCloudHistory({ client, database, owner,
+                  startAt: iso(coverage.received_before), endBefore: iso(cutoff), slaveId: id,
+                  phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
+                  signal: network.signal, isCurrent: current });
+              }
+              keeping = false;
+              if (!current()) throw new Error(t("c576"));
               await database.setHistoryDownloadState?.(owner, id, day, true, coverage);
-              if (abort.signal.aborted || !leaseCurrent()) throw new Error(t("c576"));
+              if (!current()) throw new Error(t("c576"));
               if (database.publishManualScope) {
                 const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
                 if (publishScoped) await publishScoped(commit);
                 else await commit();
               }
-              if (carryStart < windowStart) carried.add(carry);
+              if (carryDone) carried.add(carryDone);
               onDogEnd?.(id, 'done');
             } catch (error) {
-              onDogEnd?.(id, abort.signal.aborted ? 'cancelled' : 'failed');
+              const cancelled = network.signal.aborted;
+              // Worth keeping only past the window's start and the dog's own
+              // earlier proof; a failed keep leaves the day as it was.
+              const from = prefixOf(id)?.received_before ?? dayStart - DOWNLOAD_BEFORE_MS;
+              if (cancelled && keeping && kept != null && kept > from && !abort.signal.aborted && leaseCurrent())
+                await keep(id, kept, carryDone).catch(() => {});
+              keeping = false;
+              if (cancelled) abort.abort();
+              onDogEnd?.(id, cancelled || abort.signal.aborted ? 'cancelled' : 'failed');
               if (abort.signal.aborted || !leaseCurrent()) throw error;
               failure = error;
             }

@@ -503,13 +503,29 @@ export function useHistoryScreen({
   const today = day === todayStart;
   const coverageOpening = useRef({ key: null, active: false, cutoff: 0 });
   const coverageKey = `${sessionKey}|${day}|${owner ?? ''}`;
-  if (coverageOpening.current.key !== coverageKey || (active && !coverageOpening.current.active))
-    coverageOpening.current = { key: coverageKey, active, cutoff: clock() };
-  else coverageOpening.current.active = active;
+  // The cutoff each day of this opening was last shown complete at
+  // (2026-10-15, device 0.3.222 at 01:30: ‹ ‹ › showed 「下載 10/14 的紀錄」
+  // again and downloaded it again). A day still taking rows — today, or
+  // yesterday before its two hours of late uploads are over — needs its proof
+  // up to the moment it is opened, so coming back to it a minute later found
+  // the proof just downloaded "not complete". Coming back within the opening
+  // reuses the cutoff it was shown at: 「手機裡已完整的日子只顯示讀取骨架、
+  // 不下載」. Returning to the front or 更新 still asks up to now.
+  const shownComplete = useRef({ key: null, days: new Map() });
+  const shownCompleteKey = `${sessionKey}|${owner ?? ''}|${cloud?.owner ?? ''}`;
+  if (shownComplete.current.key !== shownCompleteKey) shownComplete.current = { key: shownCompleteKey, days: new Map() };
+  const shownCutoffOf = useCallback(key => shownComplete.current.days.get(key), []);
+  if (coverageOpening.current.key !== coverageKey || (active && !coverageOpening.current.active)) {
+    const shownCutoff = coverageOpening.current.key !== coverageKey ? shownCutoffOf(dayKey(new Date(day))) : undefined;
+    coverageOpening.current = { key: coverageKey, active, cutoff: shownCutoff ?? clock(), reopened: shownCutoff != null, shown: false };
+  } else coverageOpening.current.active = active;
   // Archive terminal success is the only automatic tail target. Snapshot and
   // per-page/manual publication cannot recursively start another download.
+  // A day opened again waits until it is shown: its tail then runs behind the
+  // shown day instead of 「下載 … 的紀錄」 over a skeleton.
   const archiveCutoff = cloud?.getPublication?.()?.archiveCutoff;
-  if (active && today && Number.isFinite(archiveCutoff) && archiveCutoff > coverageOpening.current.cutoff)
+  if (active && today && Number.isFinite(archiveCutoff) && archiveCutoff > coverageOpening.current.cutoff
+    && (!coverageOpening.current.reopened || coverageOpening.current.shown))
     coverageOpening.current.cutoff = archiveCutoff;
   const coverageCutoff = coverageOpening.current.cutoff;
   // ---- who is shown (H7) --------------------------------------------------
@@ -688,11 +704,19 @@ export function useHistoryScreen({
     active,
     seed: cloudSeed,
     cutoff: coverageCutoff,
+    cutoffOf: shownCutoffOf,
     publicationRevision,
     diagnostic,
   });
   const { knowledge } = cloudDays;
   const coverageReady = !cloud?.coverageRequired || subject !== 'dog' || cloudDays.completeDay(shownKey);
+  // Remembered once the day is proven at its cutoff (above): a later proof
+  // that no longer covers it (withdrawn, evicted) still downloads again.
+  useEffect(() => {
+    if (cloud?.coverageRequired && subject === 'dog' && cloudDays.completenessLoaded && coverageReady
+      && coverageOpening.current.key === coverageKey)
+      shownComplete.current.days.set(shownKey, coverageCutoff);
+  }, [cloud, subject, cloudDays.completenessLoaded, coverageReady, coverageKey, shownKey, coverageCutoff]);
   const stepDays = useMemo(() => knownDays(knowledge), [knowledge]);
   const navigation = useMemo(
     () => dateNavigation(shownKey, todayKey, stepDays),
@@ -893,6 +917,7 @@ export function useHistoryScreen({
     // While a range drag holds the last completed model, its cutoff may lag
     // the current one: neither record nor drop the verified model then.
     if (rangePending) return;
+    if (builtModel && coverageReady && coverageOpening.current.key === coverageKey) coverageOpening.current.shown = true;
     if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
       scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
       lineage: shownPublication?.lineage, manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
@@ -1127,6 +1152,9 @@ export function useHistoryScreen({
   useEffect(() => {
     // Rapid ‹ ›: the day the taps settle on starts it (the effect runs again then).
     if (held) return;
+    // A day asked for while its proof was being read and then found complete
+    // (one opened again, above) needs nothing more: its later tail is quiet.
+    if (coverageReady && cloudDays.completenessLoaded && ensureRequested.current === shownKey) ensureRequested.current = null;
     if (!active || !online || subject !== 'dog' || !cloud?.coverageRequired || !cloudDays.completenessLoaded || coverageReady) return;
     const due = ensureDue();
     if (!due) {
