@@ -80,11 +80,13 @@ test('100,000 lifetime rows at one per minute retain the complete latest 24 hour
   await harness.feed.refresh();
 
   const route = harness.getRoute();
-  expect(repository.getLatestByTimeCursor).toHaveBeenCalledTimes(2);
+  // 1,441 rows in pages of DEFAULT_TRACKING_BATCH_SIZE (250).
+  expect(repository.getLatestByTimeCursor).toHaveBeenCalledTimes(6);
   expect(route.rawCount).toBe(1441);
   expect(route.startAt).toBe(createPoint(98560, 60000).receivedAt);
   expect(route.endAt).toBe(createPoint(100000, 60000).receivedAt);
-  expect(route.slavePointCount).toBeLessThan(10);
+  // Pages of 250 rows keep a few more slave points than pages of 1,000 (9).
+  expect(route.slavePointCount).toBeLessThan(15);
   expect(route.limited).toBe(false);
 });
 
@@ -96,7 +98,8 @@ test('full 24h at 1 Hz streams 86,401 raw rows with <=2,000 raw geometry samples
     await expect(harness.feed.refresh()).resolves.toEqual([]);
     expect(harness.getRoute().rawBufferCount).toBeLessThanOrEqual(2000);
   }
-  expect(repository.getLatestByTimeCursor).toHaveBeenCalledTimes(87);
+  // Pages of 250 rows, still within the same five refreshes (80 pages each).
+  expect(repository.getLatestByTimeCursor).toHaveBeenCalledTimes(346);
   expect(harness.getDelivered()).toBe(86401);
   expect(harness.getRoute().rawCount).toBe(86401);
   expect(harness.getRoute().startAt).toBe(createPoint(13600, 1000).receivedAt);

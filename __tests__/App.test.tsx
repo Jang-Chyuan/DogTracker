@@ -43,7 +43,8 @@ test('a fresh App reads real SQLite and never creates simulated positions', asyn
     expect(
       mockDatabase.executeAsync.mock.calls.map(([sql]) => sql.replace(/\s+/g, ' ').trim()),
     ).toContainEqual(
-      expect.stringContaining('SELECT * FROM dog_status ORDER BY id DESC'),
+      // Every column but raw_payload (DogDatabase liveColumnList).
+      expect.stringMatching(/^SELECT [^()]* FROM dog_status ORDER BY id DESC/),
     );
   } finally {
     if (renderer) await act(async () => renderer!.unmount());

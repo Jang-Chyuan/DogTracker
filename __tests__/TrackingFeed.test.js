@@ -1,5 +1,5 @@
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
-import { createTrackingFeed } from '../src/tracking/TrackingFeed';
+import { createTrackingFeed, DEFAULT_TRACKING_BATCH_SIZE } from '../src/tracking/TrackingFeed';
 
 function createRepository(overrides = {}) {
   return {
@@ -115,7 +115,7 @@ describe('TrackingFeed', () => {
     await feed.refresh();
 
     expect(repository.getLatest).toHaveBeenCalledTimes(1);
-    expect(repository.getAfterId).toHaveBeenCalledWith(42, 1000);
+    expect(repository.getAfterId).toHaveBeenCalledWith(42, DEFAULT_TRACKING_BATCH_SIZE);
     expect(feed.getCursor()).toBe(43);
     expect(onRows).toHaveBeenNthCalledWith(1, [trackingPoint]);
     expect(onRows).toHaveBeenNthCalledWith(2, [nextPoint]);
@@ -138,7 +138,7 @@ describe('TrackingFeed', () => {
 
     expect(timers.setInterval).toHaveBeenCalledTimes(2);
     expect(timers.clearInterval).toHaveBeenCalledWith(99);
-    expect(repository.getAfterId).toHaveBeenCalledWith(42, 1000);
+    expect(repository.getAfterId).toHaveBeenCalledWith(42, DEFAULT_TRACKING_BATCH_SIZE);
   });
 
   test('drains multiple backlog batches in one refresh', async () => {
