@@ -42,6 +42,7 @@ class LocationTrackerModule(private val context: ReactApplicationContext) : Reac
   @ReactMethod fun stop(promise: Promise) {
     context.getSharedPreferences("phone_location_recording", 0).edit().putBoolean("enabled", false).putLong("stoppedAt", System.currentTimeMillis()).commit()
     context.stopService(Intent(context, LocationTrackerService::class.java))
+    RecordingResumeReceiver.clear(context)
     promise.resolve(true)
   }
   @ReactMethod fun resumeIfEnabled(promise: Promise) {
