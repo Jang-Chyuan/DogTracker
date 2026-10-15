@@ -3,7 +3,7 @@ import { historyTimeline } from '../src/history/HistoryTimeline';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { historyMapPresentation } from '../src/history/screen/HistoryMapModel';
 import { endOfDay, startOfToday } from '../src/tracking/TodayDistance';
-import { timelineMismatches } from '../test-support/TimelineClocks';
+import { listedMetres, timelineMismatches } from '../test-support/TimelineClocks';
 
 // 2026-10-15 (audit): the user's real days, replayed locally only as if they
 // were being recorded and the history open (a checkpoint every 10 minutes),
@@ -78,7 +78,6 @@ function recordedDay(seed) {
   return rows.map((row, index) => phoneHistoryRow({ id: index + 1, ...row }));
 }
 
-const foot = row => row.type === 'movement' && (row.mode === 'walking' || row.mode === 'moving');
 
 describe('the list adds up at every 10 minutes of a recorded day', () => {
   test.each([1, 2, 3, 4])('fictional day %i', seed => {
@@ -93,7 +92,8 @@ describe('the list adds up at every 10 minutes of a recorded day', () => {
       const listed = timelinePresentation(model.nodes);
       const at = new Date(t).toTimeString().slice(0, 5);
       for (const mismatch of timelineMismatches(model)) problems.push(`${at} ${mismatch.kind} ${mismatch.type ?? ''}`);
-      const metres = listed.filter(foot).reduce((sum, row) => sum + row.countedDistanceM, 0);
+      // The rows' metres (#200: a stay's own moves are on its row).
+      const metres = listedMetres(model.nodes);
       if (Math.abs(metres - model.distanceM) > 1e-6) problems.push(`${at} rows ${metres} m, summary ${model.distanceM} m`);
       const numbers = listed.filter(row => row.number != null).map(row => row.number);
       if (numbers.some((number, i) => number !== i + 1)) problems.push(`${at} numbers ${numbers}`);

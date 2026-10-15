@@ -11,6 +11,9 @@ import { createAddressLookup } from '../placement/AddressLookup';
 //                          awayM metres north of the place; 0 → 「…附近」),
 //                          { district } (only the district) or null (no
 //                          answer: 沒有地址). Places past the list get none.
+//   { places: [...] }      made-up answers by where the place is, whatever
+//                          the order: { latitude, longitude, name } (within
+//                          60 m); others fall back to `names` (both allowed).
 //   anything else          no answer for any place.
 const METRES_PER_DEGREE = 111320;
 
@@ -22,8 +25,10 @@ export function fixtureGeocoder(spec, { delayMs = 700 } = {}) {
     const near = given.find(place => Math.abs(place.latitude - latitude) < 0.0003
       && Math.abs(place.longitude - longitude) < 0.0003);
     if (near) return near.name;
-    const name = names[given.length] ?? null;
-    given.push({ latitude, longitude, name });
+    const placed = (spec?.places ?? []).find(place => Math.hypot(place.latitude - latitude,
+      (place.longitude - longitude) * Math.cos((latitude * Math.PI) / 180)) * METRES_PER_DEGREE <= 60);
+    const name = placed ? placed.name : names[given.filter(place => !place.placed).length] ?? null;
+    given.push({ latitude, longitude, name, placed: !!placed });
     return name;
   };
   return {

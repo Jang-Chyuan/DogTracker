@@ -2,7 +2,7 @@ import { interruptionText, nodePill, placeSpeech, sectionText } from '../src/his
 import { shownRowAt, shownStayDurationMs } from '../src/history/HistoryTimelinePresentation';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
-import { layoutRow } from '../src/mapHistory/ExportPNG';
+import { layoutRow, PNG_STYLE } from '../src/mapHistory/ExportPNG';
 import { pngDrawPages } from '../src/mapHistory/ExportDraw';
 
 const walk = (start, end, metres = 20) => ({ type: 'movement', mode: 'walking', start, end,
@@ -124,16 +124,21 @@ test('PNG uses the same collapsed rows; places expose start only, duration befor
   const ops = pngDrawPages({ pages: [page] })[0].ops;
   const pill = ops.find(op => op.text === rows[0].pill.text);
   const address = ops.find(op => op.text?.startsWith('虛構'));
-  expect(pill.y).toBe(address.y);
-  expect(pill.x).toBeLessThan(address.x);
+  // 2026-10-15 (user, layout A): the address first at full width, the pill
+  // on the line under it, both at the place column's left edge.
+  expect(pill.y).toBeGreaterThan(address.y);
+  expect(pill.x).toBeGreaterThan(0);
+  expect(pill.x - address.x).toBeLessThanOrEqual(PNG_STYLE.pillPadding);
 });
 
-test('PNG address wraps below an unusually wide leading pill without shrinking its text', () => {
-  const row = { kind: 'place', title: '虛構長地址', pill: { text: '停留', tone: 'plain' } };
-  const block = layoutRow(row, (text, size) => text === '停留' ? 800 : text.length * size);
+test('PNG: a wide pill never takes room from the address (layout A)', () => {
+  const row = { kind: 'place', title: '虛構長地址', pill: { text: '在附近走動 1 時 49 分・200 m', tone: 'stay' } };
+  const block = layoutRow(row, (text, size) => text === row.pill.text ? 800 : text.length * size);
   expect(block.titleX).toBe(0);
-  expect(block.titleY).toBeGreaterThan(0);
+  expect(block.titleY).toBe(0);
   expect(block.titleLines.join('')).toBe(row.title);
+  // The pill lies below the address's last line.
+  expect(block.items[0].y).toBeGreaterThanOrEqual(block.titleLines.length * PNG_STYLE.addressLine);
 });
 
 const terminalStay = { type: 'stop', number: 3, start: 120000, end: 480000,

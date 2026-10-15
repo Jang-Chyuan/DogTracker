@@ -157,6 +157,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       // the list numbers it (a stationary stay in the middle, 2026-10-14):
       // every number the list shows is a waypoint.
       stays: nodes.filter(n => n.type === 'stop' && (!n.presentationOnly || n.number != null)).map(n => ({ start: n.start, end: n.end, number: n.number,
+        ...(n.wandering ? { wandering: true } : {}),
         ...(n.originalRepresentative ? { gpxCoordinate: n.originalRepresentative,
           gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),
