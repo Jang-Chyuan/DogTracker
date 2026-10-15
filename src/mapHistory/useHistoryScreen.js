@@ -1,7 +1,8 @@
 import { useRangeRecompute } from './useRangeRecompute';
 import { historyDiagnosticsEnabled } from '../logger';
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
-import { sameHistoryInput, copyHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
+import { sameHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
+import { createDayCache, HISTORY_KEPT_DAYS, HISTORY_KEPT_ROWS } from './HistoryDayCache';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -85,6 +86,35 @@ export const DAY_STEP_SETTLE_MS = 150;
 export const KEPT_ROWS_WAIT_MS = 400;
 export const DAY_STEP_SETTLE_MAX_MS = 250;
 
+const sameParts = (a, b) => a.length === b.length && a.every((part, i) => Object.is(part, b[i]));
+// A reader's identity (below) holds the day at index 2: another day of the
+// same dog, account, publisher and reader.
+const DAY_PART = 2;
+const anotherDayOf = (a, b) => a.length === b.length && !Object.is(a[DAY_PART], b[DAY_PART])
+  && a.every((part, i) => i === DAY_PART || Object.is(part, b[i]));
+const timeOrder = (a, b) => a.time - b.time;
+const plainTime = row => typeof row?.time === 'number' && Number.isFinite(row.time);
+/**
+ * `rows` (in time order) with `added` put in: the same array a stable sort
+ * of both together gives, without sorting the day again on every poll (a
+ * day's new fixes come after the ones read, or a download's few between
+ * them). A new array: the rows shown and the models built keep theirs.
+ * Rows without a finite time fall back to the sort.
+ */
+export function withRows(rows, added) {
+  if (!added.length) return rows;
+  if (!rows.length || !rows.every(plainTime) || !added.every(plainTime)) return [...rows, ...added].sort(timeOrder);
+  const fresh = added.slice().sort(timeOrder);
+  if (fresh[0].time >= rows[rows.length - 1].time) return rows.concat(fresh);
+  const out = new Array(rows.length + fresh.length);
+  let i = 0, j = 0, k = 0;
+  // Ties keep the rows already read first, as the stable sort does.
+  while (i < rows.length && j < fresh.length) out[k++] = fresh[j].time < rows[i].time ? fresh[j++] : rows[i++];
+  while (i < rows.length) out[k++] = rows[i++];
+  while (j < fresh.length) out[k++] = fresh[j++];
+  return out;
+}
+
 /**
  * One day's rows of one dog or my route, read in pages and followed while the
  * day is today. Returns { rows, version, replayHolds, loaded, error }.
@@ -124,7 +154,17 @@ export function useHistoryDayRows({
   const publicationState = publishedReads && subject !== 'phone' ? getPublication?.() : null;
   const materialRevision = publicationState?.dataRevision;
   const publicationReader = useRef(null);
-  const acceptedInput = useRef(null);
+  // A dog's rows as last accepted for a few recent days ({ identity, rows,
+  // seed, replayHolds, version }), by reference: a first read that finds a
+  // day exactly as it was hands back the very rows and hold pass accepted
+  // before, so its model is not built again (‹ then › back, or a
+  // publication that left the day alone). Rows are never changed once read
+  // (normalizeHistoryRows, the hold pass and the export copy them), so the
+  // kept rows themselves are what a fresh read is compared with: nothing is
+  // copied when rows are added (audit M4: a deep copy of the whole day on
+  // every poll, 92 ms per 11k rows).
+  const accepted = useRef(null);
+  if (!accepted.current) accepted.current = createDayCache({ rowsOf: entry => entry.rows.length + entry.seed.length });
   // My route's rows as last read, kept when the reader stops (the screen
   // closed, the app went to the background): coming back to
   // the same day continues from the cursor — the rows added since and a
@@ -149,6 +189,8 @@ export function useHistoryDayRows({
     subject && day != null
       ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd, rowIdentity.current.epoch])
       : null;
+  // Closed (no one shown): the days kept go.
+  if (!key && accepted.current.size) accepted.current.clear();
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
   const readerPublicationRevision = subject === 'phone' ? 0 : `${rowRevision}|${publicationState?.latestReadReady ?? true}`;
@@ -181,22 +223,21 @@ export function useHistoryDayRows({
     const identity = [subject, slaveId, day, owner, scope, read, getPublication,
       publicationState?.scope, publicationState?.generation];
     // The hold pass (IndoorHold) is the costly part of a day: today's rows
-    // only grow, so the same pass continues with the new packets.
-    const holds = { pass: null, keys: [] };
+    // only grow, so the same pass continues with the new packets. Its output
+    // holds one copy per packet replayed, in order: the packets it already
+    // took are told by their source, id and time there (no key list kept).
+    const holds = { pass: null };
+    const replayed = (done, p) => Object.is(done.source, p.source) && Object.is(done.id, p.id) && Object.is(done.time, p.time);
     let replayHolds = packets => {
-      const keys = packets.map(p => `${p.source}:${p.id}:${p.time}`);
-      const same =
-        holds.pass &&
-        holds.keys.length <= keys.length &&
-        holds.keys.every((done, i) => done === keys[i]);
-      if (!same) {
-        holds.pass = createHistoryHolds({ seed: cache.seed });
-        holds.keys = [];
-      }
-      holds.pass.append(packets.slice(holds.keys.length));
-      holds.keys = keys;
+      const done = holds.pass?.output ?? [];
+      const same = !!holds.pass && done.length <= packets.length && done.every((old, i) => replayed(old, packets[i]));
+      if (!same) holds.pass = createHistoryHolds({ seed: cache.seed });
+      holds.pass.append(packets.slice(same ? done.length : 0));
       return holds.pass.output;
     };
+    // The pass copies each packet it takes: the source stream need not copy
+    // the whole day for it on every build.
+    replayHolds.copiesPackets = true;
     const dayEnd = Math.min(endOfDay(day), readEnd ?? Infinity);
     const retryPublication = () => {
       waitingForPublication = true;
@@ -265,24 +306,24 @@ export function useHistoryDayRows({
         cache.future = future;
         const added = shown.length;
         const pass = cache.first && passes ? ++passes.current : null;
-        if (added)
-          cache.rows = [...cache.rows, ...shown].sort(
-            (a, b) => a.time - b.time,
-          );
+        // Today's new fixes go after the rows read (append-only), not into a
+        // sort of the whole day again.
+        if (added) cache.rows = withRows(cache.rows, shown);
         if (added || cache.first || replaced) {
-          const recyclable = subject === 'dog' && publishedReads;
-          const old = recyclable ? acceptedInput.current : null;
-          const sameIdentity = old && identity.length === old.identity.length
-            && identity.every((part, i) => Object.is(part, old.identity[i]));
+          const recyclable = subject === 'dog';
+          const old = recyclable ? accepted.current.find(entry => sameParts(identity, entry.identity)) : null;
+          const sameIdentity = !!old;
           // Only a freshly accepted complete first read can prove that another
           // day's publication left this input untouched. Cursor always comes
           // from the fresh answer; comparison never opens the publication fence.
           const unchanged = cache.first && sameIdentity
-            && sameHistoryInput(cache.rows, old.rowsInput) && sameHistoryInput(cache.seed, old.seedInput);
+            && sameHistoryInput(cache.rows, old.rows) && sameHistoryInput(cache.seed, old.seed);
           if (unchanged) { cache.rows = old.rows; replayHolds = old.replayHolds; }
           const version = unchanged ? old.version : (sameIdentity ? old.version : 0) + 1;
-          if (recyclable) acceptedInput.current = { identity, rows: cache.rows, rowsInput: copyHistoryInput(cache.rows),
-            seedInput: copyHistoryInput(cache.seed), replayHolds, version };
+          // The same dog, account, publisher and reader: other days stay
+          // (HISTORY_KEPT_DAYS), anything else goes.
+          if (recyclable) accepted.current.put({ identity, rows: cache.rows, seed: cache.seed, replayHolds, version },
+            entry => !anotherDayOf(identity, entry.identity));
           if (subject === 'phone' && cache.first) markStartupPhase('phone-day-publish');
           cache.first = false;
           setResult(current => ({
@@ -331,6 +372,13 @@ export function useHistoryDayRows({
     };
     // key stands for subject, slaveId, day and owner.
   }, [active, read, key, revision, getPublication, readerPublicationRevision, publishedReads]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Closed: a dog's rows and hold pass go with it (my route keeps its rows
+  // for the next opening, above).
+  useEffect(() => {
+    if (key || keptRows.current) return;
+    setResult(current => (current.rows.length || current.replayHolds
+      ? { key: null, rows: [], version: 0, error: '', replayHolds: null } : current));
+  }, [key]);
   // Physical completion only wakes a reader blocked by its fence. Material
   // changes still replace the reader above; ready rows/holds stay cached.
   useEffect(() => {
@@ -351,6 +399,100 @@ export function useHistoryDayRows({
     loaded: !!key && result.key === key && result.version > 0,
     refreshing,
   };
+}
+
+// The hooks below run apart from useHistoryScreen's body on purpose: an
+// effect's cleanup (or a timer) made inside that body keeps the whole render
+// it was made in alive, the day's model with it, for as long as the effect
+// stays (the minute clock, the day list: often the whole opening). A day's
+// model is megabytes (audit M6, 2026-10-15).
+
+/**
+ * The time the screen shows: taken again in the render that opens the screen
+ * or brings it back (`active`), not in an effect after it, so the first view
+ * is built with the time it is shown at, not built once more a moment later;
+ * going away keeps the time shown, so nothing is built for a screen no one
+ * sees (2026-10-15). Then a minute after the time shown, and every minute.
+ */
+function useShownClock(active, clock) {
+  const [clockState, setClockState] = useState(() => ({ active, now: clock() }));
+  const reopened = clockState.active !== active;
+  const clockNow = reopened && active ? clock() : clockState.now;
+  if (reopened) setClockState({ active, now: clockNow });
+  const shownNow = useRef(clockNow);
+  shownNow.current = clockNow;
+  // Another clock (a screen fixture's) is read at once.
+  const clockUsed = useRef(clock);
+  useEffect(() => {
+    let at = shownNow.current;
+    if (clockUsed.current !== clock) {
+      clockUsed.current = clock;
+      at = clock();
+      setClockState(current => (current.now === at ? current : { ...current, now: at }));
+    }
+    if (!active) return undefined;
+    let timer;
+    const tick = () => {
+      const time = clock();
+      setClockState(current => ({ ...current, now: time }));
+      timer = setTimeout(tick, CLOCK_MS);
+    };
+    timer = setTimeout(tick, Math.min(CLOCK_MS, Math.max(0, CLOCK_MS - (clock() - at))));
+    return () => clearTimeout(timer);
+  }, [active, clock]);
+  return clockNow;
+}
+
+/**
+ * The days with rows of any dog shown, across both sources ({ days,
+ * daysByDog }), asked again when today's first rows arrive
+ * (`todayRowsKey`), after a download (`readRevision`) and a publication.
+ */
+function useHistoryDays({ active, readDays, subject, idsKey, owner, todayRowsKey, readRevision, baseKey, publicationRevision }) {
+  const [days, setDays] = useState([]);
+  const [daysByDog, setDaysByDog] = useState({ key: null, value: {} });
+  useEffect(() => {
+    if (!active || !readDays || !subject) return undefined;
+    let alive = true;
+    const asks =
+      subject === 'phone'
+        ? [readDays({ subject, slaveId: null, owner })]
+        : idsKey
+            .split(',')
+            .map(id =>
+              readDays({ subject, slaveId: Number(id), owner }),
+            );
+    Promise.all(asks.map(ask => Promise.resolve(ask).catch(() => [])))
+      .then(lists => {
+        if (alive) {
+          setDaysByDog({ key: `${baseKey}|${idsKey}`, value: Object.fromEntries(idsKey.split(',').map((id, index) => [id, lists[index] || []])) });
+          setDays(
+            [
+              ...new Set(
+                lists.flatMap(list => (Array.isArray(list) ? list : [])),
+              ),
+            ].sort(),
+          );
+        }
+      })
+      .catch(() => {
+        if (alive) setDays([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [
+    active,
+    readDays,
+    subject,
+    idsKey,
+    owner,
+    todayRowsKey,
+    readRevision,
+    baseKey,
+    publicationRevision,
+  ]);
+  return { days, daysByDog };
 }
 
 /**
@@ -416,38 +558,7 @@ export function useHistoryScreen({
   const slaveId = target?.slaveId ?? null;
   const entryId = subject === 'phone' ? 'phone' : slaveId;
   const subjectKey = id => (id === 'phone' ? 'phone' : `dog:${id}`);
-  // Taken again in the render that opens the screen or brings it back
-  // (`active`), not in an effect after it: the first view is built with the
-  // time it is shown at, not built once more a moment later; going away
-  // keeps the time shown, so nothing is built for a screen no one sees
-  // (2026-10-15).
-  const [clockState, setClockState] = useState(() => ({ active, now: clock() }));
-  const reopened = clockState.active !== active;
-  const clockNow = reopened && active ? clock() : clockState.now;
-  if (reopened) setClockState({ active, now: clockNow });
-  const now = clockNow;
-  const shownNow = useRef(now);
-  shownNow.current = now;
-  // Another clock (a screen fixture's) is read at once.
-  const clockUsed = useRef(clock);
-  useEffect(() => {
-    let at = shownNow.current;
-    if (clockUsed.current !== clock) {
-      clockUsed.current = clock;
-      at = clock();
-      setClockState(current => (current.now === at ? current : { ...current, now: at }));
-    }
-    if (!active) return undefined;
-    // A minute after the time shown, then every minute.
-    let timer;
-    const tick = () => {
-      const time = clock();
-      setClockState(current => ({ ...current, now: time }));
-      timer = setTimeout(tick, CLOCK_MS);
-    };
-    timer = setTimeout(tick, Math.min(CLOCK_MS, Math.max(0, CLOCK_MS - (clock() - at))));
-    return () => clearTimeout(timer);
-  }, [active, clock]);
+  const now = useShownClock(active, clock);
   const todayStart = startOfToday(now);
   // 進入時的預設: today, the range of the day, the cursor on the newest fix,
   // Each opening starts with the entry dog alone and merged records.
@@ -615,8 +726,6 @@ export function useHistoryScreen({
   const idsKey = dogIds.join(',');
   // The days with rows of any dog shown (‹ › step between them; 判定表「多隻
   // 狗的月曆」: a day of any of them has a dot), across both sources.
-  const [days, setDays] = useState([]);
-  const [daysByDog, setDaysByDog] = useState({ key: null, value: {} });
   const anyLoaded = slots.some(slot => slot.version > 0);
   // Asked again when today's first rows arrive (today may just have begun).
   // Another day's rows never add a day: stepping through past days must not
@@ -624,48 +733,8 @@ export function useHistoryScreen({
   const todayRows = useRef(null);
   if (today && anyLoaded && sessionKey) todayRows.current = `${sessionKey}|${todayStart}`;
   const todayRowsKey = todayRows.current;
-  useEffect(() => {
-    if (!active || !readDays || !subject) return undefined;
-    let alive = true;
-    const asks =
-      subject === 'phone'
-        ? [readDays({ subject, slaveId: null, owner })]
-        : idsKey
-            .split(',')
-            .map(id =>
-              readDays({ subject, slaveId: Number(id), owner }),
-            );
-    Promise.all(asks.map(ask => Promise.resolve(ask).catch(() => [])))
-      .then(lists => {
-        if (alive) {
-          setDaysByDog({ key: `${baseKey}|${idsKey}`, value: Object.fromEntries(idsKey.split(',').map((id, index) => [id, lists[index] || []])) });
-          setDays(
-            [
-              ...new Set(
-                lists.flatMap(list => (Array.isArray(list) ? list : [])),
-              ),
-            ].sort(),
-          );
-        }
-      })
-      .catch(() => {
-        if (alive) setDays([]);
-      });
-    return () => {
-      alive = false;
-    };
-    // Asked again when today's first rows arrive and after a download.
-  }, [
-    active,
-    readDays,
-    subject,
-    idsKey,
-    owner,
-    todayRowsKey,
-    readRevision,
-    baseKey,
-    publicationRevision,
-  ]);
+  const { days, daysByDog } = useHistoryDays({ active, readDays, subject, idsKey, owner, todayRowsKey, readRevision,
+    baseKey, publicationRevision });
   const todayKey = dayKey(new Date(todayStart));
   const shownKey = dayKey(new Date(day));
   // ---- the day's model ----------------------------------------------------
@@ -798,8 +867,15 @@ export function useHistoryScreen({
   const diagnosticModelDay = useRef(null);
   const diagnosticCommittedDay = useRef(null);
   const diagnosticModelFinished = useRef(null);
+  // The models built for this view, for the few days kept (HistoryDayCache):
+  // a day whose rows read back exactly unchanged is not built again. My
+  // route keeps only the day shown (#190's rows stay as they were): an
+  // unchanged past day back from the background is not built again either.
+  // Closing the screen lets them all go (below).
+  const keptDays = subject === 'dog' ? HISTORY_KEPT_DAYS : 1;
   const exactModel = useRef(null);
-  if (!exactModel.current) exactModel.current = createExactHistoryModelCache();
+  if (exactModel.current?.days !== keptDays)
+    exactModel.current = { days: keptDays, cache: createExactHistoryModelCache({ days: keptDays, rows: HISTORY_KEPT_ROWS }) };
   const completedRangeModel = useRef(null);
   const completedScope = `${sessionKey}|${subject}|${day}|${idsKey}|${readKey}|${writeKey}|${owner ?? ''}|${cloud?.owner ?? ''}`;
   // An open dog view (today or another day): each automatic archive pass
@@ -819,20 +895,42 @@ export function useHistoryScreen({
   // changes with an account switch, a deletion or a new engine, so the same
   // lineage may keep this view across that resume until the new proof
   // answers. Without a lineage, any generation change still shows loading.
-  const verifiedModel = useRef(null);
+  // Kept for a few days of this opening (HISTORY_KEPT_DAYS, HistoryDayCache),
+  // not only the day shown: coming back to a dog's day seen a moment ago
+  // (‹ then ›) shows it at once, under the same rules — the same view, and
+  // for an account's dogs (coverageRequired) a proof that still covers the
+  // cutoff it was verified at — while its rows are read again; only rows
+  // that changed build it again. Without an account (no proof) the day is
+  // this phone's rows only: the same view is enough.
+  const verifiedModels = useRef(null);
+  if (!verifiedModels.current) verifiedModels.current = createDayCache({ rowsOf: entry => entry.rows });
   const shownPublication = cloud?.getPublication?.();
-  const verifiedIdentity = subject === 'dog' && cloud?.coverageRequired
-    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud.owner ?? ''}` : null;
-  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
-    && value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
+  const proofRequired = !!cloud?.coverageRequired;
+  const verifiedIdentity = subject === 'dog'
+    ? `${sessionKey}|${day}|${idsKey}|${owner ?? ''}|${cloud?.owner ?? ''}` : null;
+  const verifiedSession = `${sessionKey}|${owner ?? ''}|${cloud?.owner ?? ''}|${proofRequired}`;
+  const samePublisher = value => value.session === verifiedSession && (!proofRequired
+    || value.scope === shownPublication?.scope && value.owner === shownPublication?.owner
     && (Number.isSafeInteger(value.lineage) && value.lineage === shownPublication?.lineage
-      || value.generation === shownPublication?.generation) && value.manual === manual
-    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner && value.kept === current.kept;
+      || value.generation === shownPublication?.generation));
+  const verifiedMatches = value => !!value && !!verifiedIdentity && value.identity === verifiedIdentity
+    && samePublisher(value) && value.manual === manual
+    && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner
+    // An opening's first selection has no `kept` yet; a day changed sets it null.
+    && (value.kept ?? null) === (current.kept ?? null);
+  const verifiedEntry = verifiedIdentity ? verifiedModels.current.peek(entry => entry.identity === verifiedIdentity) : null;
   // A range drag never shows a retained model: it shows the busy state, then
   // the released range (PR 115).
-  const verifiedView = !rangePending && verifiedMatches(verifiedModel.current)
-    && verifiedModel.current.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedModel.current.cutoff)
-    ? verifiedModel.current : null;
+  const verifiedView = !rangePending && verifiedMatches(verifiedEntry)
+    && (!proofRequired || verifiedEntry.cutoff <= coverageCutoff && cloudDays.provenAt(shownKey, verifiedEntry.cutoff))
+    ? verifiedEntry : null;
+  // Closed: nothing of the days seen stays (my route keeps only its rows, #190).
+  if (!subject) {
+    if (verifiedModels.current.size) verifiedModels.current.clear();
+    if (exactModel.current.cache.size) exactModel.current.cache.clear();
+    lastBuilt.current = null;
+    completedRangeModel.current = null;
+  }
   // Several dogs re-reading their rows finish one by one: the verified view
   // of all of them stays until every one is read, never a model without the
   // dogs still reading (a dog just added has another identity: left out
@@ -876,9 +974,10 @@ export function useHistoryScreen({
     // options. Only a real build measures its pure pipeline's sub-stages.
     const build = () => startupPhase(subject === 'phone' && firstModelOfDay ? 'phone-model' : '',
       () => multiDayModel(subjects, { ...options, measure: diagnostic?.measure }));
-    const built = subject === 'dog' && cloud?.publishedReads
-      ? exactModel.current([owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build)
-      : build();
+    // My route's identity leaves out the opening: an unchanged past day
+    // shown again (back from the background) is the same model.
+    const built = exactModel.current.cache(subject === 'phone' ? ['phone', owner, memoryScope, read]
+      : [owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build);
     modelBuildCost.current = Date.now() - started;
     buildCost.current = modelBuildCost.current;
     diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
@@ -912,19 +1011,27 @@ export function useHistoryScreen({
   ]);
   // Either blocker qualifies: the proof waiting for its re-read/tail, or the
   // day's rows re-reading for the new material/cutoff.
-  const retained = !builtModel && !waiting && !held ? verifiedView : null;
+  // A day kept from earlier in this opening shows at once, even while the
+  // ‹ › taps settle (it is not built then, only shown); a day seen for the
+  // first time waits for its rows and its build as before.
+  const retained = !builtModel ? verifiedView : null;
+  const shownRows = subjects.reduce((sum, s) => sum + s.rows.length, 0);
   useEffect(() => {
     // While a range drag holds the last completed model, its cutoff may lag
     // the current one: neither record nor drop the verified model then.
     if (rangePending) return;
     if (builtModel && coverageReady && coverageOpening.current.key === coverageKey) coverageOpening.current.shown = true;
-    if (builtModel && coverageReady && verifiedIdentity) verifiedModel.current = { identity: verifiedIdentity,
+    const kept = verifiedModels.current;
+    if (!verifiedIdentity) { if (kept.size) kept.clear(); return; }
+    if (builtModel && coverageReady) kept.put({ identity: verifiedIdentity, session: verifiedSession,
       scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
       lineage: shownPublication?.lineage, manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
-      cutoff: coverageCutoff, model: builtModel };
-    else if (!verifiedIdentity || !verifiedMatches(verifiedModel.current)) verifiedModel.current = null;
+      cutoff: proofRequired ? coverageCutoff : null, model: builtModel, rows: shownRows },
+    // Another opening, account or publisher: those days go.
+    entry => entry.identity === verifiedIdentity || !samePublisher(entry));
+    else if (verifiedEntry && !verifiedMatches(verifiedEntry)) kept.remove(entry => entry === verifiedEntry);
   });
-  const dayModel = held ? null : builtModel ?? retained?.model ?? null;
+  const dayModel = held && !retained ? null : builtModel ?? retained?.model ?? null;
   useEffect(() => {
     if (!rangePending && builtModel) completedRangeModel.current = { scope: completedScope, model: builtModel };
   }, [builtModel, rangePending, completedScope]);
