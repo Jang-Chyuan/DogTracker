@@ -22,7 +22,7 @@
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
 - `recorded_at` 和 `location_at` 是 Unix 毫秒（`location_at` 是定位來源回報的時間）；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
-- 每次寫入與修剪在同一交易，依 recorded_at、id 保留最新 80,000 筆。初始化也修剪舊資料。
+- 每次寫入與修剪在同一交易，依寫入順序（id）保留最新 80,000 筆。初始化也修剪舊資料。以前依 recorded_at 排：系統時鐘先被調快、之後再調回時，那段「未來」時間的列會比之後所有的列都留得久。新一次記錄判斷「快取定位」時比對的也是最後寫入的一列（id），不是 recorded_at 最大的一列。今天 km（`phoneRouteSince`）的 (recorded_at, id) 游標在時鐘往回調時仍會跳過調回後、時間早於游標的列，直到重新讀整天；這部分沒有改。
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。
 - 只存本機、不上傳 Supabase、不修改 dog_status 或 supabase_dog_status。
 - 需要精確位置權限與 GPS；不接受只有粗略位置權限。服務只能在 App 前景啟動。系統強制停止／重開機後需再次點開始，不宣稱能永久背景執行。

@@ -199,6 +199,8 @@ Wi-Fi Config Characteristic 使用 write-with-response，裝置收到 UTF-8 JSON
 - 每個 Slave 最多保留 10,000 筆狀態。
 - Android 原生每次寫入交易內清理該 Slave 的超額紀錄；JS 備援每 100 次寫入清理一次。
 - 查詢筆數限制為 1 至 1,000 筆。
+- `dogtracker-latest.sqlite` 的日誌模式明確設為 `journal_mode=TRUNCATE`、`synchronous=FULL`（`SqliteModes`）。這就是 Android 對 `openOrCreateDatabase` 的預設，也是 App 一直以來用的模式，現在不再交給各家手機決定。`dogtracker.sqlite` 的模式由 `DogStatusStore` 開檔時決定，資料庫鎖定的改善會把它改成 WAL，所以不在這裡設定。
+- Android 原生 owner（`DogStatusStore`、`CloudLatestStore`）的 SELECT／PRAGMA／WITH 把**每個參數都當 TEXT 綁定**；其他語句照型別綁定。和欄位比較時欄位的 affinity 會轉回來，但和沒有 affinity 的運算式比較（`COALESCE(a,b) >= ?`、`a+0 < ?`、`MAX(x) > ?`）會變成整數對文字、結果默默出錯，這種查詢要寫 `CAST(? AS INTEGER)` 或把運算式 CAST。jest 的 `__fixtures__/SQLiteConnection.js` 照同樣的方式綁定，而且每個帶參數的讀取都會再用依型別綁定跑一次，答案不同就讓測試失敗（`SQLITE_BINDING_CHECK=0` 關閉）。
 
 ## Android 權限
 

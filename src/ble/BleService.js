@@ -190,16 +190,8 @@ export function createBleService(manager = new BleManager()) {
       buffer = '';
       reconnectAttempt = 0;
       onStatus(t("c518", { value: device.name || device.localName || device.id }));
-      if (nativeBle?.connect) {
-        await nativeBle.connect(
-          device.id,
-          device.name || device.localName || 'DogGPS Master',
-          activeConfig.serviceUuid,
-          BLE_DATA_UUID,
-        );
-      } else {
-        startBackgroundService(t("c519"));
-      }
+      // Only without the native service (connect() takes the native path first).
+      startBackgroundService(t("c519"));
       const initial = await device.readCharacteristicForService(
         activeConfig.serviceUuid,
         BLE_DATA_UUID,
