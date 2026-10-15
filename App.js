@@ -501,9 +501,11 @@ function TrackerApp({ resume = null, onRestart }) {
   // A settings fixture opens its page (settings-*, receiver-*, phone-*).
   const fixturePage = fixture?.openRoute ?? null;
   const fixtureName = fixture?.name ?? null;
+  // A map fixture (no page of its own) opens on the map, not on the page the
+  // previous fixture left open (2026-10-15).
   useEffect(() => {
-    if (!fixturePage) return;
-    setStack(stackTo(fixturePage));
+    if (!fixtureName) return;
+    setStack(stackTo(fixturePage ?? 'map'));
   }, [fixtureName, fixturePage]);
 
   // ---- the start (D0): what opens first ----------------------------------
@@ -1068,6 +1070,7 @@ function TrackerApp({ resume = null, onRestart }) {
           page={pairedPage(
             receiverNumber(receiverState),
             mapInputs.cloudDogs?.packets,
+            receiverState,
           )}
           step={route.entry === 'onboarding' ? 4 : null}
           onStart={finishGuide}

@@ -110,11 +110,13 @@ internal object BleUploadQueue {
 
   fun enqueue(sql: Sql, data: JSONObject, payload: String, receivedAt: Long,
     eventId: () -> String = { UUID.randomUUID().toString() }): String? {
-    val master = (data.opt("mid") as? Number)?.toDouble() ?: return null
-    if (!master.isFinite() || master < 1 || master > 65535 || master % 1.0 != 0.0) return null
+    // The same Master ID the receiver check reads (ReceiverMasterId.of); the
+    // service hands over packets with it as a whole number in `mid`
+    // (ReceiverMasterId.normalized), which the JS encoder reads.
+    val master = ReceiverMasterId.of(data) ?: return null
     val owner = sql.first("SELECT value FROM ble_upload_meta WHERE key='owner'").orEmpty()
     if (owner.isEmpty()) return null
-    val masterId = master.toInt().toString()
+    val masterId = master.toString()
     if (sql.first("SELECT mode FROM ble_upload_settings WHERE owner_user_id=? AND master_id=?", owner, masterId) != "phone") return null
     if (sql.first(REFUSED_SQL, owner, masterId) != null) return null
     val fingerprint = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -134,7 +136,7 @@ internal object BleUploadQueue {
       }
     }
     untilCheck--
-    sql.insert(linkedMapOf("event_id" to eventId(), "owner_user_id" to owner, "master_id" to master.toInt(),
+    sql.insert(linkedMapOf("event_id" to eventId(), "owner_user_id" to owner, "master_id" to master,
       "received_at" to receivedAt, "payload_json" to payload, "fingerprint" to fingerprint,
       "slave_id" to data.optInt("sid", 0)))
     // The pre-thinning "queue full" notice, from older versions.

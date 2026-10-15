@@ -7,7 +7,12 @@ import Renderer, { act } from 'react-test-renderer';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
 import { colors } from '../src/theme/tokens';
+
+// These UI tests run for half a minute on a busy machine (each of them once
+// failed there, 2026-10-14): a test may take longer than jest's 5 s.
+jest.setTimeout(30000);
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
 const ALIASES = { 4: '豆豆', 6: '小黑', 8: '阿福' };
@@ -19,8 +24,13 @@ function Harness({ fixture, onScreen, screenRef }) {
     owner: fixture.cloudSync.ownerId, clock: () => fixture.now, memoryScope: `multi:${fixture.name}:`,
     preset: fixture.historyView ?? null, aliases: ALIASES });
   onScreen(screen);
-  return <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0} history={null}
-    candidates={CANDIDATES.filter(dog => [...fixture.raw.ble, ...fixture.raw.cloud].some(row => row.slave_id === dog.id))} initialSheet={fixture.historyView?.sheet ?? null} />;
+  // Its own address lookup (no geocoder), never the module-level one
+  // another test of this file used.
+  const [lookup] = React.useState(() => createAddressLookup({ native: null }));
+  return <AddressLookupContext.Provider value={lookup}>
+    <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0} history={null}
+    candidates={CANDIDATES.filter(dog => [...fixture.raw.ble, ...fixture.raw.cloud].some(row => row.slave_id === dog.id))} initialSheet={fixture.historyView?.sheet ?? null} />
+  </AddressLookupContext.Provider>;
 }
 
 async function mount(name) {
@@ -29,7 +39,11 @@ async function mount(name) {
   await act(async () => {
     state.renderer = Renderer.create(<Harness fixture={fixture} screenRef={state.ref} onScreen={value => { state.screen = value; }} />);
   });
-  await act(async () => {});
+  // The day is read on real timers: wait until it is shown rather than a
+  // fixed two turns, which a busy machine may not be done in.
+  for (let i = 0; i < 50 && (!state.screen || state.screen.loading || !state.screen.map); i += 1) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  }
   await act(async () => {});
   state.text = () => JSON.stringify(state.renderer.toJSON());
   state.press = testID => state.renderer.root.findAll(node => node.props.testID === testID

@@ -1,6 +1,7 @@
 import {
   coldStartCoordinates, frameAllCoordinates, framedCoordinates, framePadding, lastKnownPhoneFix, phoneFix,
   regionForFrame, SINGLE_POINT_DEGREES,
+  focusPointY,
 } from '../src/map/MapFraming';
 import { edgeHints, edgeHintSpeech, edgeHintWidth } from '../src/map/EdgeHints';
 
@@ -192,4 +193,17 @@ test('the last known phone position frames the cold start only when precise and 
   expect(lastKnownPhoneFix({ ...known, latitude: 91 }, at)).toBeNull();
   expect(lastKnownPhoneFix({ ...known, ageSeconds: -1 }, at)).toBeNull();
   expect(lastKnownPhoneFix(null, at)).toBeNull();
+});
+
+// 2026-10-15 (200% font): the card is tall and the band left above it and its
+// bottom row small; the selected dog was brought under 「今天 x km」.
+test('a focused point: its face and tag centred in the free band, or the face at its top when too small', () => {
+  // 100…440 free, the face 24dp above the point and face + tag 64dp below.
+  expect(focusPointY({ top: 100, bottom: 440, up: 24, down: 64 })).toBe(250);
+  // Nothing drawn around it: the middle.
+  expect(focusPointY({ top: 100, bottom: 440 })).toBe(270);
+  // A 60dp band for 24 + 64: the face stays whole at the top, clear of the row.
+  const y = focusPointY({ top: 100, bottom: 160, up: 24, down: 64 });
+  expect(y).toBe(124);
+  expect(y + 24).toBeLessThanOrEqual(160);
 });

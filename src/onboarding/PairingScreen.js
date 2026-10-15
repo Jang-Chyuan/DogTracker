@@ -21,7 +21,7 @@ import {
 } from './GuideUI';
 import QrCamera from './QrCamera';
 import { openSystemSettings } from '../utils/systemSettings';
-import { signalBars, signalBarsLabel } from './Pairing';
+import { receiverLinkTitle, signalBars, signalBarsLabel } from './Pairing';
 import SignalBars from './SignalBars';
 import { radius, space, type, size as sizes, border, touch } from '../theme/tokens';
 import { useReduceMotion } from '../utils/reduceMotion';
@@ -426,13 +426,11 @@ function ConnectingPage({ pairing, step, onLayout }) {
   );
 }
 
-// Back on D3 from D4: 「已連上 接收器 7」 with 下一步 and 換一台 (c269, c270).
+// Back on D3 from D4: 「已連上 接收器 7」 with 下一步 and 換一台 (c269, c270);
+// not connected: what Pairing.receiverLinkTitle says, without the tick.
 function ConnectedPage({ pairing, step, onLayout }) {
   const styles = useStyles(getStyles);
-  const text =
-    pairing.connectedNumber != null
-      ? t('c269', { number: pairing.connectedNumber })
-      : t("c861");
+  const text = receiverLinkTitle(pairing.receiverState, pairing.connectedNumber, true);
   return (
     <GuidePage
       testID="pair-connected"
@@ -457,9 +455,12 @@ function ConnectedPage({ pairing, step, onLayout }) {
       }
     >
       <View style={styles.connectedRow} accessible accessibilityLabel={text}>
-        <View style={styles.okCircle}>
-          <Text style={styles.okMark} allowFontScaling={false}>✓</Text>
-        </View>
+        {/* The tick only while it really is connected. */}
+        {pairing.receiverState?.connected ? (
+          <View style={styles.okCircle}>
+            <Text style={styles.okMark} allowFontScaling={false}>✓</Text>
+          </View>
+        ) : null}
         <Text style={styles.connectedText}>{text}</Text>
       </View>
     </GuidePage>

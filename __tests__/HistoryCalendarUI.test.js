@@ -9,6 +9,12 @@ import Renderer, { act } from 'react-test-renderer';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
+
+
+// These UI tests run for half a minute on a busy machine (each of them once
+// failed there, 2026-10-14): a test may take longer than jest's 5 s.
+jest.setTimeout(30000);
 
 const LEVELS = { summary: 140, half: 420, full: 620 };
 
@@ -29,8 +35,13 @@ function Harness({ fixture, onScreen, screenRef, online, active = true }) {
     preset: fixture.historyView ?? null, cloud: cloud?.cloud ?? null, active,
     online: online ?? cloud?.online !== false, cloudSeed: cloud?.seed ?? null });
   onScreen?.(screen);
-  return <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0} name="小黑"
-    history={null} initialCalendar={fixture.historyView?.calendar ?? null} />;
+  // Its own address lookup (no geocoder), never the module-level one
+  // another test of this file used.
+  const [lookup] = React.useState(() => createAddressLookup({ native: null }));
+  return <AddressLookupContext.Provider value={lookup}>
+    <HistoryScreen ref={screenRef} screen={screen} top={24} levels={LEVELS} bottomInset={0} name="小黑"
+    history={null} initialCalendar={fixture.historyView?.calendar ?? null} />
+  </AddressLookupContext.Provider>;
 }
 
 async function mount(name) {
