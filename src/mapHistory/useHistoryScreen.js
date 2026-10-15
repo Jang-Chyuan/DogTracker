@@ -444,8 +444,8 @@ export function useHistoryScreen({
   if (shownComplete.current.key !== shownCompleteKey) shownComplete.current = { key: shownCompleteKey, days: new Map() };
   const shownCutoffOf = useCallback(key => shownComplete.current.days.get(key), []);
   if (coverageOpening.current.key !== coverageKey || (active && !coverageOpening.current.active)) {
-    const reopened = coverageOpening.current.key !== coverageKey ? shownCutoffOf(dayKey(new Date(day))) : undefined;
-    coverageOpening.current = { key: coverageKey, active, cutoff: reopened ?? clock(), reopened: reopened != null, shown: false };
+    const shownCutoff = coverageOpening.current.key !== coverageKey ? shownCutoffOf(dayKey(new Date(day))) : undefined;
+    coverageOpening.current = { key: coverageKey, active, cutoff: shownCutoff ?? clock(), reopened: shownCutoff != null, shown: false };
   } else coverageOpening.current.active = active;
   // Archive terminal success is the only automatic tail target. Snapshot and
   // per-page/manual publication cannot recursively start another download.
