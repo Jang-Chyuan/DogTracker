@@ -113,7 +113,7 @@ android/app/src/main/java/com/dogtracker/
 - `serviceUuid` 必須符合 DogTracker BLE Service UUID。
 - `profile` 可省略；省略時使用 `default`。
 
-掃描成功只代表設定格式有效。連線後收到第一筆資料時，App 還會比對 QR 的 `masterId` 與 BLE payload 的 Master ID；payload 寫的是另一台 Master 才中止該次連線。沒有 Master ID（缺欄位、null、不是整數）的資料不算不一致，照常處理並計入診斷（`framesWithoutMasterId`）。
+掃描成功只代表設定格式有效。連線後收到第一筆資料時，App 還會比對 QR 的 `masterId` 與 BLE payload 的 Master ID；payload 寫的是另一台 Master 才中止該次連線。沒有 Master ID（缺欄位、null、不是整數）的資料不算不一致，照常處理並計入診斷（`framesWithoutMasterId`）；其中的定位封包（type 3、有 Slave ID）以 QR 的 Master ID 補上後保存與上傳（`ReceiverMasterId.filled`）。
 
 ## 共用 DogStatus 模型
 

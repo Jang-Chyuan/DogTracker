@@ -42,8 +42,8 @@ object HandOver {
     }
     for ((id, dog) in incoming) {
       val mine = known[id]
-      val mineNewer = mine != null && (mine.range.lastLocalAt ?: mine.packetAt ?: 0) >
-        (dog.range.lastLocalAt ?: dog.packetAt ?: 0)
+      // The same time as the drop test above: each side's newest stored packet.
+      val mineNewer = mine != null && (heardAt(mine) ?: 0) > (heardAt(dog) ?: 0)
       result[id] = if (mine != null && mineNewer) mine.copy(name = dog.name) else dog
     }
     return result

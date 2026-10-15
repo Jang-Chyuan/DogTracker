@@ -51,10 +51,12 @@ class BleForegroundService : Service() {
     /** What [REQUESTED_MTU] was negotiated to on this link (0: no link, 23: none), and the request's GATT status. */
     @Volatile var mtu = 0
     @Volatile var mtuStatus: Int? = null
-    // This service run's receiver frames (diagnostics: getState, dumpsys).
-    @Volatile var framerResyncs = 0
-    @Volatile var largestFrame = 0
-    @Volatile var framesWithoutMasterId = 0
+    // This service run's receiver frames (diagnostics: getState, dumpsys);
+    // a new run (onCreate) starts from zero.
+    @Volatile var frames = ReceiverFrameStats()
+    val framerResyncs get() = frames.resyncs
+    val largestFrame get() = frames.largest
+    val framesWithoutMasterId get() = frames.withoutMasterId
   }
 
   private val worker = HandlerThread("DogTracker-BLE")
@@ -75,6 +77,8 @@ class BleForegroundService : Service() {
   private var subscribedElapsed = 0L
   private var stale = false
   private val framer = BleJsonFramer()
+  // Starts and refusals, kept across process ends (ServiceStartLog).
+  private val startLog by lazy { serviceStartLog(ServiceStarts.BLE) }
   private var wifiResult: ((String?, String?) -> Unit)? = null
   private var wifiRead = false
   private val reconnectRunnable = Runnable { connectGatt() }
@@ -138,6 +142,7 @@ class BleForegroundService : Service() {
     worker.start()
     handler = Handler(worker.looper)
     instance = this
+    frames = ReceiverFrameStats()
     NotificationChannels.create(this)
   }
 
@@ -164,7 +169,23 @@ class BleForegroundService : Service() {
       }
       return START_NOT_STICKY
     }
-    startForeground(NOTIFICATION_ID, notification(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1077)))
+    // A null intent: the system's START_STICKY restart after the process
+    // ended, with the app most likely off screen. Android 12+ may refuse the
+    // foreground start then (ForegroundServiceStartNotAllowedException), which
+    // used to end the restarted process. Now it is recorded (dumpsys,
+    // getState's resumeError) and the service stops; `enabled` stays, so the
+    // app's next resume (MainActivity.onResume) reconnects.
+    val kind = ServiceStartLog.kindOf(intent == null)
+    val refused = startLog.attempt(kind, System.currentTimeMillis()) {
+      startForeground(NOTIFICATION_ID, notification(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1077)))
+    }
+    if (refused != null) {
+      com.dogtracker.AppLog.w("DogTracker-BLE", "foreground ${kind.label} refused", refused)
+      prefs.edit().putString("resumeError", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1052,
+        refused.javaClass.simpleName)).commit()
+      stopSelf(startId)
+      return START_NOT_STICKY
+    }
     isRunning = true
     prefs.edit().remove("resumeError").apply()
     handler.post {
@@ -220,7 +241,10 @@ class BleForegroundService : Service() {
     writer.println("receiver: running=$isRunning connected=$isConnected")
     writer.println("mtu=$mtu requested=$REQUESTED_MTU status=${mtuStatus ?: "-"} largestFrame=${largestFrame}B " +
       "fits=${mtu == 0 || largestFrame <= mtu - 3}")
-    writer.println("framerResyncs=$framerResyncs framesWithoutMasterId=$framesWithoutMasterId")
+    writer.println("framerResyncs=$framerResyncs framesWithoutMasterId=$framesWithoutMasterId " +
+      "masterIdFromQr=${frames.masterIdFilled}")
+    val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+    ServiceStarts.lines(this) { time.format(it) }.forEach { writer.println(it) }
   }
 
   private fun recordMtu(value: Int, status: Int?) {
@@ -378,8 +402,7 @@ class BleForegroundService : Service() {
       publishStatus(error.message ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1096))
       return
     } finally {
-      framerResyncs = framer.resyncs
-      largestFrame = maxOf(largestFrame, framer.largest)
+      frames.framed(framer.resyncs, framer.largest)
     }
     for (payload in payloads) {
         val data = try { JSONObject(payload) } catch (_: Exception) {
@@ -388,26 +411,34 @@ class BleForegroundService : Service() {
         }
         // Only another receiver's own number stops the session; a frame
         // without one (or an unreadable one) is not a mismatch.
+        var packet = data
+        var text = payload
         when (val check = ReceiverMasterId.check(data, expectedMasterId)) {
           is ReceiverMasterId.Check.Other -> {
             stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1098, expectedMasterId, check.masterId))
             return
           }
-          ReceiverMasterId.Check.Missing -> framesWithoutMasterId++
+          ReceiverMasterId.Check.Missing -> {
+            // A position packet takes the paired QR's Master ID, so it is
+            // stored under its receiver and can be queued for upload.
+            val filled = ReceiverMasterId.filled(data, expectedMasterId)
+            frames.missingMasterId(filled != null)
+            if (filled != null) { packet = filled; text = filled.toString() }
+          }
           ReceiverMasterId.Check.Same -> Unit
         }
         val now = arrival.wallMs
         try {
-          DogStatusStore.get(this).save(data, payload, now)
+          DogStatusStore.get(this).save(packet, text, now)
           prefs.edit().remove("storageError").apply()
         } catch (error: Exception) {
           prefs.edit().putString("storageError", com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1099, error.message)).apply()
         }
-        runCatching { BackgroundAlerts.onPacket(this, data, now) }
+        runCatching { BackgroundAlerts.onPacket(this, packet, now) }
         lastReceivedElapsed = SystemClock.elapsedRealtime()
         lastDataElapsed = lastReceivedElapsed
         stale = false
-        val value = Base64.encodeToString(payload.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val value = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         prefs.edit().putString("lastPayload", value).putLong("lastReceivedAt", now).apply()
         publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1100, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
         emit(EVENT_DATA, JSONObject().put("value", value).put("receivedAt", now)

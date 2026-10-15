@@ -26,6 +26,7 @@
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。
 - 只存本機、不上傳 Supabase、不修改 dog_status 或 supabase_dog_status。
 - 需要精確位置權限與 GPS；不接受只有粗略位置權限。服務只能在 App 前景啟動。系統強制停止／重開機後需再次點開始，不宣稱能永久背景執行。
+- 程序被系統結束後的 `START_STICKY` 重建（intent 為 null）：Android 12+ 可能拒絕在背景啟動前景服務（`ForegroundServiceStartNotAllowedException`；Android 14 定位類型可能是 `SecurityException`），服務照樣停下，等下次開啟 App 時 `resumeIfEnabled` 再啟動；狀態文字用「自動開始失敗」（c1138），不再誤說要授權精確位置。每次啟動、重建與被拒（例外類別與訊息）存在 App 私有的 SharedPreferences（`service_starts`，最近 20 筆），只含時間與次數。App 沒有要求「一律允許」的背景定位權限：Android 11+ 在背景重建的定位服務可能完全收不到定位，直到使用者打開 App（`RestartFixWatch`）。重建後 60 秒仍沒有任何定位，就記下「restart got no fixes」與可能原因，之後收到第一筆再記下等了多久；即時快照另有 `restarted`、`restartWithoutFixes`。不另外要求權限（是否要求背景定位是產品決定）。`dumpsys activity service com.dogtracker/.location.LocationTrackerService` 與接收器服務的 dumpsys 都會列出兩個服務的啟動紀錄。
 - iOS 尚未實作；頁面顯示不支援。
 
 靜止判定確認後速度歸零，顯示與儲存座標鎖定於確認當下的平滑位置；原始座標持續保留供移動判定。PhoneMotion 的 JS 歷史回放與 Kotlin 即時記錄維持相同判準：有有效速度精度時，低速證據要求位置精度 ≤ 30 m、速度 ≤ 1 m/s、速度精度 ≤ 1.5 m/s，且速度減誤差 ≤ 0.5 m/s；缺速度精度時只接受位置精度 ≤ 10 m、速度 ≤ 0.3 m/s。至少15秒疑似、20秒確認；高精度樣本另檢查3 m的單向進展，中精度樣本依精度放寬靜止視窗，避免室內小幅飄移冒充離開。
