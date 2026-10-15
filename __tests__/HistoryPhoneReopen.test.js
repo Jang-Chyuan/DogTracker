@@ -229,3 +229,26 @@ test('a slow read of the new fixes: the kept rows are shown after the wait, the 
     expect(s.screen.model.points.length).toBeGreaterThan(kept);
   } finally { await s.unmount(); db.connection.close(); }
 });
+
+test('a past day back from the background with no new fixes: the same model, not built again', async () => {
+  const db = await database();
+  db.add(0, TODAY_ROWS);
+  const s = await screenOf(db);
+  try {
+    await s.show();
+    await s.settle();
+    await act(async () => { s.screen.previousDay(); });
+    await s.settle(1500);
+    const shown = s.screen.model;
+    expect(s.screen.today).toBe(false);
+    expect(shown.points.length).toBeGreaterThan(1000);
+    s.reset();
+    await s.show({ active: false });
+    jest.setSystemTime(NOW + 10 * 60000);
+    await s.show({ active: true });
+    await s.settle();
+    expect(s.frames.every(Boolean)).toBe(true);
+    expect(s.counts.builds).toBe(0);
+    expect(s.screen.model).toBe(shown);
+  } finally { await s.unmount(); db.connection.close(); }
+});
