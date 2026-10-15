@@ -102,8 +102,8 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
 
 /**
  * One short line for the overlap menu (頭像＋名字＋問題): the problems, most
- * serious first, in the card's words (「不在接收範圍」「沒有新位置・最後
- * 10:12」「電量 15%・偏低」) as `crit`; otherwise 「快離開接收範圍」 as `warn`;
+ * serious first, in the card's words (「不在接收範圍」「10:12 之後沒有新
+ * 位置」「電量 15%・偏低」) as `crit`; otherwise 「快離開接收範圍」 as `warn`;
  * otherwise 「室內」 as `muted`; otherwise null.
  */
 export function problemNote(dog, { freshness, problems, range, indoor, now }) {
@@ -121,7 +121,7 @@ export function problemNote(dog, { freshness, problems, range, indoor, now }) {
 /**
  * The marker's one accessibility label (the badges are not read on their own):
  * name, then 室內, charging or low battery, out of range, no new position —
- * 「小黑・室內，充電中 62%，不在接收範圍，沒有新資料，最後 10:05」. A dog
+ * 「小黑・室內，充電中 62%，不在接收範圍，10:05 之後沒有新資料」. A dog
  * without any of these is only its name.
  */
 export function markerSpeech(dog, { name, indoor, freshness, problems, now }) {
