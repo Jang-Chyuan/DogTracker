@@ -535,10 +535,10 @@ test('D4 lists the sources heard as 訊號源 N; D4b when none (c050–c054)', (
     { source: 'ble', master_id: 3, slave_id: 5, slave_lat: 24.99, slave_lon: 121.31, received_at: 50 },
     { source: 'cloud', master_id: 7, slave_id: 6, slave_lat: 24.99, slave_lon: 121.31, received_at: 50 },
   ];
-  expect(pairedPage(7, packets)).toEqual({ title: '已連上接收器 7',
+  expect(pairedPage(7, packets, receiver7)).toEqual({ title: '已連上接收器 7',
     body: '已經收到 2 個訊號源。狗第一次定位、出現在地圖上之後，點狗、按鉛筆就能改名字和頭像。',
     sources: [{ slaveId: 4, label: '訊號源 4' }, { slaveId: 9, label: '訊號源 9' }] });
-  expect(pairedPage(7, [])).toEqual({ title: '已連上接收器 7', body: i18nT('c054'),
+  expect(pairedPage(7, [], receiver7)).toEqual({ title: '已連上接收器 7', body: i18nT('c054'),
     sources: [] });
   let renderer;
   const onStart = jest.fn();
@@ -546,6 +546,34 @@ test('D4 lists the sources heard as 訊號源 N; D4b when none (c050–c054)', (
   expect(renderer.root.findAllByProps({ testID: 'paired-source-4' }).length).toBeGreaterThan(0);
   act(() => renderer.root.findByProps({ testID: 'paired-start' }).props.onPress());
   expect(onStart).toHaveBeenCalled();
+});
+
+// 2026-10-15: D3 and D4 said 「已連上 接收器 5」 while the receiver was not
+// connected (connected=false).
+test('D3 and D4 say 已連上 only while the receiver is connected', async () => {
+  const lost = { ...receiver7, connected: false, receiving: false, lastReceivedAt: 1000 };
+  const never = { ...receiver7, connected: false, receiving: false, lastReceivedAt: 0 };
+  const packets = [{ source: 'ble', master_id: 7, slave_id: 4, slave_lat: 24.99, slave_lon: 121.31, received_at: 30 }];
+  expect(pairedPage(7, packets, lost).title).toBe('接收器 7 斷線了');
+  expect(pairedPage(7, packets, never).title).toBe(i18nT('c1116'));
+  expect(pairedPage(7, packets, null).title).toBe(i18nT('c1116'));
+  // What was heard is still true.
+  expect(pairedPage(7, packets, lost).body).toBe(i18nT('c051', { count: 1 }));
+  const fixture = fixtureScreen('pair-done-disconnected');
+  expect(fixture.openRoute).toBe('paired');
+  expect(pairedPage(receiverNumber(fixture.receiverState), fixture.cloudDogs.packets, fixture.receiverState).title)
+    .toBe('接收器 7 斷線了');
+  // D3 back from D4: no tick and no 已連上.
+  const hook = pairing({ flow: pairingFlow('onboarding'), ble: fakeBle(), receiverState: lost });
+  await act(async () => {});
+  expect(hook.get().view).toBe('connected');
+  let renderer;
+  act(() => { renderer = Renderer.create(<PairingScreen pairing={hook.get()} step={3} camera={false} />); });
+  expect(words(renderer)).toContain('接收器 7 斷線了');
+  expect(words(renderer)).not.toContain('已連上');
+  expect(words(renderer)).not.toContain('✓');
+  act(() => renderer.unmount());
+  hook.unmount();
 });
 
 // ---- the fixtures -----------------------------------------------------------
@@ -608,7 +636,7 @@ test('pair-done-sources / pair-done-empty draw D4 and D4b', () => {
   const sources = fixtureScreen('pair-done-sources');
   expect(sources.openRoute).toBe('paired');
   const number = receiverNumber(sources.receiverState);
-  expect(pairedPage(number, sources.cloudDogs.packets)).toMatchObject({ title: '已連上接收器 7',
+  expect(pairedPage(number, sources.cloudDogs.packets, sources.receiverState)).toMatchObject({ title: '已連上接收器 7',
     sources: [{ slaveId: 4, label: '訊號源 4' }, { slaveId: 7, label: '訊號源 7' }, { slaveId: 9, label: '訊號源 9' }] });
   const empty = fixtureScreen('pair-done-empty');
   expect(pairedPage(receiverNumber(empty.receiverState), empty.cloudDogs.packets).sources).toEqual([]);

@@ -426,7 +426,10 @@ class BleForegroundService : Service() {
             frames.missingMasterId(filled != null)
             if (filled != null) { packet = filled; text = filled.toString() }
           }
-          ReceiverMasterId.Check.Same -> Unit
+          ReceiverMasterId.Check.Same -> {
+            // `"mid":"5"` passed the check: stored and queued as the number.
+            ReceiverMasterId.normalized(data)?.let { packet = it; text = it.toString() }
+          }
         }
         val now = arrival.wallMs
         try {

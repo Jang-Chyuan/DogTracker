@@ -861,10 +861,13 @@ test('a dog whose card opens is moved into view once, only when the card or an e
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 1, coordinate }} />));
     expect(renderer.root.findByType(MapView).props.mapPadding.bottom).toBe(80);
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
-    // The dog (y 700) goes to the middle of what the card leaves (100…500 →
-    // 300): the camera centre (y 410 in the padded map) moves down by 400.
-    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 810 });
-    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 810, longitude: 200 } });
+    // The dog (y 700) goes to the middle of what the card and the bottom row
+    // standing on it leave (100…440, 「今天 x km」 / 我的位置 48dp + 12dp),
+    // its face and name tag together (2026-10-15: centred on the face alone,
+    // above the card only, a tall card left it under 「今天 x km」): y 250, so
+    // the camera centre (y 410 in the padded map) moves down by 450.
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 860 });
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 860, longitude: 200 } });
     // The same opening never moves it again (new positions, a re-render).
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 1, coordinate }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
@@ -874,12 +877,13 @@ test('a dog whose card opens is moved into view once, only when the card or an e
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props} focusDog={{ key: 2, coordinate }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(1);
     // A dog switched to from the card (‹ ›, swipe) always comes to the middle
-    // of what the card leaves (y 300), even in view; only the centre is set,
-    // so the zoom stays the user's.
+    // of what the card and its bottom row leave (y 250 with its name tag;
+    // this one is there already), even in view; only the centre is set, so
+    // the zoom stays the user's.
     await act(async () => renderer.update(<TrackingMap {...defaults} {...props}
       focusDog={{ key: 3, coordinate, always: true }} />));
     expect(mockCamera.animateCamera).toHaveBeenCalledTimes(2);
-    expect(mockCamera.coordinateForPoint).toHaveBeenLastCalledWith({ x: 200, y: 360 });
+    expect(mockCamera.coordinateForPoint).toHaveBeenLastCalledWith({ x: 200, y: 410 });
     expect(Object.keys(mockCamera.animateCamera.mock.calls[1][0])).toEqual(['center']);
     // The buttons sit above the card.
     expect(renderer.root.findByProps({ testID: 'map-frame-all' })).toBeDefined();
@@ -1005,9 +1009,10 @@ test('066: 我的位置 with a card open puts the phone in the middle of the map
     mockCamera.animateCamera.mockClear();
     await act(async () => renderer.root.findAll(node => node.props.testID === 'map-my-location'
       && typeof node.props.onPress === 'function')[0].props.onPress());
-    // As an opened dog: the phone (y 700) goes to the middle above the card.
-    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 810 });
-    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 810, longitude: 200 } });
+    // As an opened dog: the phone (y 700) goes to the middle above the card
+    // and its bottom row (100…440 → 270).
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 840 });
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({ center: { latitude: 840, longitude: 200 } });
   } finally {
     delete mockCamera.pointForCoordinate;
     delete mockCamera.coordinateForPoint;

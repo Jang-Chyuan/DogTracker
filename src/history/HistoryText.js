@@ -21,6 +21,15 @@ export function listDuration(ms) {
   return ((rest) ? t("c654", { value: Math.floor(minutes / 60), rest: rest }) : t("c655", { value: Math.floor(minutes / 60) }));
 }
 
+/**
+ * A stay's or an indoor hold's minutes as listDuration, but 「不到 1 分」 (c1276)
+ * when they round to none: never 「停 0 分」 or 「室內・0 分」 in its first
+ * minute (2026-10-15, as stays since 2026-10-13).
+ */
+export function stayDuration(ms) {
+  return Math.round(Math.max(0, ms || 0) / MINUTE) === 0 ? t('c1276') : listDuration(ms);
+}
+
 /** The summary: 「4 小時 8 分」 (c121). */
 export function summaryDuration(ms) {
   const minutes = Math.round(Math.max(0, ms) / MINUTE);
@@ -109,7 +118,7 @@ export function nodePill(node) {
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
       // runs on into the next day keeps its minutes (2026-10-13: no 「接續隔天」).
-      const inside = t('c344', { duration: listDuration(node.displayDurationMs ?? node.end - node.start) });
+      const inside = t('c344', { duration: stayDuration(node.displayDurationMs ?? node.end - node.start) });
       const text = node.continuesPreviousDay ? t('c332') : inside;
       return { text, tone: 'indoor' };
     }

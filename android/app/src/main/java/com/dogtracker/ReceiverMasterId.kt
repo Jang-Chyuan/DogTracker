@@ -59,6 +59,25 @@ object ReceiverMasterId {
     }
   }
 
+  /**
+   * A packet whose own Master ID passed [check] but not as a whole JSON
+   * number in `mid` (`"mid":"5"`, or only `master_id`): a copy with `mid`
+   * (and `master_id`, when it has one) set to that number, or null when it
+   * already is. The upload queue routes by `mid` and the JS encoder
+   * (BleUploadPayload) reads it as a number, so without this the packet
+   * passed the check but was never queued (2026-10-15).
+   */
+  fun normalized(data: JSONObject): JSONObject? {
+    val id = of(data) ?: return null
+    // Already the whole number itself (an Int as JSONObject parses `5`).
+    fun same(key: String) = (data.opt(key) as? Number)?.toString() == id.toString()
+    if (same("mid") && (!data.has("master_id") || same("master_id"))) return null
+    return JSONObject(data.toString()).apply {
+      put("mid", id)
+      if (has("master_id")) put("master_id", id)
+    }
+  }
+
   /** `expected` 0: an older pairing without a QR Master ID, any receiver is fine. */
   fun check(data: JSONObject, expected: Int): Check {
     val found = of(data) ?: return Check.Missing

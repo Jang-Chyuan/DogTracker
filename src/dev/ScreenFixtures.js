@@ -1050,6 +1050,17 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // card-indoor 40 s after 小黑 went inside: its first minute reads 「室內・
+  // 不到 1 分」, never 「室內・0 分」 (2026-10-15).
+  'card-indoor-first-minute': now => ({ ...FIXTURES['card-indoor'](now),
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...series(bleRow, now, { slave: 6, from: 55 * MINUTE, to: 40 * SECOND + 10 * SECOND, start: [-18, 24],
+        battery: 62, activity: restingFor(now, 40 * MINUTE) }).map((row, index) => ({ ...row,
+        slave_lat: row.slave_lat + (index % 5) * 0.00001, slave_lon: row.slave_lon - (index % 5) * 0.00001 })),
+      ...series(bleRow, now, { slave: 6, from: 40 * SECOND, to: 8 * SECOND, rssi: -96, snr: -4, battery: 62, usb: 1,
+        activity: 0.02 }),
+    ]) }),
   // 小黑 indoors since 21:09 last night (clear fixes, then a packet without a
   // fix every 30 s), opened after a cold start: the live hold replays only
   // the last half hour, so the card asks the history's rows where the stay
@@ -1278,6 +1289,10 @@ const FIXTURES = {
       ...series(bleRow, now, { slave: 7, from: 60 * SECOND, to: 15 * SECOND, start: [-20, 18], step: [0.04, -0.02] }),
       ...series(bleRow, now, { slave: 9, from: 50 * SECOND, to: 25 * SECOND }),
     ]) }),
+  // D4 with receiver 7 not connected (lost 2 minutes ago) after three
+  // sources were heard: 「接收器 7 斷線了」, never 「已連上」 (2026-10-15).
+  'pair-done-disconnected': now => ({ ...FIXTURES['pair-done-sources'](now),
+    receiver: { ...receiving(now), connected: false, receiving: false, lastReceivedAt: now - 2 * MINUTE } }),
   // D4b: receiver 7 connected, nothing heard yet.
   'pair-done-empty': now => ({ receiver: { ...receiving(now), receiving: false, lastReceivedAt: 0 },
     cloud: SIGNED_OUT, phone: walkingPhone(now), openRoute: 'paired', ble: [] }),
@@ -1666,6 +1681,10 @@ const FIXTURES = {
   'history-export-day': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: exportDay(now) }), geocoder: { names: HISTORY_NAMES },
     historyView: { export: { phase: 'choose' } } }),
+  // H10a for 狗 5, which has no name: its files are 「DogTracker_狗 5_…」,
+  // never 「狗 5-5」 (2026-10-15).
+  'history-export-unnamed': now => ({ ...FIXTURES['history-export-day'](now),
+    history: historyPage(now, { slave: 5, ble: exportDay(now).map(row => ({ ...row, slave_id: 5 })) }) }),
   // A busy day (16 stays): each address takes the made-up geocoder 1.5 s
   // (the emulator's own Geocoder took 1.4–17 s), so the last rows wait about
   // 25 s; two places have none (coordinates).

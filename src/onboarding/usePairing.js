@@ -419,6 +419,8 @@ export function usePairing({ flow, receiverState, service = {}, restore, asked =
 
   return {
     view, camera, dialog, target, nearby, nameSearch, input, inputError, connectedNumber,
+    // The native state: 「已連上」 only while it says connected.
+    receiverState,
     onShown: () => setShown(true),
     waitingForData: !!waiting.current,
     onQr, cancel, search: () => search(), searchName, pickNearby, typeName, press, back,
