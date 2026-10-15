@@ -42,11 +42,15 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 Token 更新失敗但伺服器沒有拒絕登入時（剛回前景網路未通、5xx，或 SDK 在背景更新失敗後 60 秒內不再重試），SDK 的 `getSession()` 回報沒有 Session，請求會改用 publishable key 匿名送出並得到 401。所以前景每輪最新位置先等 SDK 拿到同一帳號的 Session（最多 65 秒，期間仍顯示「正在更新」）再送第一個請求；遇到 401 時強制更新 Token 一次並重送一次（`CloudSession.js`）。伺服器拒絕 Refresh Token 時照舊回報登入失效，不重試。
 
+更新 Token 的回應不是 Supabase 自己的判定時，一律當成連不上（`CloudRefreshGuard.js`）：Wi-Fi 登入頁或代理伺服器的 HTML、429、任何 5xx、其他狀態碼。SDK 只把丟出的 fetch 錯誤和 502／503／504 當成可重試；其他回應在 Access Token 已過期時（例如在背景超過一小時後回到 App）會讓 SDK 刪掉存好的登入並發出 `SIGNED_OUT`，App 就顯示登入失效、BLE 轉送也停了。只有 Supabase 的 JSON 400／401／403（Refresh Token 被撤銷、已用過、Session 不存在）才照舊結束登入。
+
+一次失敗（`error`、`authFailed`）保留到下一次成功才清除，不在每輪開始時清掉；`useCloudSync` 因此每次登入被拒只請 `AuthProvider` 確認一次，仍被拒時每 5 分鐘再確認一次（之前每 30 秒更新 Token 兩次）。
+
 `cloud_sync_state` 以 `(owner_user_id, master_id)` 為主鍵，儲存 `through_at`、`event_id`、`updated_at`。每批事件與對應進度在同一個 SQLite transaction 提交；若該範圍已讀完，進度移至本輪查詢上限，事件 ID 為空。首次即使尚無資料也會記錄起始範圍。
 
 每輪重新讀取 `device_members`，新獲授權的 Master 首次抓最近 24 小時。已完成的下載範圍從上次進度前 5 分鐘補查，利用事件唯一鍵去重；未完成的範圍用最後提交的微秒 `received_at` 加 `event_id` 精確續傳，避免有限批次一直停在同一頁。增量游標不使用 `phone_received_at`；歷史顯示維持修正後的 `track_at`。
 
-排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
+排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試；Supabase 回 429 或 5xx 時改為退避（1、2、4 分鐘，之後每 5 分鐘），成功、重試、回到 App 或換帳號時重新從 30 秒開始。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
 
 Android 登入後排定唯一的 WorkManager periodic work `dogtracker-cloud-history`，15 分鐘週期、首次延遲 15 分鐘，重複 Token 更新不重設排程。`NetworkType.CONNECTED` 讓無網路時等待；執行中斷網會停止工作，保留已提交的頁面，系統允許後再續傳。暫時性錯誤採 2 分鐘起的指數退避。背景先批次轉送 BLE 待傳資料（最多 30 秒，沿用 UUID、每筆檢查登入帳號及 Master 轉送設定），再執行增量下載；整輪最多 90 秒，不跑前景的整點核對／舊時間修復。前景與背景共用上傳鎖，回到前景或登出會取消背景請求；取消後未確認的事件留待重試。排程可能受 Android 省電影響延後，並非背景即時上傳。
 
