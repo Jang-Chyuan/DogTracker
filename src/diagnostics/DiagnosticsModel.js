@@ -10,11 +10,16 @@ import { t } from '../i18n';
 //   never shows it; S8 does, with its probabilities and window.
 // - each dog's moving/still state through #44's speed buffer (SpeedBuffer),
 //   over this phone's newest receiver rows.
+// - the server clock's offset (ServerClock, #186): how far the server's clock
+//   is from this phone's, estimated from the cloud's responses, and whether
+//   downloaded times are moved by it (beyond 1 minute). Only here: the map
+//   just uses it.
 
 import { environmentEvidence, environmentLabel } from '../ml/Environment';
 import { formatClock } from '../map/MapFormat';
 import { displayName } from '../dogs/DogName';
 import { MOVEMENT_WORDS, settleSeries } from './SpeedBuffer';
+import { serverClock } from '../cloud/ServerClock';
 
 const hasFix = row => Number.isFinite(row?.slave_lat) && Number.isFinite(row?.slave_lon)
   && !(row.slave_lat === 0 && row.slave_lon === 0);
@@ -66,21 +71,41 @@ function movements(rows) {
   return result;
 }
 
+const seconds = ms => Math.round(Math.abs(ms) / 1000);
+
+/**
+ * The server clock (ServerClock's `estimate()`: server − this phone, null
+ * before any response; `offset()`: what is applied): { value, detail }.
+ */
+export function serverClockLine(clock = serverClock) {
+  const estimate = clock?.estimate?.();
+  const applied = clock?.offset?.() ?? 0;
+  if (!Number.isFinite(estimate)) return { value: t('c1395'), detail: null };
+  const value = seconds(estimate) === 0 ? t('c1394')
+    : estimate > 0 ? t('c1392', { seconds: seconds(estimate) }) : t('c1393', { seconds: seconds(estimate) });
+  const signed = Math.round(applied / 1000);
+  const detail = applied ? t('c1397', { seconds: signed > 0 ? `+${signed}` : `${signed}` }) : t('c1396');
+  return { value, detail };
+}
+
 /**
  * S8: { storage: { title, reason, full } | null, dogs: [{ slaveId, name,
  * environment: { label, evidence, window, source } | null, movement:
- * { label, detail } | null, label }] }, dogs by collar number.
+ * { label, detail } | null, label }], serverClock: { value, detail } },
+ * dogs by collar number.
  *
  * input: { packets, rows (this phone's newest receiver rows), aliases,
- * storage (storageProblem), now }.
+ * storage (storageProblem), now, clock (ServerClock) }.
  */
-export function diagnosticsPage({ packets = [], rows = [], aliases = {}, storage = null, now = Date.now() }) {
+export function diagnosticsPage({ packets = [], rows = [], aliases = {}, storage = null, now = Date.now(),
+  clock = serverClock }) {
   const environment = environments(packets, now);
   const movement = movements(rows);
   const ids = [...new Set([...environment.keys(), ...movement.keys()])]
     .filter(id => Number.isInteger(Number(id)) && Number(id) > 0).sort((left, right) => left - right);
   return {
     storage: storage ? { ...storage, title: storage.full ? t("c622") : t("c623") } : null,
+    serverClock: serverClockLine(clock),
     dogs: ids.map(slaveId => {
       const name = displayName(slaveId, aliases);
       const env = environment.get(slaveId) ?? null;

@@ -7,7 +7,10 @@ import org.json.JSONObject
 
 class LocationTrackerStore(context: Context) {
   private val store = DogStatusStore.get(context)
-  private val trim = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker ORDER BY recorded_at DESC, id DESC LIMIT -1 OFFSET 80000)"
+  // The newest 80,000 rows as written (id), not by recorded_at: a row dated
+  // ahead by a wall clock that was later set back would otherwise outlive
+  // every newer row.
+  private val trim = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker ORDER BY id DESC LIMIT -1 OFFSET 80000)"
   init {
     store.executeBatch(JSONArray().put(command("CREATE TABLE IF NOT EXISTS myLocationTracker (id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at INTEGER NOT NULL, location_at INTEGER NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy_meters REAL, altitude_meters REAL, speed_kmh REAL, heading_degrees REAL)"))
       .put(command("CREATE INDEX IF NOT EXISTS idx_myLocationTracker_time ON myLocationTracker(recorded_at DESC, id DESC)"))
@@ -40,9 +43,9 @@ class LocationTrackerStore(context: Context) {
           .put(if (display == null) "pipeline" else "animated").put(display?.fixTime ?: location.timestamp)))
       .put(command(trim)))
   }
-  /** location_at of the newest row (any recording), or null when there is none. */
+  /** location_at of the row written last (any recording; by id, whatever the clock did), or null when there is none. */
   fun newestLocationAt(): Long? {
-    val rows = store.executeSql("SELECT location_at FROM myLocationTracker ORDER BY recorded_at DESC, id DESC LIMIT 1",
+    val rows = store.executeSql("SELECT location_at FROM myLocationTracker ORDER BY id DESC LIMIT 1",
       JSONArray()).getJSONArray("results")
     return if (rows.length() == 0) null else rows.getJSONObject(0).optLong("location_at", 0L).takeIf { it > 0 }
   }

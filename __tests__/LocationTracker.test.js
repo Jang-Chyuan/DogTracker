@@ -39,6 +39,27 @@ test('native SQLite statements cap at 80000 newest rows and roll back on retenti
   } finally { db.close(); }
 });
 
+test('a row dated ahead by a clock later set back is trimmed in its turn, not kept forever', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt'), 'utf8');
+  const sql = prefix => source.match(new RegExp('"(' + prefix + '[^"]+)"'))[1];
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(sql('CREATE TABLE'));
+    const insert = db.prepare(sql('INSERT INTO'));
+    // The first row was written while the clock ran a day ahead.
+    insert.run(86_400_000 + 1, 1, 25, 121, 5, null, null, null);
+    db.exec('BEGIN');
+    for (let i = 0; i < 80000; i += 1) insert.run(1000 + i, 1000 + i, 25, 121, 5, null, null, null);
+    db.exec(sql('DELETE FROM'));
+    db.exec('COMMIT');
+    expect(db.prepare('SELECT COUNT(*) n, MAX(recorded_at) newest FROM myLocationTracker').get())
+      .toMatchObject({ n: 80000, newest: 80999 });
+    // The newest row is the one written last, whatever its time.
+    const newest = source.match(/fun newestLocationAt[\s\S]*?executeSql\("([^"]+)"/)[1];
+    expect(db.prepare(newest).get().location_at).toBe(80999);
+  } finally { db.close(); }
+});
+
 let renderer;
 let state;
 function Harness({ foreground = true }) {

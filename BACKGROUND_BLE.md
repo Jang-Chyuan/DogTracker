@@ -10,6 +10,10 @@ Android 的掃描使用 BLE PLX；選定裝置後，由 `BleForegroundService` �
 
 服務在獨立 HandlerThread 處理 GATT 與資料；忽略已關閉連線的延遲 callback。連線／訂閱逾時 30 秒，失敗依 2–30 秒退避重連。30 秒沒有完整資料會顯示等待；90 秒沒有資料則重建 GATT。Wi-Fi 指令使用相同 GATT，等待 callback 完成，10 秒逾時。QR 的 Master ID 驗證也在原生存檔之前執行。
 
+程序被系統結束後的 `START_STICKY` 重建（intent 為 null）時 App 多半在背景，Android 12+ 可能拒絕 `startForeground`（`ForegroundServiceStartNotAllowedException`），以前會讓重建的程序直接崩潰。現在捕捉後記錄下來、服務停下，`enabled` 保留，下次開啟 App 時 `MainActivity.onResume` 照常恢復；`getState()` 的 `resumeError` 帶例外類別。每次啟動、重建與被拒存在 App 私有的 SharedPreferences（`service_starts`，最近 20 筆，只含時間、次數與例外類別），`dumpsys` 列在 `starts:` 下，手機定位服務的紀錄也一起列出。`largestFrame`、`framerResyncs`、`framesWithoutMasterId` 是這次服務執行的數字，新的服務執行從 0 起算。
+
+沒有 Master ID 的定位封包（type 3、有 Slave ID）以 QR 的 Master ID 補上 `mid` 後保存與排入上傳（`ReceiverMasterId.filled`，dumpsys 的 `masterIdFromQr`）：封包來自依這張 QR 配對的接收器，而寫著其他 Master 的封包仍會中止連線。沒補之前這種封包存成 `master_id` NULL，和同一台接收器的資料分開（顯示平滑、設定的接收器列），也永遠不會上傳。其他沒有 Master ID 的 JSON（不是定位封包）照原樣處理；舊的、沒有 QR Master ID 的配對（0）也不補。
+
 畫面在前景每 2 秒及返回 App 時讀取服務狀態。`running`、`connected`、`receiving` 分開判斷；最後資料顯示真正接收時間，恢復快取不會刷新時間或再存一次。`START_STICKY` 重建服務會讀回連線設定；使用者停止則關閉自動恢復。
 
 `MainActivity.onResume()` 在使用者重新開啟或返回 App 時檢查保存的 `enabled` 旗標。若仍啟用、BLE 位址及 UUID 完整，且服務尚未執行，便送出 `ACTION_RESUME`，直接使用既有設定重連；保留 Master ID 驗證、sessionId、最後資料與接收時間。已執行的服務不重複啟動，手動停止後不會自動恢復。Android 12+ 恢復前檢查藍牙連線權限；權限不足時顯示恢復錯誤。
