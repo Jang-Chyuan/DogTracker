@@ -344,7 +344,7 @@ describe('5. a short real walk between two stays at one place', () => {
     // (「停 N 分・M m」), not the walk's after it.
     const [stay] = listed(model);
     expect(stay.countedDistanceM).toBeGreaterThan(30);
-    expect(nodePill(stay).text).toMatch(/^停 .+・\d+ m$/u);
+    expect(nodePill(stay).text).toMatch(/^停 .+・\d+\u00A0m$/u);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
 

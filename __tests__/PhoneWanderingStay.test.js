@@ -68,7 +68,7 @@ describe('a walk round one place', () => {
   test('is 「在附近走動」 with its own metres on its row', () => {
     expect(wander).toBeDefined();
     expect(wander.countedDistanceM).toBeGreaterThanOrEqual(100);
-    expect(nodePill(wander).text).toMatch(/^在附近走動 .+・\d+ m$/u);
+    expect(nodePill(wander).text).toMatch(/^在附近走動 .+・\d+\u00A0m$/u);
     // The walks beside it keep their own stretch (5 min at 4 km/h ≈ 360 m).
     const walks = timelinePresentation(model.nodes).filter(foot);
     expect(walks.every(w => w.countedDistanceM < 400)).toBe(true);
@@ -105,7 +105,7 @@ describe('a few moves inside an ordinary stay', () => {
   test('stay a stay, the metres on it: 「停 N 分・M m」, not on the walk an hour later', () => {
     const [stay] = stayRows(model).filter(n => n.countedDistanceM > 0);
     expect(stay.wandering).toBeFalsy();
-    expect(nodePill(stay).text).toMatch(/^停 .+・\d+ m$/u);
+    expect(nodePill(stay).text).toMatch(/^停 .+・\d+\u00A0m$/u);
     const walks = timelinePresentation(model.nodes).filter(foot);
     expect(walks.at(-1).countedDistanceM).toBeLessThan(400);
     expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);

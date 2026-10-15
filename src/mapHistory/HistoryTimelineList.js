@@ -1,6 +1,6 @@
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { isReduceMotion } from '../utils/reduceMotion';
-import { touch, size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
+import { size as sizes, space, type, border, radius, fontScale } from '../theme/tokens';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
@@ -288,13 +288,16 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           testID={selected ? 'timeline-selected' : undefined}
         >
           {selected && <View style={[styles.selectedEdge, { backgroundColor: color }]} testID="selected-row-edge" />}
+          {/* 2026-10-15 (user, layout A): the address (or coordinates) on its
+              own line at full width, level with the time and the node; the
+              pill on the line under it, never squeezing the address. */}
           <View style={styles.placeHeading}>
-            {pill && <View style={[styles.firstLineCenter, firstLine]} testID="place-pill-first-line"><Pill pill={pill} color={color} /></View>}
-            {pending ? <View style={[styles.address, styles.firstLineCenter, firstLine]}>
+            {pending ? <View style={[styles.address, styles.addressPending, firstLine]}>
               <Skeleton shape="address" testID="place-address-pending" />
             </View> : <Text style={[styles.address, place?.state !== 'found' && styles.addressMissing]} testID="place-title">
               {title}
             </Text>}
+            {pill && <View style={styles.pillLine} testID="place-pill-line"><Pill pill={pill} color={color} /></View>}
           </View>
           {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
@@ -606,18 +609,18 @@ const getStyles = makeStyles(theme => {
       overflow: 'hidden',
     },
     firstLineCenter: { justifyContent: 'center', alignItems: 'center' },
-    placeHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.xs },
+    placeHeading: { flexDirection: 'column', alignItems: 'stretch' },
     address: {
-      flexGrow: 1,
-      flexShrink: 1,
-      flexBasis: 0,
-      minWidth: touch.min,
+      alignSelf: 'stretch',
       color: colors.text,
       ...type.cardTitle,
-
       fontVariant: ['tabular-nums'],
     },
     addressMissing: { color: colors.textMuted, fontWeight: type.body.fontWeight },
+    addressPending: { justifyContent: 'center' },
+    // The pill's line: close under the address (the row's own lines are
+    // tighter than the space between rows), left-aligned with it.
+    pillLine: { flexDirection: 'row', marginTop: sizes.timeline.pill.gap },
     pill: {
       maxWidth: '100%',
       // 18dp, taller with a large system font (膠囊可以變高、不裁字).

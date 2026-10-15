@@ -95,21 +95,22 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   }
   const pill = row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
     width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2, x: 0, line: 0, y: 0 } : null;
-  // A leading pill shares the address line. If it leaves fewer than two
-  // address glyphs, the address wraps below it rather than overflowing.
-  const leading = pill ? pill.width + tokenSize.export.itemGap : 0;
-  const inline = PLACE_WIDTH - leading >= S.addressFont * 2;
-  const titleX = inline ? leading : 0;
-  const titleY = inline ? 0 : S.secondLine;
-  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH - titleX, measure,
+  // 2026-10-15 (user, layout A, as on screen): the address on its own lines
+  // at full width, level with the time and the node; the pill under it.
+  const titleX = 0, titleY = 0;
+  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure,
     { bold: true, maxLines: truncate ? 2 : Infinity });
-  let contentHeight = Math.max(pill ? S.pillHeight : 0, titleY + titleLines.length * S.addressLine);
+  let contentHeight = titleLines.length * S.addressLine;
+  if (pill) {
+    pill.y = contentHeight + tokenSize.export.pillGap;
+    contentHeight = pill.y + S.pillHeight;
+  }
   const placed = pill ? [pill] : [];
   for (const value of [row.coordinates, row.note].filter(Boolean)) {
     for (const text of wrap(value, S.detailFont, PLACE_WIDTH, measure)) {
-      placed.push({ kind: 'note', text, x: 0, line: placed.length, y: contentHeight,
+      placed.push({ kind: 'note', text, x: 0, line: placed.length, y: contentHeight + tokenSize.export.pillGap,
         width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) });
-      contentHeight += S.secondLine;
+      contentHeight += tokenSize.export.pillGap + S.pillHeight;
     }
   }
   const secondLines = placed.length;

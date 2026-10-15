@@ -99,9 +99,11 @@ const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
 // 2026-10-15 (user, #200): a stay's own moves are its own — 「停 25 分・45 m」
 // — never a walk's hours later; a stay that did not move (rounded to 0 m)
 // reads as ever.
+// The number and its unit never part when a large font wraps the pill
+// (「660」 on one line, 「m」 on the next): a no-break space between them.
 const withStayMetres = (text, stay) => {
   const distance = distanceText(stay?.countedDistanceM || 0);
-  return distance === distanceText(0) ? text : `${text}・${distance}`;
+  return distance === distanceText(0) ? text : `${text}・${distance.replace(' ', '\u00A0')}`;
 };
 
 export function nodePill(node) {
@@ -218,6 +220,7 @@ export function emptyText({ subject, today, name }) {
 // 「1.7 公里」, 「・」→「，」.
 export const spoken = text =>
   text
+    .replace(/\u00A0/gu, ' ')
     .replace(/(\d+) 分(?!鐘)/gu, t("c665"))
     .replace(/(\d) km/gu, t("c666"))
     .replace(/(\d) m(?![a-z])/gu, t("c667"))

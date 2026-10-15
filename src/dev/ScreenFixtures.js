@@ -1585,8 +1585,12 @@ const FIXTURES = {
     round(2, 30);
     stand(4 * 60);
     walk(6 * 60, 200);
+    // Made-up addresses (示範路 is no real road): two long enough to wrap to
+    // two lines, two short ones (layout A check).
     return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
-      history: historyPage(now) };
+      history: historyPage(now), geocoder: { names: [LONG_PLACE.names[0],
+        { line: '330台灣桃園市桃園區虛構里示範路二段九十九巷四十五弄十號' }, { line: '330台灣桃園市桃園區民生路120號' },
+        { line: '330台灣桃園市桃園區成功路三段16號' }] } };
   },
   // A candidate after staying home: show its tentative start, without status copy.
   'history-confirming': now => ({ ...FIXTURES['all-good'](now),

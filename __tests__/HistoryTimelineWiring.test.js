@@ -199,8 +199,8 @@ describe('fixtures', () => {
     const { fixture, model } = await fixtureList('history-wandering');
     const shown = timelinePresentation(model.nodes).map(n => n.terminalStay ?? n.departureStay ?? n);
     const pills = shown.filter(n => n.type === 'stop').map(n => nodePill(n).text);
-    expect(pills.some(text => /^在附近走動 .+・\d+ m$/u.test(text))).toBe(true);
-    expect(pills.some(text => /^停 .+・\d+ m$/u.test(text))).toBe(true);
+    expect(pills.some(text => /^在附近走動 .+・\d+\u00A0m$/u.test(text))).toBe(true);
+    expect(pills.some(text => /^停 .+・\d+\u00A0m$/u.test(text))).toBe(true);
     expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);
     expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
   });

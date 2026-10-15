@@ -520,6 +520,8 @@ export const size = {
     // §13 timeline status pills.
     pill: {
       height: 18,
+      // Layout A (2026-10-15): the pill's line under the address.
+      gap: 2,
     },
   },
   sheet: {
@@ -567,6 +569,9 @@ export const size = {
     pillHeight: 52,
     pillPadding: 20,
     secondLine: 64,
+    // Between an address's last line and the pill under it (2026-10-15,
+    // layout A: 2dp on screen, × 3).
+    pillGap: 6,
     nodeSize: 64,
     // The empty track above and below the 走路／開車／沒有資料 icon (the screen's
     // transportIcon padding, 4dp, at the track's 3× export scale).
