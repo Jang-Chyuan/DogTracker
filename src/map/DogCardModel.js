@@ -13,7 +13,7 @@ import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
 import { activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
 import { CARD_ACTIVITY_LOOKBACK_MS } from '../activity/DogCardReadings';
-import { listDuration } from '../history/HistoryText';
+import { listDuration, stayDuration } from '../history/HistoryText';
 
 // The phone's position is written as old (「手機位置 3 分鐘前」) after this.
 export const PHONE_OLD_AFTER_MS = 30 * 1000;
@@ -110,7 +110,8 @@ const HOUR = 60 * MINUTE;
 // 「26 分」, 「1 時 13 分」; a lower bound in whole hours past one: 「超過 24 時」.
 function indoorText(duration) {
   if (!duration) return t('c114');
-  if (!duration.over) return t('c344', { duration: listDuration(duration.ms) });
+  // Its first minute: 「室內・不到 1 分」, never 「室內・0 分」.
+  if (!duration.over) return t('c344', { duration: stayDuration(duration.ms) });
   const bound = duration.ms >= HOUR ? Math.floor(duration.ms / HOUR) * HOUR : duration.ms;
   return t('c344', { duration: t('c1282', { duration: listDuration(bound) }) });
 }

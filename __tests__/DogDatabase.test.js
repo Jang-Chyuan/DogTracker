@@ -2,6 +2,7 @@ import { mockDatabase } from 'react-native-nitro-sqlite';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { dogStatusRow } from '../__fixtures__/TrackingPointFixtures';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { DOG_RECORD_FLOOR, DOG_RETENTION_DAYS, RETENTION_SQL, retentionCutoff } from '../src/database/LocalRetention';
 
 test('cloud history survives initialization and clearing BLE history', async () => {
   const connection = createMemoryConnection();
@@ -66,17 +67,20 @@ describe('DogDatabase tracking reads', () => {
     );
   });
 
-  test('fallback retention applies 10,000 rows independently to each Slave', async () => {
-    mockDatabase.executeAsync.mockImplementation(async sql => ({
-      results: sql.includes('SELECT DISTINCT slave_id') ? [{slave_id: 1}, {slave_id: 2}] : [],
-    }));
+  // The rule itself on real SQLite: __tests__/LocalRetention.test.js.
+  test('fallback retention runs the time rule independently for each Slave', async () => {
+    mockDatabase.executeAsync.mockImplementation(async (sql, params) => {
+      if (sql === RETENTION_SQL.nextDog) return { results: [{ next: params[0] < 2 ? params[0] + 1 : null }] };
+      if (sql === RETENTION_SQL.dogNthNewest) return { results: params[1] === DOG_RECORD_FLOOR ? [{ id: 100 * params[0] }] : [] };
+      return { results: [], rowsAffected: 0 };
+    });
     await createDogDatabase().initialize();
     const deletes = mockDatabase.executeAsync.mock.calls.filter(([sql]) =>
       sql.includes('DELETE FROM dog_status'),
     );
-    expect(deletes.map(([, params]) => params)).toEqual([[1, 1, 10000], [2, 2, 10000]]);
-    expect(deletes.every(([sql]) => sql.includes('WHERE slave_id = ?'))).toBe(true);
-    expect(deletes.every(([sql]) => !sql.includes('supabase_dog_status'))).toBe(true);
+    expect(deletes.map(([sql]) => sql)).toEqual([RETENTION_SQL.dogDelete, RETENTION_SQL.dogDelete]);
+    expect(deletes.map(([, params]) => [params[0], params[1], params[3]])).toEqual([[1, 100, 500], [2, 200, 500]]);
+    expect(deletes.every(([, params]) => params[2] === retentionCutoff(Date.now(), DOG_RETENTION_DAYS))).toBe(true);
   });
 
   test('reads the latest dog_status row', async () => {

@@ -137,15 +137,32 @@ export function pairingFlow(entry = 'onboarding', mode = 'first') {
 }
 
 /**
+ * The receiver's line on D3 「已連上」 and D4's title, from the native state
+ * (BleBackground.getState): 「已連上接收器 N」 only while it really is
+ * connected (2026-10-15: it said so with connected=false). Not connected:
+ * 「接收器 N 斷線了」 once it had sent something, otherwise 「正在連線接收器」.
+ * `onD3`: D3's 「已連上 接收器 N」 (c269) rather than D4's (c050).
+ */
+export function receiverLinkTitle(state, number, onD3 = false) {
+  if (state?.connected) {
+    if (number == null) return t('c861');
+    return onD3 ? t('c269', { number }) : t('c050', { number });
+  }
+  if (state?.lastReceivedAt > 0) return number != null ? t('c058', { number }) : t('c773');
+  return t('c1116');
+}
+
+/**
  * D4 已連上接收器 N: the sources this receiver has sent so far, each only as
  * 「訊號源 4」 (no names yet), in the order S2 lists them; D4b when there are
- * none. `packets` are useCloudDogs' newest packets.
+ * none. `packets` are useCloudDogs' newest packets; `state` the native
+ * receiver state (the title says 已連上 only while connected).
  */
-export function pairedPage(number, packets) {
+export function pairedPage(number, packets, state = null) {
   const sources = receivedSources(packets, number, null).map(source => ({ slaveId: source.slaveId,
     label: t('c052', { number: source.slaveId }) }));
   return {
-    title: number != null ? t('c050', { number: number }) : t("c861"),
+    title: receiverLinkTitle(state, number),
     body: sources.length
       ? t('c051', { count: sources.length })
       : t('c054'),

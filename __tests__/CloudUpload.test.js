@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
-import { bleUploadPayload } from '../src/cloudUpload/BleUploadPayload';
+import { bleUploadPayload, packetMasterId } from '../src/cloudUpload/BleUploadPayload';
 import { createUploadDatabase } from '../src/cloudUpload/UploadDatabase';
 import { createUploadService } from '../src/cloudUpload/UploadService';
 
@@ -43,7 +43,8 @@ test('BLE units reconstruct the Wi-Fi wire payload without substituting display 
     gpsTimestamp: 123, activityScore: 456, activityValid: 1, activityTimestamp: 124,
     batteryMillivolts: 3900, batteryPercentage: 80, batteryValid: 1, slaveId: 4 });
   expect(result.rssi).toBe(-90.1);
-  for (const change of [{ gps_time: undefined }, { lat: 200 }, { seq: 1.5 }, { type: 2 }, { mid: 5 }, { sat: null }]) {
+  for (const change of [{ gps_time: undefined }, { lat: 200 }, { seq: 1.5 }, { type: 2 }, { mid: 5 }, { sat: null },
+    { mid: 'x' }, { mid: null }, { mid: '7.5' }, { master_id: 5 }]) {
     expect(() => bleUploadPayload({ master_id: 7, received_at: 1000, payload_json: JSON.stringify({ ...payload, ...change }) }, 'phone')).toThrow();
   }
 });
@@ -210,4 +211,19 @@ test('最後上傳成功（經手機）is kept per receiver and outlives the sen
     expect(after[7]).toBeGreaterThanOrEqual(mine[7]);
     expect(after[5]).toBe(mine[5]);
   } finally { connection.close(); }
+});
+
+// 2026-10-15: `"mid":"5"` passed the receiver's Master ID check (Kotlin
+// ReceiverMasterId.of reads numeric strings) but the encoder wanted a number.
+// Both read the Master ID the same way now: master_id, else mid; a number or
+// a numeric string; whole, 1–65535.
+test('the Master ID is read as the receiver check reads it (a numeric string too)', () => {
+  for (const [data, expected] of [[{ mid: 5 }, 5], [{ mid: '5' }, 5], [{ mid: ' 5 ' }, 5], [{ master_id: 3, mid: 5 }, 3],
+    [{ master_id: null, mid: '5' }, 5], [{ mid: 'x' }, null], [{ mid: '' }, null], [{ mid: 0 }, null], [{ mid: 3.5 }, null],
+    [{ mid: '65536' }, null], [{ master_id: 'x', mid: 5 }, null], [{}, null]]) {
+    expect([data, packetMasterId(data)]).toEqual([data, expected]);
+  }
+  const result = bleUploadPayload({ event_id: 'a', master_id: 7, received_at: 1000,
+    payload_json: JSON.stringify({ ...payload, mid: '7' }) }, 'phone');
+  expect(result.master_id).toBe(7);
 });
