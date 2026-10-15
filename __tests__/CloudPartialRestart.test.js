@@ -3,7 +3,7 @@ import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
+import { createIndependentCloudSyncWithCommittedMapReader as createIndependentCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { completedMapRevision } from '../src/cloud/CloudPublication';
 import { captureActivityRead, capturePageRead } from '../src/cloud/CloudPagePublication';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
@@ -23,15 +23,15 @@ const client = fail => latestArchiveRest({ events: [cloudEvent(1, NOW - 10000)],
 
 test.each([false, true])('cold bootstrap must not publish failed prior-process pages (restart download fails: %s)', async fail => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync, renderer, value, readerDatabase;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     readerDatabase = database;
     await database.savePage(owner, [record('complete-old', NOW - 10000)]);
-    sync = createCloudSync({ client: client(false), database });
+    sync = createIndependentCloudSync({ client: client(false), database });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     await jest.advanceTimersByTimeAsync(1); // completed first automatic pass
     const clock = () => NOW;
@@ -46,7 +46,7 @@ test.each([false, true])('cold bootstrap must not publish failed prior-process p
       return null;
     }
     await act(async () => { renderer = Renderer.create(<Harness />); });
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
     expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveCutoff: NOW });
     expect((await database.readLatestSnapshot(owner)).rows[0].slave_lat).toBe(coordinate.latitude);
     expect(value.rows[0].slave_lat).toBe(coordinate.latitude);
@@ -63,9 +63,9 @@ test.each([false, true])('cold bootstrap must not publish failed prior-process p
     await act(async () => { renderer.unmount(); });
     await sync.dispose();
     // Independent DB wrapper and scheduler, unchanged durable SQLite rows.
-    const restartedDatabase = createCloudDatabase(connection);
+    const restartedDatabase = createCloudDatabase(connection, { latestConnection: latest });
     readerDatabase = restartedDatabase;
-    sync = createCloudSync({ client: client(fail), database: restartedDatabase });
+    sync = createIndependentCloudSync({ client: client(fail), database: restartedDatabase });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 0 });
     // Match the real bootstrap ordering: owner effects/read microtasks run
@@ -76,26 +76,26 @@ test.each([false, true])('cold bootstrap must not publish failed prior-process p
     expect(value.rows[0].slave_lat).toBe(coordinate.latitude);
   } finally {
     await act(async () => { renderer?.unmount(); });
-    await sync?.dispose(); connection.close(); jest.useRealTimers();
+    await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers();
   }
 });
 
 // Positive controls: preserve useful offline completed cache and owner/BLE isolation.
 test('clean cold cache stays readable offline without mixing another owner or local BLE', async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let renderer, sync, value;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [record('complete', NOW)]);
     await database.savePage('another-anonymous-owner', [{ ...record('other', NOW), slave_id: 8 }]);
     await connection.executeAsync(`INSERT INTO dog_status
       (slave_id, master_id, received_at, slave_lat, slave_lon) VALUES (9, 7, ?, ?, ?)`,
     [NOW, coordinate.latitude, coordinate.longitude]);
-    const restart = createCloudDatabase(connection);
-    sync = createCloudSync({ client: client(true), database: restart });
+    const restart = createCloudDatabase(connection, { latestConnection: latest });
+    sync = createIndependentCloudSync({ client: client(true), database: restart });
     sync.setSession({ user: { id: owner } });
     const clock = () => NOW;
     function Harness() {
@@ -111,15 +111,15 @@ test('clean cold cache stays readable offline without mixing another owner or lo
     expect(value.packets.some(row => row.slave_id === 8)).toBe(false);
   } finally {
     await act(async () => { renderer?.unmount(); });
-    await sync?.dispose(); connection.close(); jest.useRealTimers();
+    await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers();
   }
 });
 
 test('staged repair, pages and cursors survive wrappers, atomic publication failure, and owner changes', async () => {
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [record('old', NOW - 10000)]);
     await database.savePage('another-anonymous-owner', [{ ...record('other', NOW), slave_id: 8 }]);
@@ -130,7 +130,7 @@ test('staged repair, pages and cursors survive wrappers, atomic publication fail
     await database.repairTrackTimes(owner, [{ event_id: 'old', received_at: new Date(NOW - 5000).toISOString(),
       upload_source: 'wifi' }], ['old']);
     expect((await database.latestBySlave(owner, 0))[0].track_at).toBe(NOW - 10000);
-    const restart = createCloudDatabase(connection);
+    const restart = createCloudDatabase(connection, { latestConnection: latest });
     await restart.initialize();
     await restart.beginDownload(owner); // resumes, does not erase committed pages
     expect((await restart.loadSyncState(owner, 7)).event_id).toBe('new');
@@ -150,31 +150,31 @@ test('staged repair, pages and cursors survive wrappers, atomic publication fail
     expect((await restart.latestBySlave('another-anonymous-owner', 0)).map(row => row.slave_id)).toEqual([8]);
     expect((await connection.executeAsync('SELECT track_at FROM supabase_dog_status WHERE owner_user_id=? AND event_id=?',
       [owner, 'old'])).results[0].track_at).toBe(NOW - 5000);
-  } finally { connection.close(); }
+  } finally { connection.close(); latest.close(); }
 });
 
 test('next successful automatic pass publishes prior interrupted pages once', async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [record(cloudEvent(1, NOW - 10000).event_id, NOW - 10000)]);
     await database.beginDownload(owner);
     await database.savePage(owner, [record('new', NOW, 0.001)]);
-    const restarted = createCloudDatabase(connection);
+    const restarted = createCloudDatabase(connection, { latestConnection: latest });
     const publish = jest.spyOn(restarted, 'publishDownload');
     const snapshots = [];
-    sync = createCloudSync({ client: client(false), database: restarted, onChange: state => snapshots.push(state) });
+    sync = createIndependentCloudSync({ client: client(false), database: restarted, onChange: state => snapshots.push(state) });
     sync.setSession({ user: { id: owner } }); sync.setForeground(true);
     expect((await database.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude);
     await jest.advanceTimersByTimeAsync(1);
     // Latest and complete context each publish, while archive completion is
     // exactly one separate terminal transaction with durable coverage proof.
     expect(snapshots.some(state => state.mapSuccessRevision === 1 && state.contextPending && state.archiveRevision === 0)).toBe(true);
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
     expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveCutoff: NOW });
     expect(publish).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledWith(owner, 'auto', NOW, expect.any(Function));
@@ -183,14 +183,14 @@ test('next successful automatic pass publishes prior interrupted pages once', as
     expect((await database.latestBySlave(owner, 0))[0].slave_lat).toBe(coordinate.latitude + 0.001);
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status WHERE owner_user_id=?',
       [owner])).results[0].n).toBe(2);
-  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
+  } finally { await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers(); }
 });
 
 test('bounded staging retention and a failed page preserve published rows and its resumable cursor', async () => {
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection, { maxRows: 3 });
+    const database = createCloudDatabase(connection, { latestConnection: latest, maxRows: 3 });
     await database.initialize();
     await database.savePage(owner, [record('old', NOW - 10000)]);
     await database.beginDownload(owner);
@@ -206,12 +206,12 @@ test('bounded staging retention and a failed page preserve published rows and it
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status')).results[0].n).toBe(1);
     await database.publishDownload(owner);
     expect((await connection.executeAsync('SELECT COUNT(*) n FROM supabase_dog_status')).results[0].n).toBe(2);
-  } finally { connection.close(); }
+  } finally { connection.close(); latest.close(); }
 });
 
 test.each(['failure', 'cancel'])('actual automatic first page survives %s then restart without archive publication', async mode => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync, renderer, value, fail = true, releasePage;
   const entered = new Promise(resolve => { releasePage = resolve; });
   let releaseFailure;
@@ -222,7 +222,7 @@ test.each(['failure', 'cancel'])('actual automatic first page survives %s then r
   const eventId = partial.event_id;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [record('old', NOW - 10000)]);
     const network = latestArchiveRest({ events: [partial, fixed, packet], archivePageSize: 1,
@@ -233,12 +233,12 @@ test.each(['failure', 'cancel'])('actual automatic first page survives %s then r
         sync.setForeground(false);
       },
     });
-    sync = createCloudSync({ database, client: network.client });
+    sync = createIndependentCloudSync({ database, client: network.client });
     sync.setSession({ user: { id: owner } }); sync.setForeground(true);
     await jest.advanceTimersByTimeAsync(1); await entered;
     // The actual archive cursor is durable while the next REST page is held.
     // The no-GPS packet has already obtained its independent latest good fix.
-    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+    expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
     expect(sync.historyPublication()).toMatchObject({ archiveCutoff: null, archiveRevision: 0 });
     expect(captureActivityRead(() => sync.historyPublication(), owner, true).open).toBe(false);
     const snapshot = await database.readLatestSnapshot(owner);
@@ -257,8 +257,8 @@ test.each(['failure', 'cancel'])('actual automatic first page survives %s then r
     expect(await database.readLatestSnapshot(owner)).toEqual(snapshot);
     if (mode === 'failure') expect(sync.historyPublication().archiveError).toBeTruthy();
     await sync.dispose();
-    const restart = createCloudDatabase(connection);
-    sync = createCloudSync({ database: restart, client: network.client });
+    const restart = createCloudDatabase(connection, { latestConnection: latest });
+    sync = createIndependentCloudSync({ database: restart, client: network.client });
     sync.setSession({ user: { id: owner } });
     const clock = () => NOW;
     function Harness() {
@@ -285,17 +285,17 @@ test.each(['failure', 'cancel'])('actual automatic first page survives %s then r
   } finally {
     releaseFailure?.();
     await act(async () => { renderer?.unmount(); });
-    await sync?.dispose(); connection.close(); jest.useRealTimers();
+    await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers();
   }
 });
 
 test.each(['packet', 'fix'])('real SDK %s failure cannot start archive or replace a complete cache', async failedPhase => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [record('cached', NOW - 10000)]);
     const cached = await database.readLatestSnapshot(owner);
@@ -304,7 +304,7 @@ test.each(['packet', 'fix'])('real SDK %s failure cannot start archive or replac
       cloudEvent(2, NOW - 500, { latitude: 0, longitude: 0 })],
       beforeRead: async call => { if (call.phase === failedPhase) throw new Error('network failed before complete latest'); },
     });
-    sync = createCloudSync({ database, client: network.client });
+    sync = createIndependentCloudSync({ database, client: network.client });
     sync.setSession({ user: { id: owner } }); sync.setForeground(true);
     await jest.advanceTimersByTimeAsync(1);
     expect(network.calls.some(call => call.phase === failedPhase)).toBe(true);
@@ -315,5 +315,5 @@ test.each(['packet', 'fix'])('real SDK %s failure cannot start archive or replac
     expect(await database.count(owner)).toBe(1);
     expect(await database.loadSyncState(owner, 7)).toBeNull();
     expect(await database.readArchivePublication(owner)).toBeNull();
-  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
+  } finally { await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers(); }
 });

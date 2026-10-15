@@ -6,7 +6,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useTrackingSession } from '../src/app/useTrackingSession';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { createHistoryCloud } from '../src/mapHistory/HistoryCloud';
 import { useHistoryCloud } from '../src/mapHistory/useHistoryCloud';
@@ -14,7 +14,7 @@ import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevisio
 
 const NOW = Date.parse('2026-10-10T12:00:00Z'), owner = 'invented-owner', clock = () => Date.now();
 const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
-let connection, tracking, engine, renderer, factory, current, update, dogs, history, cloud, transport, retention, retentionEntered;
+let latest, connection, tracking, engine, renderer, factory, current, update, dogs, history, cloud, transport, retention, retentionEntered;
 function Readers({ ownedRead = false, mapReader = true }) {
   const [state, setState] = useState(current); update = setState;
   dogs = useCloudDogs(tracking.cloudDatabase, state.owner, mapReader, clock, null, {
@@ -36,9 +36,9 @@ function Harness({ readers = false, ownedRead = false, mapReader = true }) {
 beforeEach(async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW); update = null; dogs = history = null; retentionEntered = false;
   jest.spyOn(console, 'info').mockImplementation(() => {});
-  connection = createMemoryConnection();
+  connection = createMemoryConnection(); latest = createMemoryConnection();
   const real = createDogDatabase(connection); await real.initialize();
-  const database = createCloudDatabase(connection); transport = deferred(); retention = deferred();
+  const database = createCloudDatabase(connection, { latestConnection: latest }); transport = deferred(); retention = deferred();
   const batch = connection.executeBatchAsync.getMockImplementation();
   connection.executeBatchAsync.mockImplementation(async commands => {
     if (commands.some(command => command.query.startsWith('DELETE FROM supabase_dog_status WHERE id IN'))) {
@@ -49,11 +49,12 @@ beforeEach(async () => {
   const databases = { real, cloud: database, history: createHistoryDatabase(connection), close: jest.fn(),
     settings: { initialize: async () => {}, load: async () => ({ mode: 'real' }), save: async () => {} } };
   factory = () => databases;
+  factory.latestStorageIsolated = true;
   await act(async () => { renderer = Renderer.create(<Harness />); });
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: ({ phase }) => {
     if (phase === 'packet') return transport.promise;
   } });
-  engine = createCloudSync({ database: tracking.cloudDatabase, client: network.client,
+  engine = createIndependentCloudSync({ database: tracking.cloudDatabase, client: network.client,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
   engine.setSession({ user: { id: owner } }); engine.setForeground(true);
@@ -64,7 +65,7 @@ beforeEach(async () => {
 afterEach(async () => {
   transport.resolve(); retention.resolve();
   await act(async () => { renderer?.unmount(); update = null; await engine?.dispose(); await jest.advanceTimersByTimeAsync(1); });
-  connection.close(); jest.restoreAllMocks(); jest.useRealTimers();
+  connection.close(); latest.close(); jest.restoreAllMocks(); jest.useRealTimers();
 });
 
 test.each([false, true])('already mounted history cannot enqueue maintenance before the first committed map ACK (owned day command %s)', async ownedRead => {
@@ -119,7 +120,7 @@ test('manual waiting does not occupy the slot or abort latest; accepted ACK surv
     await jest.advanceTimersByTimeAsync(1);
   });
   expect(worked).toBe(false);
-  expect(current).toMatchObject({ mode: 'auto', snapshotPending: true });
+  expect(current).toMatchObject({ mode: 'auto', snapshotPending: false });
   expect(retentionEntered).toBe(false);
   await act(async () => { transport.resolve(); await jest.advanceTimersByTimeAsync(1); });
   expect(current.snapshotPending).toBe(false);
@@ -187,7 +188,7 @@ test('aborting a manual pre-ACK wait cannot enqueue maintenance or cancel latest
   await act(async () => { abort.abort(); await manual; });
   expect(outcome).toBe('canceled');
   expect(retentionEntered).toBe(false);
-  expect(current).toMatchObject({ mode: 'auto', snapshotPending: true });
+  expect(current).toMatchObject({ mode: 'auto', snapshotPending: false });
 });
 
 test('first real committed ACK logs safe acceptance before maintenance; duplicates and stale ACK do not log', async () => {

@@ -2,29 +2,29 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
+import { createIndependentCloudSyncWithCommittedMapReader as createIndependentCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { downloadCloudHistory } from '../src/cloud/CloudDownload';
 import { runBackgroundCloudSync } from '../src/cloud/CloudBackgroundSync';
 
 const NOW = Date.parse('2026-10-10T12:00:00Z');
 const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
 const flush = () => jest.advanceTimersByTimeAsync(1);
-let engine, connection;
+let engine, connection, latest;
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); });
 afterEach(async () => {
-  await engine?.dispose(); connection?.close(); engine = connection = null; jest.useRealTimers();
+  await engine?.dispose(); connection?.close(); latest?.close(); engine = connection = null; jest.useRealTimers();
 });
 async function storage() {
-  connection = createMemoryConnection(); await createDogDatabase(connection).initialize();
-  const database = createCloudDatabase(connection); await database.initialize(); return database;
+  connection = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(connection).initialize();
+  const database = createCloudDatabase(connection, { latestConnection: latest }); await database.initialize(); return database;
 }
 const history = (client, database, signal) => downloadCloudHistory({ client, database, signal,
   owner: 'invented-owner', masterId: 7, startAt: new Date(NOW - 60000).toISOString(),
   endBefore: new Date(NOW + 1000).toISOString() });
 
 test('resume can replace the prior archive HTTP attempt even when its transport ignores abort', async () => {
-  connection = createMemoryConnection(); await createDogDatabase(connection).initialize();
-  const database = createCloudDatabase(connection); await database.initialize();
+  connection = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(connection).initialize();
+  const database = createCloudDatabase(connection, { latestConnection: latest }); await database.initialize();
   const archive = deferred(); let first = true, heldSignal;
   const events = [cloudEvent(1, NOW - 1000)];
   const network = latestArchiveRest({ events, beforeRead: async call => {
@@ -32,7 +32,7 @@ test('resume can replace the prior archive HTTP attempt even when its transport 
       first = false; heldSignal = call.signal; await archive.promise;
     }
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('synthetic optional context unavailable'); } });
   try {
     engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await flush();
@@ -85,7 +85,7 @@ test('an ignored-abort archive transport may reject late without an unhandled re
   } finally { blocked.resolve(); process.removeListener('unhandledRejection', unhandled); }
 });
 
-test('resume still waits for a started native archive page transaction before replacing the attempt', async () => {
+test('resume replaces latest while a started native archive page transaction drains', async () => {
   const database = await storage(), native = deferred(); let first = true, entered = false;
   const batch = connection.executeBatchAsync.getMockImplementation();
   connection.executeBatchAsync.mockImplementation(async commands => {
@@ -95,14 +95,14 @@ test('resume still waits for a started native archive page transaction before re
     return batch(commands);
   });
   const events = [cloudEvent(1, NOW - 1000)], network = latestArchiveRest({ events });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('synthetic optional context unavailable'); } });
   try {
     engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await flush();
     expect(entered).toBe(true);
     events.push(cloudEvent(2, NOW));
     engine.setForeground(false); engine.setForeground(true); await flush();
-    expect(engine.mapPublication().attempt).toBe(1);
+    expect(engine.mapPublication().attempt).toBe(2);
     native.resolve(); await flush();
     expect(engine.mapPublication()).toMatchObject({ attempt: 2, mapSuccessRevision: 2 });
     expect((await database.readLatestSnapshot('invented-owner', { positionsOnly: true })).packets[0].event_id)
@@ -115,7 +115,7 @@ test('owner replacement cannot publish the canceled archive response into either
   const events = [cloudEvent(1, NOW - 1000)], network = latestArchiveRest({ events, beforeRead: async call => {
     if (call.phase === 'archive' && first) { first = false; await held.promise; }
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('synthetic optional context unavailable'); } });
   try {
     engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await flush();
@@ -130,17 +130,17 @@ test('owner replacement cannot publish the canceled archive response into either
   } finally { held.resolve(); await flush(); }
 });
 
-test('the existing thirty-second archive yield releases ignored-abort HTTP and permits a new latest attempt', async () => {
+test('thirty-second latest polling bypasses ignored-abort archive HTTP', async () => {
   const database = await storage(), held = deferred(); let first = true, signal;
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: async call => {
     if (call.phase === 'archive' && first) { first = false; signal = call.signal; await held.promise; }
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('synthetic optional context unavailable'); } });
   try {
     engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await flush();
     await jest.advanceTimersByTimeAsync(30000);
-    expect(signal.aborted).toBe(true);
+    expect(signal.aborted).toBe(false);
     expect(engine.mapPublication().attempt).toBeGreaterThanOrEqual(2);
   } finally { held.resolve(); await flush(); }
 });
@@ -170,7 +170,7 @@ test.each(['foreground', 'deadline'])('headless archive %s cancellation releases
       expect(native.complete).toHaveBeenCalledWith('invented-run', 'retry');
       expect(await database.readArchivePublication('invented-owner')).toBeNull();
     }
-    engine = createCloudSync({ client: network.client, database,
+    engine = createIndependentCloudSync({ client: network.client, database,
       downloadContext: async () => { throw new Error('synthetic optional context unavailable'); } });
     engine.setSession({ user: { id: 'invented-owner' } });
     appState.currentState = 'active'; appListener('active'); engine.setForeground(true); await flush();

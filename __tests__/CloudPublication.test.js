@@ -6,7 +6,7 @@ import { useCloudSync } from '../src/cloud/useCloudSync';
 test('sync getter remains stable across initial readiness/account changes and closes on dispose', async () => {
   jest.useFakeTimers();
   let value, renderer, authChanged;
-  const database = {};
+  const database = { latestStorageIsolated: true };
   const client = { auth: {
     onAuthStateChange: listener => { authChanged = listener; return { data: { subscription: { unsubscribe: jest.fn() } } }; },
     getSession: async () => ({ data: { session: null } }),

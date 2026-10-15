@@ -1,3 +1,4 @@
+import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
 import { t } from '../i18n';
 import { cloudSyncDiagnostic } from '../logger';
 import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental';
@@ -27,7 +28,8 @@ const serverTrouble = status => status === 429 || status >= 500;
 // Requires a genuinely independent latest native file, worker, monitor and JS
 // lock. An archive operation already inside native SQL remains owned/draining;
 // it can no longer prevent the next foreground latest attempt from starting.
-export function createIndependentCloudSync({ client, database, onChange, now, downloadLatest, downloadContext }) {
+export function createIndependentCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
+  downloadContext = downloadCloudLatestContext }) {
   if (!database.latestStorageIsolated) throw new Error('Independent latest storage is required');
   const scope = {};
   let owner = null, foreground = false, sessionKnown = false, disposed = false, generation = 0;

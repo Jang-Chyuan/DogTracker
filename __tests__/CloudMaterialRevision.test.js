@@ -2,7 +2,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
+import { createIndependentCloudSyncWithCommittedMapReader as createIndependentCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
@@ -10,15 +10,15 @@ import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
 import { dayBounds, dayKey } from '../src/history/screen/HistoryScreenDates';
 const NOW = Date.parse('2026-01-02T12:00:00Z');
-let sync, connection, log;
+let sync, connection, latest, log;
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); log = jest.spyOn(console, 'info').mockImplementation(() => {}); });
-afterEach(async () => { await sync?.dispose(); connection?.close(); log.mockRestore(); sync = connection = null; jest.useRealTimers(); });
-async function database() { connection = createMemoryConnection(); await createDogDatabase(connection).initialize(); const db = createCloudDatabase(connection); await db.initialize(); return db; }
+afterEach(async () => { await sync?.dispose(); connection?.close(); latest?.close(); log.mockRestore(); sync = connection = null; jest.useRealTimers(); });
+async function database() { connection = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(connection).initialize(); const db = createCloudDatabase(connection, { latestConnection: latest }); await db.initialize(); return db; }
 const start = async () => { sync.setSession({ user: { id: 'a' } }); sync.setForeground(true); await jest.advanceTimersByTimeAsync(1); };
 test('real SDK overlap advances physical/archive proof but retains the material token until an actual new event', async () => {
   const db = await database();
   const events = [cloudEvent(1, NOW - 1000)];
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events }).client });
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events }).client });
   await start();
   const first = sync.historyPublication();
   expect(first.dataRevision).toEqual(expect.any(Number));
@@ -36,7 +36,7 @@ test('real SDK/SQLite fresh event in another day rechecks selected rows but reta
   const past = dayBounds(dayKey(new Date(NOW - 86400000)));
   const events = [cloudEvent(1, past.dayStart + 3600000), cloudEvent(2, NOW - 1000)];
   await db.savePage('a', [mapCloudTelemetry(events[0])]);
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events }).client }); await start();
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events }).client }); await start();
   const getter = () => sync.historyPublication(), read = jest.fn(args => history.historyDayRows(args));
   let renderer, state;
   function Probe() { state = useHistoryDayRows({ read, subject: 'dog', slaveId: 6, day: past.dayStart, owner: 'a',
@@ -56,7 +56,7 @@ test('legacy undefined publish result keeps material revision unknown rather tha
   const db = await database();
   const publish = db.publishDownload;
   db.publishDownload = async (...args) => { await publish(...args); };
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
   await start();
   expect(sync.historyPublication()).toMatchObject({ dataRevision: null, publishedPending: false, archiveRevision: 1 });
 });
@@ -69,7 +69,7 @@ test('old owner committing physically cannot publish a known material token into
     if (commands.some(c => c.query.includes('INSERT OR REPLACE INTO cloud_archive_publication'))) { enter(); await held; }
     return batch(commands);
   };
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
   await start(); await entered;
   sync.setSession({ user: { id: 'b' } }); sync.setForeground(false);
   expect(sync.historyPublication()).toMatchObject({ owner: 'b', dataRevision: null, publishedPending: true });
