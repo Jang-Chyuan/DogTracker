@@ -34,6 +34,19 @@ const jsDog = value => ({
 });
 
 const SCENARIOS = [
+  {
+    // #186: a position stamped more than 3 minutes ahead of the clock it is
+    // judged against is not believed (DogFreshness `suspect`): stale, no
+    // duration. Within 3 minutes it is fresh; the clock catching up clears it.
+    name: 'a position from the future (a clock running ahead) is stale, without a duration', preferences: {},
+    steps: [
+      { at: T, dogs: [dog(4, '豆豆', { fixAt: T + 3 * M, packetAt: T + 3 * M })] },
+      { at: T + 10000, dogs: [dog(4, '豆豆', { fixAt: T + 4 * M, packetAt: T + 4 * M }),
+        dog(5, '小黑', { held: true, fixAt: T, packetAt: T + 5 * M })] },
+      { at: T + 2 * M, dogs: [dog(4, '豆豆', { fixAt: T + 4 * M, packetAt: T + 4 * M }),
+        dog(5, '小黑', { held: true, fixAt: T, packetAt: T + 5 * M })] },
+    ],
+  },
   ...[75, 1501].map(minutes => ({
     name: `numbered dog stale: ${minutes} actual minutes`, preferences: {},
     steps: [{ at: T + minutes * M, dogs: [dog(5, '狗 5')] }],

@@ -9,6 +9,8 @@ import android.os.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.dogtracker.R
+import com.dogtracker.ServiceStartLog
+import com.dogtracker.serviceStartLog
 import org.json.JSONObject
 import java.util.UUID
 
@@ -45,6 +47,10 @@ class LocationTrackerService : Service(), LocationListener {
     })
   }
   private var checkpointAt = 0L
+  // Starts and refusals, kept across process ends (ServiceStartLog).
+  private val startLog by lazy { serviceStartLog(com.dogtracker.ServiceStarts.LOCATION) }
+  // A START_STICKY restart that may get no fixes until the app is opened (RestartFixWatch).
+  @Volatile private var restartWatch: RestartFixWatch? = null
   // location_at of the newest row saved before this recording (read on the first write).
   private var earlierLocationAt: Long? = UNREAD
   private fun counters() = SaveGapHistory.Counters(pipeline.received, pipeline.accepted,
@@ -78,6 +84,10 @@ class LocationTrackerService : Service(), LocationListener {
           }
         } catch (_: Exception) { writeErrors++; writeFailed = true; status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1126) }
       }
+      restartWatch?.let { watch ->
+        val note = watch.noFixesNote(now) ?: watch.firstFixNote()
+        if (note != null) runCatching { startLog.note(System.currentTimeMillis(), note) }
+      }
       // Once a minute: survive a process end with the night's counts.
       if (now - checkpointAt >= 60_000_000_000L) {
         checkpointAt = now
@@ -93,7 +103,10 @@ class LocationTrackerService : Service(), LocationListener {
         .put("received", pipeline.received).put("accepted", pipeline.accepted).put("rejected", pipeline.rejected)
         .put("saved", saved).put("writeErrors", writeErrors).put("ageSeconds", age ?: JSONObject.NULL)
         .put("intervalSeconds", pipeline.intervalSeconds)
-        .put("sessionId", sessionId).apply {
+        .put("sessionId", sessionId)
+        // Diagnostics: a system restart (START_STICKY) and whether it is getting fixes.
+        .put("restarted", restartWatch?.restart == true)
+        .put("restartWithoutFixes", restartWatch?.state(now) == RestartFixWatch.State.NO_FIXES).apply {
           if (latest != null) put("position", JSONObject().put("latitude", latest.latitude).put("longitude", latest.longitude)
             .put("timestamp", latest.timestamp).put("accuracy", latest.accuracy)
             .put("speedKmh", latest.speed?.times(3.6) ?: JSONObject.NULL)
@@ -123,6 +136,13 @@ class LocationTrackerService : Service(), LocationListener {
     // A queued automatic start must not undo a later explicit stop.
     if (!preferences.getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
     if (running) return START_STICKY
+    // A null intent: the system's START_STICKY restart after the process
+    // ended, with the app most likely off screen. Android 12+ may refuse the
+    // foreground start then (ForegroundServiceStartNotAllowedException;
+    // Android 14 a SecurityException for the location type): recorded, and
+    // the app's next resume (resumeIfEnabled) starts it again.
+    val kind = ServiceStartLog.kindOf(intent == null)
+    val startedWall = System.currentTimeMillis()
     try {
       val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
       val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -137,18 +157,26 @@ class LocationTrackerService : Service(), LocationListener {
         manager.allProviders.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }.toSet())
       source = choice
       if (choice == LocationSource.Choice.None) error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132))
+      val background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+      restartWatch = RestartFixWatch(kind == ServiceStartLog.Kind.RESTART, background, Build.VERSION.SDK_INT,
+        SystemClock.elapsedRealtimeNanos())
       resubscribe = LocationResubscribe(SystemClock.elapsedRealtimeNanos())
       subscribe()
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
       startedAtMs = System.currentTimeMillis()
+      runCatching { startLog.started(kind, startedWall) }
       handler.post {
         gapLog.saved(SystemClock.elapsedRealtimeNanos(), startedAtMs, pipeline, writeErrors)
         runCatching { gapHistory.begin(startedAtMs) }
       }
       handler.post(tick)
-    } catch (_: Exception) {
-      status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1134)
+    } catch (error: Exception) {
+      runCatching { startLog.failed(kind, startedWall, error) }
+      // A refused restart is not a permission the user can grant here.
+      status = com.dogtracker.NativeCopy.text(if (kind == ServiceStartLog.Kind.RESTART) com.dogtracker.R.string.c1138
+        else com.dogtracker.R.string.c1134)
       stopSelf()
     }
     return if (running) START_STICKY else START_NOT_STICKY
@@ -200,6 +228,7 @@ class LocationTrackerService : Service(), LocationListener {
     if (stopped) return
     val now = SystemClock.elapsedRealtimeNanos()
     resubscribe?.received(now)
+    restartWatch?.received(now)
     pipeline.accept(LocationSample(location.latitude, location.longitude,
       if (location.hasAccuracy()) location.accuracy else Float.NaN, location.elapsedRealtimeNanos, location.time,
       if (location.hasSpeed() && location.speed.isFinite() && location.speed >= 0) location.speed else null,
@@ -232,6 +261,7 @@ class LocationTrackerService : Service(), LocationListener {
       appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
         "motionOnly=${pipeline.motionOnly} saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
         "resubscribed=${resubscribe?.total ?: 0} odometer=${"%.1f".format(pipeline.odometerMeters)}m")
+      restartWatch?.let { appendLine(it.describe(now)) }
       if (latest != null) appendLine("latest fix age=${"%.1f".format((now - latest.elapsedNanos) / 1e9)}s " +
         "accuracy=${latest.accuracy}m motion=${latest.motionState}")
       appendLine("stretches without a saved row (>= 60 s):")
@@ -246,6 +276,7 @@ class LocationTrackerService : Service(), LocationListener {
     val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
     appendLine("kept across process ends (recordings, then stretches; oldest first):")
     runCatching { gapHistory.lines { time.format(it) } }.getOrDefault(emptyList()).forEach { appendLine(it) }
+    com.dogtracker.ServiceStarts.lines(this@LocationTrackerService) { time.format(it) }.forEach { appendLine(it) }
   }
   override fun onDestroy() {
     stopped = true

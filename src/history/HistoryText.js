@@ -251,7 +251,9 @@ export function placeSpeech(node, title) {
     (node.type === 'stop' || node.terminalStay) && Number.isFinite(node.durationMs)
       ? node.durationMs
       : node.end - node.start);
-  const minutes = end ? t("c664", { value: Math.round(length / 60000) }) : '';
+  // A stay of under a minute is read 「不到 1 分鐘」, as its pill (2026-10-15:
+  // TalkBack said 「0 分鐘」 under 「停 不到 1 分」).
+  const minutes = !end ? '' : noMinutes(node) ? t('c1276') : t("c664", { value: Math.round(length / 60000) });
   return spoken(
     [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, interruptionText(node)]
       .filter(Boolean)

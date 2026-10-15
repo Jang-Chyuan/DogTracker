@@ -6,8 +6,8 @@ import { t } from '../i18n';
 import { activityMinutes, activityReadings } from './ActivityMinutes';
 import { advanceBattery, batteryReading, PLAUSIBLE_BATTERY_SQL } from '../tracking/BatteryPlausibility';
 
-// How far back the 活動量 row looks: a rest longer than this reads as
-// lasting since this far back.
+// How far back the 活動量 row looks: a rest that reaches back to where these
+// rows begin reads 「休息中・超過 6 小時」 (ActivityMinutes.activityState `over`).
 export const CARD_ACTIVITY_LOOKBACK_MS = 6 * 3600000;
 // How many of each table's newest battery readings the 電量 row judges
 // (BatteryPlausibility): enough for a sudden drop to be confirmed or not.
@@ -18,8 +18,9 @@ const rowsOf = result => result.results || result.rows?._array || [];
 
 /**
  * Raw rows for one dog from dog_status and (signed in) supabase_dog_status.
- * @returns {{ local: row[], cloud: row[], battery: row[] }} rows carry `time`
- *   (received_at or track_at) and `source`; `battery` holds each table's
+ * @returns {{ local: row[], cloud: row[], battery: row[], since }} rows carry
+ *   `time` (received_at or track_at) and `source`; `since` is where the
+ *   activity rows begin (the 活動量 row's lookback edge); `battery` holds each table's
  *   newest CARD_BATTERY_ROWS rows with a valid battery reading that can be
  *   believed on its own (0..100%, 0% only with an empty cell's voltage).
  */
@@ -41,15 +42,16 @@ export async function readDogCardRows(db, owner, slaveId, since) {
       AND battery_percentage IS NOT NULL AND ${PLAUSIBLE_BATTERY_SQL}
       ORDER BY ${CLOUD_TIME} DESC LIMIT ${CARD_BATTERY_ROWS}`, [owner, slaveId])) : []),
   ];
-  return { local, cloud, battery };
+  return { local, cloud, battery, since };
 }
 
 /**
  * What the card shows from those rows (pure).
- * @returns {{ activity: { minutes, newestAt }, battery: { percentage,
- *   charging, at } | null }}
+ * @returns {{ activity: { minutes, newestAt, from }, battery: { percentage,
+ *   charging, at } | null }} `from`: where the activity rows begin (null when
+ *   the reader did not say)
  */
-export function dogCardReadings({ local = [], cloud = [], battery = [] } = {}, now) {
+export function dogCardReadings({ local = [], cloud = [], battery = [], since = null } = {}, now) {
   const readings = [...activityReadings(local, 'ble'), ...activityReadings(cloud, 'cloud')];
   const minutes = activityMinutes(readings, { now });
   const finished = readings.filter(reading => reading.time < Math.floor(now / 60000) * 60000);
@@ -70,5 +72,5 @@ export function dogCardReadings({ local = [], cloud = [], battery = [] } = {}, n
   const accepted = state?.accepted;
   const newest = accepted ? { percentage: accepted.percentage,
     charging: acceptedRow?.usb_present === 1 || acceptedRow?.usb_present === true, at: accepted.at } : null;
-  return { activity: { minutes, newestAt }, battery: newest };
+  return { activity: { minutes, newestAt, from: Number.isFinite(since) ? since : null }, battery: newest };
 }

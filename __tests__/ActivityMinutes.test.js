@@ -174,3 +174,43 @@ test('the card words, and durations past an hour', () => {
   expect(durationText(60)).toBe('1 小時');
   expect(durationText(340)).toBe('5 小時 40 分');
 });
+
+// 2026-10-15 (emulator): a rest as long as the card's six-hour lookback read
+// 「已 5 小時 58 分」「已 5 小時 59 分」「已 6 小時」 by turns as the lookback slid.
+describe('a rest reaching back to where the readings begin', () => {
+  const SIX = 6 * 60;
+  const from = minutesAgo => at(minutesAgo);
+  test('nothing read ends it: over the lookback, 「超過 6 小時」', () => {
+    for (const [start, edge] of [[0, 0], [10, 0], [25, 20]]) {
+      // Readings from `start` seconds after the lookback edge (`edge` minutes
+      // of nothing before the first), calm all along.
+      const minutes = activityMinutes(readings(SIX - edge, 0, 0.02).filter(item => item.time >= from(SIX) + start * 1000),
+        { now: NOW });
+      const result = activityState(minutes, { end: lastFinished, from: from(SIX) });
+      if (edge < ACTIVITY.restMinutes) {
+        expect(result).toMatchObject({ state: 'rest', over: true });
+        const words = activityWords(result, { lookbackMinutes: SIX });
+        expect(words).toEqual({ word: i18nT('c069'), detail: '超過 6 小時', speechDetail: '活動量低超過 6 小時', tone: 'rest' });
+      } else {
+        // The first reading is more than a rest window in: the run may have
+        // started there, it counts from there.
+        expect(result.over).toBeUndefined();
+        expect(activityWords(result, { lookbackMinutes: SIX }).detail).toBe(`已 ${durationText(SIX - edge)}`);
+      }
+    }
+  });
+
+  test('a rest begun inside the lookback counts its minutes, even close to the edge', () => {
+    const minutes = activityMinutes([...readings(SIX, SIX - 3, 0.4), ...readings(SIX - 3, 0, 0.02)], { now: NOW });
+    const result = activityState(minutes, { end: lastFinished, from: from(SIX) });
+    expect(result).toEqual({ state: 'rest', since: at(SIX - 3), durationMinutes: SIX - 3 });
+    expect(activityWords(result, { lookbackMinutes: SIX }).detail).toBe('已 5 小時 57 分');
+  });
+
+  test('without the lookback edge the minutes are counted as before', () => {
+    const minutes = activityMinutes(readings(SIX, 0, 0.02), { now: NOW });
+    expect(activityState(minutes, { end: lastFinished }).over).toBeUndefined();
+    expect(activityWords(activityState(minutes, { end: lastFinished, from: from(SIX) })).detail)
+      .toBe(`已 ${durationText(SIX)}`);
+  });
+});

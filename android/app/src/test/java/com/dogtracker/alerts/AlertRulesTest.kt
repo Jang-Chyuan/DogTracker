@@ -1,5 +1,7 @@
 package com.dogtracker.alerts
 
+import com.dogtracker.NativeCopy
+import com.dogtracker.R
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -82,6 +84,36 @@ class AlertRulesTest {
     assertFalse(FreshnessRule.of(dog, 30 * m, listOf(ReceiverPause(5 * m, 25 * m))).stale)
     assertTrue(FreshnessRule.of(dog, 36 * m, listOf(ReceiverPause(5 * m, 25 * m))).stale)
     assertFalse("never located: not drawn, no problems", FreshnessRule.of(AlertDog(4), 60 * m, emptyList()).drawn)
+  }
+
+  // #186 (DogFreshness.js): a time more than 3 minutes ahead of now comes from
+  // a clock running ahead; it is stale with no age, never fresh while it lasts.
+  @Test fun aPositionFromTheFutureIsStaleWithoutAnAge() {
+    val dog = AlertDog(4, "豆豆", coordinate = north(10.0), fixAt = 20 * m, packetAt = 20 * m)
+    val ahead = FreshnessRule.of(dog, 20 * m - FreshnessRule.SUSPECT_AHEAD_MS - 1, emptyList())
+    assertTrue(ahead.drawn)
+    assertTrue(ahead.stale)
+    assertNull(ahead.ageMs)
+    assertEquals(20 * m, ahead.lastAt)
+    // Up to 3 minutes ahead: believed, fresh, age 0.
+    val edge = FreshnessRule.of(dog, 20 * m - FreshnessRule.SUSPECT_AHEAD_MS, emptyList())
+    assertFalse(edge.stale)
+    assertEquals(0L, edge.ageMs)
+    // The user's own pause does not make a future time believable.
+    assertTrue(FreshnessRule.of(dog, 10 * m, listOf(ReceiverPause(5 * m, null))).stale)
+    // A held dog is timed by its packets: the same rule.
+    val held = AlertDog(5, coordinate = north(10.0), fixAt = 0, packetAt = 20 * m, held = true)
+    val heldAhead = FreshnessRule.of(held, 10 * m, emptyList())
+    assertTrue(heldAhead.stale)
+    assertEquals("packet", heldAhead.basis)
+    assertNull(heldAhead.ageMs)
+  }
+
+  @Test fun aStaleAlertWithoutAnAgeHasNoDuration() {
+    val line = Content.line(AlertEvent("dog-stale:4", "dog-stale", "4", 0, name = "豆豆", basis = "position", ageMs = null))
+    assertEquals(NativeCopy.text(R.string.c1159, "豆豆", ""), line)
+    assertEquals("", Content.duration(null))
+    assertEquals(NativeCopy.text(R.string.c469, 12L), Content.duration(12 * m + 59000))
   }
 
   // 「暫停」: only the problems known at that moment; a new dog still alerts.

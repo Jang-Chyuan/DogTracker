@@ -22,10 +22,11 @@
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
 - `recorded_at` 和 `location_at` 是 Unix 毫秒（`location_at` 是定位來源回報的時間）；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
-- 每次寫入與修剪在同一交易，依 recorded_at、id 保留最新 80,000 筆。初始化也修剪舊資料。
+- 每次寫入與修剪在同一交易，依寫入順序（id）保留最新 80,000 筆。初始化也修剪舊資料。以前依 recorded_at 排：系統時鐘先被調快、之後再調回時，那段「未來」時間的列會比之後所有的列都留得久。新一次記錄判斷「快取定位」時比對的也是最後寫入的一列（id），不是 recorded_at 最大的一列。今天 km（`phoneRouteSince`）的 (recorded_at, id) 游標在時鐘往回調時仍會跳過調回後、時間早於游標的列，直到重新讀整天；這部分沒有改。
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。
 - 只存本機、不上傳 Supabase、不修改 dog_status 或 supabase_dog_status。
 - 需要精確位置權限與 GPS；不接受只有粗略位置權限。服務只能在 App 前景啟動。系統強制停止／重開機後需再次點開始，不宣稱能永久背景執行。
+- 程序被系統結束後的 `START_STICKY` 重建（intent 為 null）：Android 12+ 可能拒絕在背景啟動前景服務（`ForegroundServiceStartNotAllowedException`；Android 14 定位類型可能是 `SecurityException`），服務照樣停下，等下次開啟 App 時 `resumeIfEnabled` 再啟動；狀態文字用「自動開始失敗」（c1138），不再誤說要授權精確位置。每次啟動、重建與被拒（例外類別與訊息）存在 App 私有的 SharedPreferences（`service_starts`，最近 20 筆），只含時間與次數。App 沒有要求「一律允許」的背景定位權限：Android 11+ 在背景重建的定位服務可能完全收不到定位，直到使用者打開 App（`RestartFixWatch`）。重建後 60 秒仍沒有任何定位，就記下「restart got no fixes」與可能原因，之後收到第一筆再記下等了多久；即時快照另有 `restarted`、`restartWithoutFixes`。不另外要求權限（是否要求背景定位是產品決定）。`dumpsys activity service com.dogtracker/.location.LocationTrackerService` 與接收器服務的 dumpsys 都會列出兩個服務的啟動紀錄。
 - iOS 尚未實作；頁面顯示不支援。
 
 靜止判定確認後速度歸零，顯示與儲存座標鎖定於確認當下的平滑位置；原始座標持續保留供移動判定。PhoneMotion 的 JS 歷史回放與 Kotlin 即時記錄維持相同判準：有有效速度精度時，低速證據要求位置精度 ≤ 30 m、速度 ≤ 1 m/s、速度精度 ≤ 1.5 m/s，且速度減誤差 ≤ 0.5 m/s；缺速度精度時只接受位置精度 ≤ 10 m、速度 ≤ 0.3 m/s。至少15秒疑似、20秒確認；高精度樣本另檢查3 m的單向進展，中精度樣本依精度放寬靜止視窗，避免室內小幅飄移冒充離開。

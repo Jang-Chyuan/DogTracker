@@ -22,6 +22,15 @@ const CONTEXT_BUDGET_MS = 10000;
 // One scheduler for the whole App, independent of navigation. Its execution
 // gate is enabled by foreground UI; WorkManager uses the same exclusive slot.
 // Manual and automatic downloads share the same exclusive network/write slot.
+//
+// DEPRECATED below the first line (2026-10-15, audit B F16): production always
+// has an isolated latest store (createLocalDatabases.latestStorageIsolated is
+// true), so createCloudSync always returns createIndependentCloudSync. The
+// combined scheduler after it is reached only by tests that build a cloud
+// database on one connection (16 suites, 141 tests). Do not fix behaviour
+// here: fixes go to IndependentCloudSync.js (the manual lease across a
+// resume, the kept archive pass, the bounded native calls are there only).
+// Delete it once those tests run on an isolated latest connection.
 export function createCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
   downloadContext = downloadCloudLatestContext }) {
   if (database.latestStorageIsolated)

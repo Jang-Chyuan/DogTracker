@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { dogMarkers, nameTags, tagSize } from '../src/map/DogMarkers';
+import { dogMarkers, judgedAt, judgedFreshness, nameTags, tagSize } from '../src/map/DogMarkers';
+import { dogFreshness } from '../src/tracking/DogFreshness';
 import { dogProblems } from '../src/tracking/DogProblems';
 import DogMarkerView, { markerFrame } from '../src/map/DogMarkerView';
 import { problemBadgePosition, houseBadgePosition } from '../src/map/BadgeGeometry';
@@ -86,6 +87,24 @@ describe('name tags that run into each other', () => {
     const list = dogMarkers([dog(4), dog(6)], { now: NOW, aliases: ALIASES, selectedId: 6 });
     expect(nameTags(list, { 4: { x: 100, y: 100 }, 6: { x: 104, y: 100 } })).toEqual({
       4: { text: '豆豆', group: 1, problem: false }, 6: { text: '小黑', group: 1, problem: false } });
+  });
+  // 2026-10-15 (emulator): with 豆豆's card open, 「2 隻」 for the others sat
+  // half under 豆豆's face and name, neither readable.
+  test('a group tag the selected dog would cover moves under another dog of the group, or is not drawn', () => {
+    const list = dogMarkers([dog(4), dog(6), dog(8)], { now: NOW, aliases: ALIASES, selectedId: 4 });
+    // 8 covers 6's name: one group. Under 8 (the lowest) the tag would run
+    // into the selected 豆豆's face to the right; under 6 it is clear.
+    const points = { 4: { x: 160, y: 150 }, 6: { x: 100, y: 100 }, 8: { x: 130, y: 110 } };
+    expect(nameTags(dogMarkers([dog(4), dog(6), dog(8)], { now: NOW, aliases: ALIASES }), points)[4])
+      .toMatchObject({ text: '3 隻', group: 3 });
+    expect(nameTags(list, points)).toEqual({ 4: { text: '豆豆', group: 1, problem: false }, 8: null,
+      6: { text: '2 隻', group: 2, problem: false, members: [6, 8] } });
+    // All three in one spot: nowhere for 「2 隻」 clear of 豆豆, so only 豆豆's name.
+    const stacked = { 4: { x: 100, y: 104 }, 6: { x: 100, y: 100 }, 8: { x: 102, y: 102 } };
+    expect(nameTags(list, stacked)).toEqual({ 4: { text: '豆豆', group: 1, problem: false }, 6: null, 8: null });
+    // Far from the selected dog the group stays under its lowest dog.
+    const away = { 4: { x: 400, y: 400 }, 6: { x: 100, y: 100 }, 8: { x: 130, y: 110 } };
+    expect(nameTags(list, away)[8]).toMatchObject({ text: '2 隻', members: [6, 8] });
   });
   test('chains merge, and without screen positions every dog keeps its tag', () => {
     const list = markers(dog(4), dog(6), dog(8));
@@ -243,4 +262,27 @@ describe('stacking order and taps on overlapping dogs', () => {
     const open = [{ ...markers[0], selected: true }, markers[1]];
     expect(dogUnderTouch(open, points, tags, { x: 100, y: 130 }, dogZIndexes(open, points, tags))).toBe(104);
   });
+});
+
+// Audit B F14: while a return to the app catches the map up, the open card
+// judges the dog like its face (judgedFreshness), so for up to the catch-up's
+// 120 s the card cannot say 「沒有新位置」 under a face that is not grey.
+test('the card and the marker judge a dog the same way while catching up', () => {
+  const away = NOW - 20 * MINUTE;
+  const local = dog(4, { fixAt: away - 5 * MINUTE });
+  const options = { now: NOW, catchUpSince: away, previousStale: { 4: false } };
+  const marker = dogMarkers([local], { ...options, aliases: ALIASES })[0];
+  expect(marker.stale).toBe(false);
+  expect(judgedFreshness(local, options).stale).toBe(false);
+  // Judged by now, the card used to disagree.
+  expect(dogFreshness(local, { now: NOW }).stale).toBe(true);
+  // A dog grey before leaving stays grey on both.
+  const grey = { ...options, previousStale: { 4: true } };
+  expect(dogMarkers([local], { ...grey, aliases: ALIASES })[0].stale).toBe(true);
+  expect(judgedFreshness(local, grey).stale).toBe(true);
+  // Once caught up, both are the plain judgement again.
+  expect(judgedFreshness(local, { now: NOW }).stale).toBe(true);
+  expect(judgedAt(NOW, away)).toBe(away);
+  expect(judgedAt(NOW, NOW + MINUTE)).toBe(NOW);
+  expect(judgedAt(NOW, null)).toBe(NOW);
 });

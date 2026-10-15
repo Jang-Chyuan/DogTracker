@@ -131,13 +131,21 @@ describe('a stay begun before the live rows', () => {
     expect(position(dog, { state: 'unknown' })).toBe('室內・超過 30 分');
   });
 
-  test('a hold started while the app was running is not clipped', () => {
-    const store = createHoldStore();
+  // Clear fixes from `from` to `to`: walking home from 450 m north, at the
+  // door for the last two minutes. The tracker sees the dog arrive.
+  const walkHome = (from, to) => {
     const rows = [];
-    for (let time = NOW - 60 * MINUTE; time <= NOW - 50 * MINUTE; time += 30000) {
-      rows.push({ slave_id: 6, master_id: 7, time, latitude: HOME.latitude, longitude: HOME.longitude,
+    for (let time = from; time <= to; time += 30000) {
+      const away = Math.max(0, (to - 2 * MINUTE - time) / (to - 2 * MINUTE - from)) * 0.004;
+      rows.push({ slave_id: 6, master_id: 7, time, latitude: HOME.latitude + away, longitude: HOME.longitude,
         satellites: 9, hdop: 0.9, source: 'ble' });
     }
+    return rows;
+  };
+
+  test('a hold the live rows saw begin is not clipped', () => {
+    const store = createHoldStore();
+    const rows = walkHome(NOW - 60 * MINUTE, NOW - 50 * MINUTE);
     for (let time = NOW - 50 * MINUTE + 30000; time <= NOW; time += 30000) {
       rows.push({ slave_id: 6, master_id: 7, time, latitude: 0, longitude: 0, satellites: 0, hdop: 655.35, source: 'ble' });
     }
@@ -145,14 +153,32 @@ describe('a stay begun before the live rows', () => {
     expect(store.holds(NOW)[6].fromClipped).toBeUndefined();
   });
 
+  test('a hold the first rows begin at the same place may have begun before them', () => {
+    // As the walk home, but the first rows are already at the door: the
+    // tracker never saw the dog arrive, and the history may hold it there from
+    // long before (2026-10-15, CardIndoorColdStart.test.js).
+    const store = createHoldStore();
+    const rows = walkHome(NOW - 60 * MINUTE, NOW - 50 * MINUTE)
+      .map(row => ({ ...row, latitude: HOME.latitude }));
+    for (let time = NOW - 50 * MINUTE + 30000; time <= NOW; time += 30000) {
+      rows.push({ slave_id: 6, master_id: 7, time, latitude: 0, longitude: 0, satellites: 0, hdop: 655.35, source: 'ble' });
+    }
+    store.ingest({ rows });
+    expect(store.holds(NOW)[6].fromClipped).toBe(true);
+    expect(store.holds(NOW)[6].from).toBeGreaterThan(NOW - 50 * MINUTE);
+    // Rows for longer than a cold start's replay before it: the tracker had
+    // the time to see the dog arrive, it starts its own stay.
+    const later = createHoldStore();
+    const long = walkHome(NOW - 100 * MINUTE, NOW - 50 * MINUTE).map(row => ({ ...row, latitude: HOME.latitude }));
+    later.ingest({ rows: [...long, ...rows.filter(row => row.time > NOW - 50 * MINUTE)] });
+    expect(later.holds(NOW)[6].fromClipped).toBeUndefined();
+  });
+
   test('a late row replaying a long hold keeps where it began', () => {
     const store = createHoldStore(HOLD_CONFIG, { classify: () => null });
     const rows = [];
     const start = NOW - 8 * 60 * MINUTE;
-    for (let time = start; time <= start + 5 * MINUTE; time += 30000) {
-      rows.push({ slave_id: 6, master_id: 7, time, latitude: HOME.latitude, longitude: HOME.longitude,
-        satellites: 9, hdop: 0.9, source: 'ble' });
-    }
+    rows.push(...walkHome(start, start + 5 * MINUTE));
     for (let time = start + 5 * MINUTE + 30000; time <= NOW; time += 60000) {
       rows.push({ slave_id: 6, master_id: 7, time, latitude: 0, longitude: 0, satellites: 0, hdop: 655.35, source: 'ble' });
     }

@@ -19,6 +19,7 @@ class CloudLatestStore private constructor(context: Context) {
   // would still wait for its writer, and a shared worker would still queue.
   private val db = SQLiteDatabase.openOrCreateDatabase(
     File(context.filesDir, "databases/dogtracker-latest.sqlite").also { it.parentFile?.mkdirs() }, null)
+    .also { SqliteModes.rollbackJournal(it) }
 
   @Synchronized fun executeSql(sql: String, params: JSONArray): JSONObject {
     val verb = sql.trimStart().takeWhile { !it.isWhitespace() }.uppercase(java.util.Locale.ROOT)

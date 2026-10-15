@@ -8,7 +8,7 @@ import org.junit.Test
 class BleUploadQueueTest {
   /** Answers BleUploadQueue's queries from a script and records its writes. */
   private class FakeSql(var pending: Long = 0, var thinned: Int = 0, var refused: Boolean = false,
-    var mode: String = "phone", var owner: String = "alice") : BleUploadQueue.Sql {
+    var mode: String = "phone", var owner: String = "alice", var queued: Set<String> = emptySet()) : BleUploadQueue.Sql {
     val changes = mutableListOf<String>()
     val inserts = mutableListOf<Map<String, Any?>>()
     var counts = 0
@@ -16,7 +16,7 @@ class BleUploadQueueTest {
       sql.contains("key='owner'") -> owner
       sql.contains("FROM ble_upload_settings") -> mode
       sql == BleUploadQueue.REFUSED_SQL -> if (refused) "1" else null
-      sql.contains("fingerprint=?") -> null
+      sql == BleUploadQueue.DUPLICATE_SQL -> if (args[2] in queued) "1" else null
       sql == BleUploadQueue.PENDING_COUNT_SQL -> { counts++; pending.toString() }
       else -> error("unexpected query $sql")
     }
@@ -60,6 +60,19 @@ class BleUploadQueueTest {
     for (i in 0 until BleUploadQueue.CHECK_EVERY * 2) enqueue(sql, at = 1_000L + i)
     assertEquals(2, sql.counts)
     assertEquals(BleUploadQueue.CHECK_EVERY * 2, sql.inserts.size)
+  }
+
+  @Test fun theSameBytesAreNotQueuedAgainHoweverLateTheyCome() {
+    val sql = FakeSql()
+    val payload = "{\"seq\":9}"
+    val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(payload.toByteArray())
+      .joinToString("") { "%02x".format(it) }
+    sql.queued = setOf(fingerprint)
+    // An hour later (a quiet dog's last packet, re-sent): still the same event.
+    assertNull(enqueue(sql, at = 3_600_000L, payload = payload))
+    assertTrue(sql.inserts.isEmpty())
+    assertFalse(BleUploadQueue.DUPLICATE_SQL.contains("received_at"))
+    assertEquals("alice", enqueue(sql, at = 3_600_000L, payload = "{\"seq\":10}"))
   }
 
   @Test fun aRefusedReceiverQueuesNothing() {

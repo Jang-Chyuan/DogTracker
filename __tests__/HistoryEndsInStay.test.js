@@ -50,3 +50,25 @@ test.each([
     expect(nodes[nodes.length - 2]).toBe(stay);
   } finally { await act(async () => tree.unmount()); }
 });
+
+// 2026-10-15: a range ending in a stay's first seconds: the list says 「停 不到
+// 1 分」, and so does the cursor at its end (it said 「停留 0 分」).
+test('history-stay-first-minute: the list row and the cursor both say 不到 1 分', async () => {
+  const fixture = buildFixture('history-stay-first-minute');
+  const target = historyTargetOf(fixture.history.preferences);
+  const state = {};
+  function Probe() {
+    state.screen = useHistoryScreen({ target, read: fixture.history.readDay, readDays: fixture.history.readDays,
+      owner: fixture.cloudSync.ownerId, clock: () => fixture.now, memoryScope: 'stay-first-minute:',
+      preset: fixture.historyView ?? null });
+    return null;
+  }
+  let tree;
+  await act(async () => { tree = Renderer.create(<Probe />); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+  try {
+    const shown = timelinePresentation(state.screen.model.nodes);
+    expect(nodePill(shown[shown.length - 1]).text).toBe('停 不到 1 分');
+    expect(state.screen.cursor.label[1]).toBe('停留 不到 1 分');
+  } finally { await act(async () => tree.unmount()); }
+});

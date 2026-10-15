@@ -57,6 +57,21 @@ class HandOverTest {
     assertEquals(known, HandOver.start(known, other))
   }
 
+  // Both tests use the same time: each side's newest stored packet.
+  @Test fun whoseIsNewerUsesTheSameTimeAsTheDropTest() {
+    // The service's newest packet (10 s ago) is newer than the app's, though
+    // its range was last judged locally 5 minutes ago.
+    val mine = AlertDog(4, name = "狗 4", packetAt = now - 10_000, range = RangeState(lastLocalAt = now - 5 * m))
+    val handed = AlertDog(4, name = "豆豆", packetAt = now - 2 * m, range = RangeState(lastLocalAt = now - m))
+    val kept = HandOver.merge(mapOf(4 to mine), mapOf(4 to handed), now)[4]!!
+    assertEquals(now - 10_000, kept.packetAt)
+    assertEquals("豆豆", kept.name)
+    // And the other way round: the app's packet is the newer one.
+    val older = mine.copy(packetAt = now - 3 * m)
+    val taken = HandOver.merge(mapOf(4 to older), mapOf(4 to handed), now)[4]!!
+    assertEquals(now - 2 * m, taken.packetAt)
+  }
+
   @Test fun othersRoundTripThroughTheCodec() {
     val others = listOf(OtherDog(4, "豆豆", out), OtherDog(7, null, RangeState()))
     val read = AlertCodec.readOthers(AlertCodec.writeOthers(others))

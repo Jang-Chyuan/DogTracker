@@ -4,7 +4,7 @@
 
 ## 快照契約
 
-所有 builder 接受 `{ since, until, timeZone: 'Asia/Taipei', subjects: [...] }`。時間為有限的 Unix 毫秒；範圍含兩端，範圍控制器已對齊實測點／停住封包。兩端須在 `timeZone` 的同一天（省略時預設 UTC；App 傳入 `null`，表示手機時區），使用實際時間，不傳持續移動的「現在」。短範圍與單點仍可匯出。
+所有 builder 接受 `{ since, until, timeZone: 'Asia/Taipei', subjects: [...] }`。時間為有限的 Unix 毫秒；範圍含兩端，範圍控制器已對齊實測點／停住封包。兩端須在 `timeZone` 的同一天（省略時預設 UTC；App 傳入 `null`，表示手機時區），使用實際時間，不傳持續移動的「現在」。短範圍與單點仍可匯出。範圍由 `useHistoryExport.exportView` 決定：使用者拖過範圍時是畫面的範圍，沒拖過時是整天（`HistoryMultiModel` 的 `wholeDay()`：00:00 到現在或這天結束，2026-10-15）。
 
 每個 subject 包含：
 
