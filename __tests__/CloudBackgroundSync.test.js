@@ -209,3 +209,39 @@ test('foreground handoff aborts an ignored-abort HTTP read before taking the slo
   expect(work).toHaveBeenCalledTimes(1);
   expect(f.database.savePage).not.toHaveBeenCalled();
 });
+
+test('a manual download holding the slot does not delay the relay upload, and the slot wait ends with the 90-second budget', async () => {
+  const f = fixture(), queue = queuedUpload(f);
+  let releaseManual;
+  const manual = withCloudSyncSlot(() => new Promise(resolve => { releaseManual = resolve; }));
+  const task = f.run(); await flush();
+  expect(queue.sent).toHaveBeenCalledTimes(1);
+  expect(f.queries).toHaveLength(0);
+  await jest.advanceTimersByTimeAsync(90000); await task;
+  expect(f.native.complete).toHaveBeenCalledWith('run', 'retry');
+  expect(jest.getTimerCount()).toBe(0);
+  // The abandoned turn never downloads after the manual download ends.
+  releaseManual(); await manual; await flush();
+  expect(f.queries).toHaveLength(0);
+  const after = jest.fn(async () => 'next');
+  await expect(withCloudSyncSlot(after)).resolves.toBe('next');
+});
+
+test('a cancelled slot wait keeps the order of the callers behind it', async () => {
+  const order = [];
+  let release;
+  const first = withCloudSyncSlot(() => new Promise(resolve => { release = resolve; }));
+  const abort = new AbortController();
+  const skipped = withCloudSyncSlot(() => order.push('skipped'), { signal: abort.signal });
+  const third = withCloudSyncSlot(() => order.push('third'));
+  abort.abort();
+  await expect(skipped).rejects.toThrow('cancelled');
+  await flush();
+  expect(order).toEqual([]);
+  release(); await first; await third;
+  expect(order).toEqual(['third']);
+  const aborted = new AbortController(); aborted.abort();
+  await expect(withCloudSyncSlot(() => order.push('never'), { signal: aborted.signal })).rejects.toThrow('cancelled');
+  await withCloudSyncSlot(() => order.push('last'));
+  expect(order).toEqual(['third', 'last']);
+});

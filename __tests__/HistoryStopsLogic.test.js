@@ -160,9 +160,15 @@ const gapPhone = (seconds, metres, extra = {}) => {
     accuracy: 14, raw_speed_kmh: 0, speed_accuracy_mps: 0.5,
     phoneMotionState: 'stationary', phoneStationary: true, phoneConfirmedMovement: false, ...extra };
 };
+// The endpoint after the break says nothing the rules can place: a zero
+// speed without its accuracy (and a 14 m fix), neither measured standing
+// still nor a usable speed. 2026-10-15 (#200): it was 0 km/h ± 2 m/s, which
+// is now no speed at all — quiet, the same place as a fix without a speed
+// (quietFix), so the break would join on its own and the bridge below would
+// not be tested.
 const coarsePhoneGap = tail => [gapPhone(0, 0), gapPhone(600, 0),
   gapPhone(605, 40, { accuracy: 28 }),
-  gapPhone(4200, 43, { phoneStationary: false, phoneMotionState: 'unknown', speed_accuracy_mps: 2 }),
+  gapPhone(4200, 43, { phoneStationary: false, phoneMotionState: 'unknown', speed_accuracy_mps: null }),
   ...tail];
 
 test('coarse same-place endpoints join visits only after compact confirmed stationary return', () => {
