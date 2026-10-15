@@ -522,6 +522,10 @@ const EMPTY_ROWS = {
   loaded: false,
 };
 
+// How long the recording service may be found not running, while the switch
+// is on, before the day reads 「記錄中斷」 (it starts again when the app opens).
+const INTERRUPT_GRACE_MS = 10000;
+
 /**
  * The history screen for `target` ({ subject: 'dog' | 'phone', slaveId }),
  * the dog it was opened for (看軌跡) plus up to three more added with
@@ -539,6 +543,10 @@ export function useHistoryScreen({
   active = true,
   recording = null,
   recordingStoppedAt = null,
+  // The user's 位置記錄 switch (on unless they switched it off): with it on
+  // and the service not running, the recording was interrupted (記錄中斷).
+  recordingEnabled = null,
+  interruptGraceMs = INTERRUPT_GRACE_MS,
   onDayChange,
   memoryScope = '',
   preset = null,
@@ -846,10 +854,25 @@ export function useHistoryScreen({
   // My route today with recording off ends on 「記錄已關閉 10:20」: the last
   // fix it recorded (判定表「記錄被迫中止的終點膠囊」; the summary's 「記錄已在
   // 10:20 關閉」 uses the same time). A fixed end the user dragged is 「結束」.
-  const closedAt =
-    subject === 'phone' && today && recording === false && (!manual || manual.following) && recordingStoppedAt
-      ? recordingStoppedAt
-      : null;
+  // 2026-10-15 (user): switched off by the user is 「記錄已關閉 10:20」;
+  // still on but the service stopped on its own (the app killed, the system
+  // stopped it) is 「記錄中斷・20:49」, at the last fix it saved. The service
+  // is starting for a few seconds whenever the app opens: only an
+  // interruption that lasted INTERRUPT_GRACE_MS counts.
+  const ending = subject === 'phone' && today && recording === false && (!manual || manual.following);
+  const switchedOff = ending && recordingEnabled !== true && !!recordingStoppedAt;
+  const notRunning = ending && recordingEnabled === true;
+  const [notRunningSince, setNotRunningSince] = useState(null);
+  useEffect(() => {
+    if (!notRunning) { setNotRunningSince(null); return undefined; }
+    const since = Date.now();
+    setNotRunningSince(null);
+    const timer = setTimeout(() => setNotRunningSince(since), interruptGraceMs);
+    return () => clearTimeout(timer);
+  }, [notRunning, interruptGraceMs]);
+  const recordingInterrupted = notRunning && notRunningSince != null && lastRow > 0;
+  const closedAt = switchedOff ? recordingStoppedAt : recordingInterrupted ? lastRow : null;
+  const closedReason = recordingInterrupted && !switchedOff ? 'interrupted' : 'closed';
   // The first view waits for every dog shown (the map frames the
   // protagonist once); a dog added later is left out while it is read.
   const allLoaded =
@@ -962,6 +985,7 @@ export function useHistoryScreen({
       manual,
       following,
       closedAt,
+      closedReason,
       protagonist: main,
       rangeOwner: current.rangeOwner ?? main,
       kept: current.kept ?? null,
@@ -1001,6 +1025,7 @@ export function useHistoryScreen({
     manual,
     following,
     closedAt,
+    closedReason,
     current.protagonist,
     current.rangeOwner,
     current.kept,
@@ -1601,6 +1626,9 @@ export function useHistoryScreen({
     [],
   );
   return {
+    // The end of my route today when recording is not going (HistoryScreen's
+    // summary line): { at, reason: 'closed' | 'interrupted' } or null.
+    recordingEnd: closedAt != null ? { at: closedAt, reason: closedReason } : null,
     snapshot,
     // The export (H9) captures the whole day's model and the dogs' looks.
     dayModel: rangePending ? null : dayModel, look,

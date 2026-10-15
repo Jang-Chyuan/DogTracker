@@ -53,11 +53,12 @@ test('empty range and empty day return empty models', () => {
   expect(historyTimeline([point(0)], { range: { start: 1, end: 2 } }).nodes).toEqual([]);
   expect(historyTimeline([]).points).toEqual([]);
 });
-// stops.txt「跟著現在…最後一筆在2分鐘內才寫現在…否則最後」。
+// stops.txt「跟著現在…最後一筆在2分鐘內才寫現在」; 2026-10-15 (user): older, no
+// 「最後」 — no position since the last fix (no-fix).
 test('following end distinguishes fresh and stale, fixed end is end', () => {
   const points = route(Array(48).fill(1));
   expect(historyTimeline(points, { today: true, now: 600000 }).locations.pop().label).toBe(i18nT('c130'));
-  expect(historyTimeline(points, { today: true, now: 600001 }).locations.pop().label).toBe(i18nT("c660"));
+  expect(historyTimeline(points, { today: true, now: 600001 }).locations.pop()).toMatchObject({ endState: 'no-fix' });
   expect(historyTimeline(points, { today: true, now: 600000, following: false }).locations.pop().label).toBe(i18nT('c330'));
 });
 // spec.txt「整天都停在原處…沒有出發、終點節點，也不畫軌道」。

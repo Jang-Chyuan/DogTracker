@@ -39,7 +39,7 @@
 
 `nodes` 是排序後完整清單；`locations` 只有地點列，`sections` 只有交通／缺口列。型別：`departure`、`stop`、`switch`、`indoor`、`movement`、`gap`、`end`。交通方式：`walking`、`moving`、`driving`、`ride`、`gap`。停留與切換點共用 `number`；室內節點不編號。切換點沒有上下車文字與停留時間。節點座標可供後續非同步查地址。
 
-缺口列保留前後實測時間與座標，但 `distanceM`／`countedDistanceM` 都是零；車段保留實際 `distanceM`，`countedDistanceM` 為零。合併停留保留 `interruptionMs`，供清單／PNG／GPX 顯示「不含中斷 N 分」。跨日節點使用 `continuesPreviousDay`／`continuesNextDay`；終點 `label` 為「現在」、「最後」或「結束」。
+缺口列保留前後實測時間與座標，但 `distanceM`／`countedDistanceM` 都是零；車段保留實際 `distanceM`，`countedDistanceM` 為零。合併停留保留 `interruptionMs`，供清單／PNG／GPX 顯示「不含中斷 N 分」。跨日節點使用 `continuesPreviousDay`／`continuesNextDay`；終點 `endState` 為 `now`（「現在」）、`no-fix`（「20:49 之後沒有位置」）、`closed`（記錄已關閉）、`interrupted`（記錄中斷）或 `fixed`（結束）；`label` 只留給舊的比對。
 
 ## 分鐘一定有列（2026-10-13）
 
@@ -69,10 +69,10 @@
 - 偵測器靜止前幾秒（幾筆 `suspected_stationary`）才開始的靜止段，從出發那一筆起就是那個停留（第一列，沒有「出發」，見下面「範圍從停留開始」），不再是同一分鐘的「出發」加「停 N 分」；這種段落或停留在恢復記錄後 `gapMs` 內開始時，不另加恢復記錄。
 - 停留分鐘四捨五入為 0 時（手動範圍從停留結尾開始）是移動開始：起點列；單獨的停留寫「停 不到 1 分」（c1276）。
 - 從室內開始的一天：室內那列從範圍的開始（原本的出發時刻）算起，和摘要的開始時間一致。
-- 跨午夜的室內：前一天的室內列用午夜時停住的位置（停住期間的好定位會修正錨點），和隔天「接續前一天」同一個地點與地址；當天結束的室內仍用開始時的位置。
+- 跨午夜的室內：前一天的室內列用午夜時停住的位置（停住期間的好定位會修正錨點），和隔天第一列（從 00:00 起）同一個地點與地址；當天結束的室內仍用開始時的位置。
 - 狗這天有封包但沒有一筆可用定位（範圍內也是）：清單一列「收不到 GPS 第一筆–最後一筆」，不寫「這段時間沒有紀錄」，地圖沒有東西可畫；月曆的點和 ‹ › 因此和當天畫面一致。
 - 範圍從停留開始（2026-10-14，使用者決定，取代 #115 的「合併出發與初始停留」）：`timelinePresentation` 不列「出發」，那個停留就是第一列（從出發那一筆起，前面幾秒是它的時間），自己的分鐘與地址；2026-10-14 第三輪：它是範圍的起點（`rangeEndRows` 的 `start`），清單節點畫起點的空心圓、不編號（`endpointStays().start`，`listedWith: 'start'`），地圖畫起點的時間標記；TalkBack、PNG 清單、GPX 航點名稱（c1310「停留・N 分」）都沒有「出發」。座標不同、差幾毫秒、裡面有中斷或第一個是別的編號，都一樣：只是拿掉同一時刻的出發點（`startingStay`），不合併兩個地方。出發偵測還在確認、候選之後手機一直沒動，範圍整個是「還在原地」的停留時，那個停留就是那一列，不併進出發（2026-10-15：以前是一列跨 5 分鐘、不寫分鐘的出發，時間加不起來）。仍有「出發」的情況（範圍從移動開始）：第一段是走路／開車；或出發節點帶 `detected`（範圍的開始就是 `historyDeparture` 確認／確認中的自動出發，例如從停留最後一筆起走），或那個停留顯示的分鐘四捨五入為 0（手動範圍從停留最後幾秒開始）——這兩種把裁到的那幾秒停留記在起點列（`departureStay`，不編號），畫面上那幾秒算進第一段移動（`departingMove`：出發是時刻，不寫分鐘，時間才加得起來）。範圍的判定（`historyDeparture`）不變。模型的 `departure` 節點、CSV／GPX 資料列不變。`__tests__/HistoryStartsWithStay.test.js` 用虛構資料檢查一天從停留開始、從走路開始、像 10/13 的一天（00:00 起在家、走路、短停留、走回家）和只有一個停留的一天。
-- 範圍在停留裡結束（2026-10-14，使用者決定，取代 #115 的「同址末停留合併終點」）：`timelinePresentation` 的 `endingStay` 在終點列緊接著一個停留（或室內）、時刻相同時拿掉終點列，那個停留就是最後一列；不再有 `terminalStay`。第三輪：它是範圍的終點（`rangeEndRows` 的 `end`），節點畫終點的實心圓、不編號（`endpointStays().end`，`listedWith: 'end'`），地圖畫終點的時間標記；中間的停留從 1 編號。前面幾秒沒有列的時間照 `closeHoles` 歸那個停留，所以終點在停留最後一筆之後幾秒也一樣。範圍在移動中或一段中斷後結束時照舊有終點列；記錄關閉（`closedAt`，「記錄已關閉 10:20」）也照舊列出。終點列不寫「結束」（`nodePill` 回傳 `null`），只有時間、實心節點和地址；跟著現在時照舊「現在」「最後 HH:MM」；匯出 PNG 的終點不寫字。跨過午夜的末停留（`carried-over`）也是那個停留本身。地圖一定畫起點和終點的時間標記；兩者在同一地方（`radiusM` 內）時 `HistoryMapModel.listedTimeMarkers` 合成一個（`first` 和 `last`：空心圈裡的實心圓，「00:00–09:25」）。`groupSamePlaceStays` 把同一地方的中間編號停留合成一個標記「1・3」（`numbers`、`group`；TalkBack 依序唸，點了跳到第一個；匯出 PNG 畫成膠囊）。模型的 `end` 節點、摘要的「– 現在」、CSV／GPX 不變。
+- 範圍在停留裡結束（2026-10-14，使用者決定，取代 #115 的「同址末停留合併終點」）：`timelinePresentation` 的 `endingStay` 在終點列緊接著一個停留（或室內）、時刻相同時拿掉終點列，那個停留就是最後一列；不再有 `terminalStay`。第三輪：它是範圍的終點（`rangeEndRows` 的 `end`），節點畫終點的實心圓、不編號（`endpointStays().end`，`listedWith: 'end'`），地圖畫終點的時間標記；中間的停留從 1 編號。前面幾秒沒有列的時間照 `closeHoles` 歸那個停留，所以終點在停留最後一筆之後幾秒也一樣。範圍在移動中或一段中斷後結束時照舊有終點列；記錄關閉（`closedAt`，「記錄已關閉 10:20」）也照舊列出。終點列不寫「結束」（`nodePill` 回傳 `null`），只有時間、實心節點和地址；跟著現在時見下「今天的終點」；匯出 PNG 的終點不寫「現在」「之後沒有位置」。跨過午夜的末停留（`carried-over`）也是那個停留本身。地圖一定畫起點和終點的時間標記；兩者在同一地方（`radiusM` 內）時 `HistoryMapModel.listedTimeMarkers` 合成一個（`first` 和 `last`：空心圈裡的實心圓，「00:00–09:25」）。`groupSamePlaceStays` 把同一地方的中間編號停留合成一個標記「1・3」（`numbers`、`group`；TalkBack 依序唸，點了跳到第一個；匯出 PNG 畫成膠囊）。模型的 `end` 節點、摘要的「– 現在」、CSV／GPX 不變。
 - 離開停留（2026-10-14，使用者選 B）：`leavesFrom(row, next)` —— 停留或室內的下一列是移動（不是中斷、也不是出發之後）。清單在那個停留節點正下方畫 `Glyph` 的 `leave`（16dp，`size.timeline.leave`），匯出 PNG 畫 `EXPORT_ICONS.leave`（48px），線在那裡斷開；TalkBack 的移動列以「從停留 N 離開，」開頭（`sectionSpeech(section, from)`，c1336；沒有編號寫「從停留離開，」）。時間欄在箭頭旁寫離開的時刻（`clock(stay.end)`，13sp `caption` 灰字；匯出 PNG 的 `leaveTime`）。
 - 時間加得起來（2026-10-14，第三輪）：每一列的開始時刻＋顯示的分鐘（停留再加「不含中斷 N 分」）＝下一列的開始時刻。`alignedDuration` 對被打斷的停留顯示「起訖時鐘相減－不含中斷的分鐘」。`test-support/TimelineClocks.js`（`timelineClockMismatches`）和 `__tests__/HistoryTimeClocks.test.js` 對每個畫面情境、像 10/13 的日子、中斷、短暫外出、塞車檢查；使用者真實的 31 個手機日（整天與自動範圍，1118 列、547 個停留、170 次離開）在本機唯讀檢查過，沒有不一致。2026-10-15：`timelineMismatches(model)` 另外檢查時刻列（出發、恢復記錄、終點、切換）也首尾相接、不跨任何時間，而且各列蓋住範圍的第一筆到最後一筆；`__tests__/HistoryLiveCheckpoints.test.js` 在虛構的記錄日每 10 分鐘（像今天開著歷史頁那樣）檢查這些、各列距離加總等於摘要、編號從 1 連續、地圖和清單同一組編號。使用者真實的 14 天每 10 分鐘的檢查點在本機唯讀重播過，沒有不一致。
 - 編號（#154，使用者決定）：`timelinePresentation` 併進「出發」的那幾秒停留（從移動開始的範圍，`endpointStays`）標 `listedWith: 'departure'`、`number: null`；其餘停留與切換點依時間從 1 連續編號。清單、地圖標記、PNG 清單都讀同一個 `number`；GPX 航點名稱沒有編號時用 c1310「停留・N 分」。
@@ -121,7 +121,7 @@
 - 距離：移動段（`sectionText`，畫面與 PNG 清單）和游標標籤（`cursorLabel`）用全 App 共用的 `distanceText`（`src/utils/distanceText.js`，狗卡片的 `formatDistance` 是同一個函式）：不到 100 m 為 5 m 一階（`0 m`、`45 m`），100 m–1 km 為 10 m 一階（`340 m`），1 km 起一位小數的 km（`1.4 km`）；每一階用四捨五入後的值判斷。摘要（`summaryText`／`movementSummary`／範圍摘要）、「今天 x km」與匯出的總距離仍用 `km()`；CSV／GPX 不變。
 - 分鐘：移動段顯示的距離不是 `0 m`、顯示分鐘（`displayDurationMs ?? durationMs`）四捨五入為 0 時，時間寫「不到 1 分」（c1276）。只改文字；`durationMs`／`displayDurationMs` 不變。
 - 出發（在室內就不要出發了）：室內節點正好從第一筆開始時，`historyTimeline` 本來就不加出發節點（#64）；`timelinePresentation` 另外在第一列是出發、1 分鐘內接著室內節點、中間只有沒計入距離的走路／移動或 `uncertain` 列時，拿掉出發和中間那幾列，清單從室內開始。模型的 `departure` 節點、地圖起點與 CSV／GPX 不變。`__tests__/HistoryRowText.test.js` 用虛構資料檢查這三條。
-- 跨午夜的起點：清單第一列是 `continuesPreviousDay` 的停留或室內、而且開始時刻在當地午夜後 3 分鐘（`gapMs`）內時，`timelinePresentation` 把那列的開始拉到 00:00，分鐘也從 00:00 算（「00:01 接續前一天」→「00:00 接續前一天」）；更晚才有第一筆就照第一筆。模型節點不變。
+- 跨午夜的起點：清單第一列是 `continuesPreviousDay` 的停留或室內、而且開始時刻在當地午夜後 3 分鐘（`gapMs`）內時，`timelinePresentation` 把那列的開始拉到 00:00，分鐘也從 00:00 算（第一筆 00:01 的那列從「00:00」開始）；更晚才有第一筆就照第一筆。模型節點不變。
 - 跨午夜的終點：`continuesNextDay` 的終點 `nodePill` 回傳 `null`（不寫「接續隔天」，c334 已移除）；範圍在停留裡結束時沒有終點列，最後一列就是那個停留「停 N 分」（2026-10-14）；`continuesNextDay` 的室內節點寫「室內・N 分」。節點欄位不變，`continuesNextDay` 仍保留給其他用途。
 
 ## 手機靜止時的粗定位（2026-10-13）
@@ -136,7 +136,7 @@
 
 1. **沒有速度的飄移不是離開**：會記錄速度的手機列（有速度欄位、跑過動作偵測）中，完全沒有量到速度、也沒有偵測器確認移動的點（`quietFix`），在停留中心 `stillPlaceM`（100 m）內算在原地，和「量到靜止」一樣；`samePlaceGap` 的兩端也接受這種點（100 m 內）。量到的可信速度、確認移動、換 session（#135）都不算；舊資料沒有速度欄位，照舊只看幾何。2026-10-15（使用者，#200）：速度誤差太大的速度＝沒有速度（`measuredSpeedMps`：速度誤差超過 1.5 m/s、而且速度減掉誤差不到 0.5 m/s，例如室內的 0 km/h ± 2 m/s；和偵測器的 `phoneReliableSpeed` 同一條）。所以這種點也算在原地、可以當同地中斷的一端；減掉誤差仍超過 0.5 m/s 的（粗定位上的車速）照舊是速度。地圖的「中斷後在誤差內跳一下的到達線」（`stationaryRecoveryEdges`）在同地中斷之後也不畫。`__tests__/PhoneUncertainSpeed.test.js`。
 2. **停留裡的飄移不變成走路**：停留裡算到的移動距離只在抵達後 `gapMs` 內才算進抵達那段步行，之後的（停了幾小時後的飄移、出發前的幾步）算進下一段步行，不會跨過缺口和其他停留算到幾小時前的步行。手機的同地中斷（`bridged`）之後從重新出現的位置繼續量距離，中斷兩端之間的飄移不算。停留旁邊 0 m、沒有確認移動、不到 `listGapMs`、每一點都在停留 `stillPlaceM` 內的走路併進那個停留（`foldPhoneStayWalks`）；兩個同地停留之間的這種走路讓兩個停留合為一個。旁邊沒有走路、只有停留時，列之間不到 `gapMs` 的空白（例如重新鎖定前的停頓）歸那個停留。
-3. **午夜前後的空白也是一列**：`HistoryDatabase.historyDayRows`（手機）另外讀取讀取視窗前的最後一筆，以及視窗後的第一筆（找到之前每次輪詢都讀），不受 30 分／3 分限制。範圍從當天第一筆開始、前一筆早於它超過 `gapMs` 時加「沒有資料 00:00–第一筆」（`dayBoundary: 'start'`）；固定終點在當天最後一筆、隔天第一筆晚於它超過 `gapMs` 時，在終點列之後加「沒有資料 最後–24:00」（`dayBoundary: 'end'`，文字寫 24:00）。換 session 一律自成一列；同一 session 不到 30 分折進旁邊的停留列（#132）；同一 session 同地（`samePlaceGap`，停留跨過午夜）不論多長都是停留時間，兩天一致：旁邊有停留列就算進它，否則那一段本身就是停留——當天第一列是「接續前一天」（取代只有一點的出發），或那個停留就是最後一列「停 N 分」，一直到 24:00（`presentationOnly: 'carried-over'`，不編號；沒有終點列，2026-10-14）。和「跨午夜的起點」（#146）同一個結果：第一筆在午夜後 3 分鐘內時沒有這種列，由 `fromMidnight` 把「接續前一天」拉到 00:00；更晚時由這裡從 00:00 起算，分鐘都從 00:00 算。其他情況旁邊只有出發／終點這種點時照列出。另一邊沒有任何一筆、或今天還在跟著現在時不加。CSV、GPX 的資料列不變。
+3. **午夜前後的空白也是一列**：`HistoryDatabase.historyDayRows`（手機）另外讀取讀取視窗前的最後一筆，以及視窗後的第一筆（找到之前每次輪詢都讀），不受 30 分／3 分限制。範圍從當天第一筆開始、前一筆早於它超過 `gapMs` 時加一列從 00:00 到第一筆的「沒有位置 N 分」（`dayBoundary: 'start'`）；固定終點在當天最後一筆、隔天第一筆晚於它超過 `gapMs` 時，在終點列之後加一列到 24:00 的「沒有位置 N 分」（`dayBoundary: 'end'`，分鐘算到 24:00）。換 session 一律自成一列；同一 session 不到 30 分折進旁邊的停留列（#132）；同一 session 同地（`samePlaceGap`，停留跨過午夜）不論多長都是停留時間，兩天一致：旁邊有停留列就算進它，否則那一段本身就是停留——當天第一列是那個停留、從 00:00 起（取代只有一點的出發），或那個停留就是最後一列「停 N 分」，一直到 24:00（`presentationOnly: 'carried-over'`，不編號；沒有終點列，2026-10-14）。和「跨午夜的起點」（#146）同一個結果：第一筆在午夜後 3 分鐘內時沒有這種列，由 `fromMidnight` 把那列拉到 00:00；更晚時由這裡從 00:00 起算，分鐘都從 00:00 算。其他情況旁邊只有出發／終點這種點時照列出。另一邊沒有任何一筆、或今天還在跟著現在時不加。CSV、GPX 的資料列不變。
 4. **「還在原地」的停留也在清單上**：`displayStays`（範圍整個落在已確認的長停留裡）另外成為不編號的清單節點（`presentationOnly: 'still-here'`），是清單唯一的一列（2026-10-14：沒有「出發」、也沒有終點列），「停 N 分」和地圖標籤、游標同一個分鐘。仍不編號、不是 GPX 停留航點。
 5. **同地停留之間的短暫真的走路**：兩個停留之間的走路，從第一個停留結束到手機重新停下（`leaveMs` 沒有移動、在半徑內）不超過 `excursionMs`（5 分），而且這段期間最遠的點和第二個停留都在第一個停留的半徑內，半徑 = `excursionAccuracyFactor`（2）× 第一個停留的精度中位數，限制在 `excursionMinM`–`excursionMaxM`（30–50 m），不是 100 m：三者合為一個停留。這段走路的距離照樣算，歸抵達第一個停留的步行，沒有就歸下一段步行；兩者都沒有時不合併，清單加總仍等於摘要。否則照樣分開。
 
@@ -163,3 +163,15 @@
 `TodayRouteEngine`（「今天 x km」）和 `historyTimeline`（歷史摘要）跑同一套規則，但以前讀的欄位不同：`HistoryDatabase.phoneRouteSince` 沒讀 `raw_latitude`／`raw_longitude`。`PhoneMotion` 用 `raw_latitude ?? latitude`，原生記錄器在手機靜止時把 `latitude`／`longitude` 釘在錨點上，所以藥丸的動作偵測看的是釘住的座標，歷史看的是原始定位，靜止／移動判斷不同，算到的距離也不同。在本機唯讀重播使用者真實的 14 天（每 10 分鐘一個檢查點，共 1,444 個），有 334 個檢查點不一致，最多差 100 m；藥丸和摘要有時差 0.1 km。
 
 現在兩邊讀同一份欄位清單 `PHONE_MODEL_COLUMNS`（原始定位、速度、偵測器狀態、工作階段、里程）：`phoneRouteSince` 和 `historyDayRows`（手機）都從它選欄位，表格有的欄位每一列都有這個鍵（沒有值時為 `null`），和 `historyDayRows` 的列一樣。同樣的重播現在 0 個不一致。`__tests__/TodayRouteColumns.test.js` 用虛構、像原生那樣釘住座標的一天，經過真的 `phoneRouteSince` 和 `historyDayRows`，檢查每 10 分鐘藥丸都等於摘要。
+
+## 今天的終點、缺口的說法（2026-10-15，使用者決定）
+
+- 不再寫「最後 HH:MM」（清單、摘要、游標、TalkBack、匯出都沒有）。`historyTimeline` 的終點 `endState`：
+  - 跟著現在、最後一筆在 2 分鐘內：`now`「現在」。
+  - 跟著現在、超過 2 分鐘：我的路線最後一筆是靜止（`phoneStationary`）而且有停留包含它 → 那個停留延到 `now`（`ongoing`，分鐘一直長），終點移到 `now`，仍是「現在」；其他（移動中沒定位、狗沒位置，或靜止但還不到一個停留）→ `no-fix`「20:49 之後沒有位置」（c1410）。摘要都是「08:30 – 現在」（c120）。
+  - 不跟著現在：`closedAt` 加 `closedReason`：使用者關掉記錄 `closed`「記錄已關閉 10:20」；開關開著但記錄服務沒在跑 `interrupted`「記錄中斷・20:49」（c1411，最後一筆的時刻），範圍條下寫 c1412「記錄在 20:49 中斷，重新打開 App 會繼續記錄」。`useHistoryScreen` 由 `recording`（服務在跑）、`recordingEnabled`（開關）、`recordingStoppedAt` 判斷；服務沒在跑要持續 `INTERRUPT_GRACE_MS`（10 秒）才算中斷（打開 App 時服務正在啟動）。
+  - 都沒有：`fixed`（不寫字）。
+- 我的路線的缺口（沒存到定位、只有弱訊號、午夜前後）一律「沒有位置 N 分」（c1414，分鐘是兩個時刻的分鐘差，時間加得起來）；什麼時候成一列不變（30 分、換記錄）。狗照舊「收不到 GPS」「沒收到訊號」＋兩個時刻。游標在缺口或最後一筆之後：「HH:MM 之後沒有位置」（c1410，取代 c325）。
+- 不放「接續前一天」「接續隔天」膠囊（c332 退休），那一列照樣從 00:00 開始，膠囊寫自己的分鐘。
+- 測試：`__tests__/HistoryListEnd.test.js`（情境 `history-recording-still`、`-no-fix`、`-interrupted`）。
+

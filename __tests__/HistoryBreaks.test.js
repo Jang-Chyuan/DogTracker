@@ -52,12 +52,12 @@ test('history-dog-breaks: the night at home is one stay, a stay without GPS is �
   await act(async () => s.renderer.unmount());
 });
 
-test('a phone\'s break that ends elsewhere still says 沒有資料', () => {
+test('a phone\'s break that ends elsewhere says 沒有位置 (2026-10-15)', () => {
   const model = historyTimeline([point(0, 0, { accuracy: 5 }), point(10, 5, { accuracy: 5 }),
     point(1000, 400, { accuracy: 5 }), point(1010, 405, { accuracy: 5 })], { subject: 'phone' });
   const gap = model.nodes.find(n => n.type === 'gap');
   expect(gap.reason).toBeUndefined();
-  expect(sectionText(gap).lead).toBe('沒有資料');
+  expect(sectionText(gap).lead).toBe('沒有位置');
 });
 
 // Codex review: two breaks back to back with different reasons stay two rows.

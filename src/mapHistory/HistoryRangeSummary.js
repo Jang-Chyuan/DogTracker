@@ -344,7 +344,9 @@ export function HistoryRangeControls({ model, dayPoints, ...props }) {
  * (rangeTrack), `open` and `onToggle` (the bar), `onDrag` (a range while a
  * handle moves), optional `onBegin` (hold publication until release), and
  * `onCommit` (the range when it is let go). `closedAt`:
- * my route's recording was switched off then (「記錄已在 10:20 關閉」).
+ * my route's recording was switched off then (「記錄已在 10:20 關閉」);
+ * with `closedReason` 'interrupted', the service stopped on its own after
+ * that fix (「記錄在 20:49 中斷，重新打開 App 會繼續記錄」).
  */
 // The times under the 24dp handles stay within their 48dp target: they grow
 // with the system font only a little (a 200% font would wrap 「07:50」).
@@ -362,6 +364,7 @@ export default function HistoryRangeSummary({
   onBegin,
   onCommit,
   closedAt = null,
+  closedReason = 'closed',
   dayPoints: shared = null,
   who = null,
   previewDelay,
@@ -447,7 +450,8 @@ export default function HistoryRangeSummary({
         )}
       </Pressable>
       {!open && closedAt != null && (
-        <Text style={styles.closed}>{t('c310', { time: clock(closedAt) })}</Text>
+        <Text style={styles.closed}>{closedReason === 'interrupted' ? t('c1412', { time: clock(closedAt) })
+          : t('c310', { time: clock(closedAt) })}</Text>
       )}
       {open && !externalControls && (
         <>

@@ -210,11 +210,12 @@ test('a phone stationary run from the departure fix is the first row, with no �
   expect(shown[0]).toMatchObject({ id: run.id, start: 0, end: 300000, number: null });
   expect(shown.some(n => n.departureStay)).toBe(false);
 });
-// 2026-10-14: an end row (a range ending on the move) keeps its label; only
-// 「結束」 says nothing (no capsule): the row is its time and place.
-test.each([['現在', /^現在$/u], ['最後', /^最後 \d\d:\d\d$/u], ['結束', null]])('a moving end keeps its label %s', (label, pill) => {
-  const shown = timelinePresentation([walk(0, 540000), { ...endpoint, start: 540000, end: 540000, label }]);
-  expect(shown[1].label).toBe(label);
+// 2026-10-14: an end row (a range ending on the move) keeps its state; only
+// a fixed end says nothing (no capsule): the row is its time and place.
+// 2026-10-15 (user): never 「最後 HH:MM」 — no fix since: 「HH:MM 之後沒有位置」.
+test.each([['now', /^現在$/u], ['no-fix', /^\d\d:\d\d 之後沒有位置$/u], ['fixed', null]])('a moving end keeps its state %s', (endState, pill) => {
+  const shown = timelinePresentation([walk(0, 540000), { ...endpoint, start: 540000, end: 540000, endState }]);
+  expect(shown[1].endState).toBe(endState);
   if (pill) expect(nodePill(shown[1]).text).toMatch(pill);
   else expect(nodePill(shown[1])).toBeNull();
 });
@@ -384,7 +385,7 @@ describe('a stay going on from the day before begins its row at midnight', () =>
     latitude: 24.99, longitude: 121.31, continuesPreviousDay: true, ...extra });
   const stop = (start, end, extra = {}) => ({ type: 'stop', number: 1, id: 'visit:1', start, end,
     durationMs: end - start, latitude: 24.99, longitude: 121.31, continuesPreviousDay: true, ...extra });
-  const end = at => ({ type: 'end', start: at, end: at, latitude: 24.99, longitude: 121.32, label: '最後' });
+  const end = at => ({ type: 'end', start: at, end: at, latitude: 24.99, longitude: 121.32, endState: 'no-fix' });
   const HOUR = 60 * MIN;
 
   test('室內 from the night before: 00:00, minutes from midnight; the model is untouched', () => {
@@ -393,7 +394,8 @@ describe('a stay going on from the day before begins its row at midnight', () =>
     const before = JSON.stringify(nodes);
     const [row] = timelinePresentation(nodes);
     expect(nodeTimes(row)).toEqual(['00:00', '07:00']);
-    expect(nodePill(row).text).toBe('接續前一天');
+    // 2026-10-15 (user): no 「接續前一天」 pill — its 00:00 says it.
+    expect(nodePill(row).text).toBe('室內・7 時');
     expect(row.start).toBe(MIDNIGHT);
     expect(listDuration(presentationDurationMs(row))).toBe('7 時');
     // The cursor and TalkBack say the row's minutes.
@@ -407,7 +409,7 @@ describe('a stay going on from the day before begins its row at midnight', () =>
     const [row] = timelinePresentation([stop(MIDNIGHT + 2 * MIN, MIDNIGHT + 40 * MIN),
       walk(MIDNIGHT + 40 * MIN, MIDNIGHT + 50 * MIN), end(MIDNIGHT + 50 * MIN)]);
     expect(nodeTimes(row)).toEqual(['00:00', '00:40']);
-    expect(nodePill(row).text).toBe('接續前一天');
+    expect(nodePill(row).text).toBe('停 40 分');
   });
 
   test('a first packet long after midnight, or a stay that did not go on, keeps its own time', () => {
@@ -457,4 +459,14 @@ describe('live rows always add up', () => {
     expect(shown[0]).toMatchObject({ type: 'departure', start: 0, end: 0 });
     expect(shown[1]).toMatchObject({ type: 'movement', start: 0 });
   });
+});
+
+// 2026-10-15 (user): an end that says something of its own stays a row
+// after the stay it is in — 「20:49 之後沒有位置」 like 記錄已關閉; 「現在」 and a
+// plain end go into the stay as before.
+test.each([['no-fix', 2], ['now', 1], ['fixed', 1]])('an end %s after a stay: %i rows', (endState, count) => {
+  const stay = { type: 'stop', number: 1, id: 'visit:0', start: 0, end: 600000, durationMs: 600000,
+    latitude: 24.9892, longitude: 121.3132 };
+  const end = { type: 'end', start: 600000, end: 600000, latitude: 24.9892, longitude: 121.3132, endState };
+  expect(timelinePresentation([stay, end])).toHaveLength(count);
 });

@@ -74,7 +74,7 @@ export function exportTimelineRows(nodes, addressOf) {
     let pill = nodePill(node);
     // 匯出的檔案一律寫實際時刻: the end is its time (the left column), with no
     // 「現在」／「最後」 and, as on screen, no 「結束」 (2026-10-14).
-    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = nodePill({ ...node, label: t('c330') });
+    if (node.type === 'end' && ['now', 'no-fix'].includes(node.endState)) pill = nodePill({ ...node, endState: 'fixed', label: t('c330') });
     const next = shown[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
       title: lines.title, coordinates: '', missing: lines.missing, pill,

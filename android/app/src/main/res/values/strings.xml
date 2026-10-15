@@ -76,7 +76,6 @@
     <string name="c1097" formatted="false">"BLE 資料格式錯誤"</string>
     <string name="c1098" formatted="false">"Master ID 不符合：QR={{value1}}，BLE={{value2}}"</string>
     <string name="c1099" formatted="false">"資料存檔失敗：{{value1}}"</string>
-    <string name="c1100" formatted="false">"BLE 接收中；最後資料 {{value1}}"</string>
     <string name="c1101" formatted="false">"另一個 Wi-Fi 指令仍在執行"</string>
     <string name="c1102" formatted="false">"裝置不支援 Wi-Fi 設定"</string>
     <string name="c1103" formatted="false">"Wi-Fi 指令啟動失敗"</string>
@@ -134,4 +133,5 @@
     <string name="c1161" formatted="false">"{{dogName}}：{{duration}}沒有新資料"</string>
     <string name="c1401" formatted="false">"DogTracker 更新完成，點一下繼續記錄路線"</string>
     <string name="c1402" formatted="false">"手機已重新開機，點一下繼續記錄路線"</string>
+    <string name="c1418" formatted="false">"BLE 接收中；{{value1}} 收到資料"</string>
 </resources>

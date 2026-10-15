@@ -69,7 +69,7 @@ test('A3b on screen: name, three rows in order, the distance in the first, red a
   // 訊號源 is on the dog's edit sheet now, not on the card.
   expect(text).not.toContain('訊號源');
   // The distance sits at the first row's right end (no headline above).
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置沒有新位置・最後 09:05不在接收範圍850 m');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置不在接收範圍850 m');
   expect(text).not.toContain('離手機');
   const order = ['位置', '電量', '活動量'].map(label => text.indexOf(label));
   expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -79,7 +79,7 @@ test('A3b on screen: name, three rows in order, the distance in the first, red a
   // Problem values: dark red bold behind a red 「!」; 快離開: amber behind an amber 「!」.
   const value = words => renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === words
     && node.props.importantForAccessibility !== 'no-hide-descendants');
-  expect(value('沒有新位置・最後 09:05').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
+  expect(value('09:05 之後沒有新位置').props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
   // The second problem, on the row's own line: red too, one 「!」 for both.
   expect(value(i18nT('c078')).props.style).toEqual(expect.arrayContaining([{ color: colors.crit }]));
   expect(byTestId('dog-card-row-position')[0].findAll(node => node.props.testID === 'dog-card-mark-crit'
@@ -187,7 +187,7 @@ test('the distance stays beside the first line only while the value fits there o
     await act(async () => firstLine.props.onLayout({ nativeEvent: { layout: { width: room } } }));
     await act(async () => distance().props.onLayout({ nativeEvent: { layout: { width } } }));
   };
-  // A 360dp phone: 「沒有新位置・最後 09:05」 (about 175dp) and 「↗ 1.4 km」
+  // A 360dp phone: 「09:05 之後沒有新位置」 (about 175dp) and 「↗ 1.4 km」
   // (70dp) do not fit in 214dp: the distance goes under, the value stays one line.
   await layout({ value: 175, room: 214 });
   expect(under()).toBe(true);
@@ -322,7 +322,7 @@ const findHidden = node => {
 
 test('手機沒有定位 sits where the distance would', async () => {
   await mount({ card: model({}, { phone: null }) });
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe(`位置沒有新位置・最後 09:05不在接收範圍${i18nT('c726')}`);
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe(`位置09:05 之後沒有新位置不在接收範圍${i18nT('c726')}`);
 });
 
 test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out what it does', async () => {
@@ -338,7 +338,7 @@ test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out wh
   // The first row reads the distance with its words.
   expect(renderer.root.findAll(node => node.props.accessibilityRole === 'header')).toHaveLength(0);
   expect(renderer.root.findAll(node => node.props.accessibilityLabel
-    === '位置，沒有新位置，最後 09:05，不在接收範圍，東北方 850 公尺，離手機')).not.toHaveLength(0);
+    === '位置，09:05 之後沒有新位置，不在接收範圍，東北方 850 公尺，離手機')).not.toHaveLength(0);
 });
 
 test('the arrow points at the dog on the map as drawn (turned by the map heading)', async () => {
