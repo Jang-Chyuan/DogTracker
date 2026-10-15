@@ -10,7 +10,7 @@ import { wifiSummary } from './useReceiverWifi';
  * 辦公室」) and 刪除全部狗資料 (red; asks first, saying what goes and what
  * stays). `wifi` is useReceiverWifi's answer, `deletion` useDeleteDogData's;
  * `deletedText` (「已刪除・10:21」) says the last deletion went through;
- * `retention` (「這支手機收到的保留到 10/09（最近 7 天）…」, useLocalRetention)
+ * `retention` (「這支手機收到的保留到 9/16（最近 30 天）…」, useLocalRetention)
  * how long they are kept.
  */
 export default function AdvancedSettings({

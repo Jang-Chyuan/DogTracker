@@ -5,11 +5,13 @@ import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * How long this phone keeps its own data (#198): my route 30 days, the dogs'
- * packets this phone received 7 days, both counted in whole local days (the
+ * How long this phone keeps its own data (#198): my route a year (365 days),
+ * the dogs' packets this phone received 30 days (使用者 2026-10-15), both
+ * counted in whole local days (the
  * history's calendar never offers a day that is only half there). A safety
- * cap of rows stays under each: a route recorded at one fix a second all day,
- * dogs heard around the clock.
+ * cap of rows stays under each: [ROUTE_CAP] fits a year of the 7,000–9,000
+ * rows a day measured on the user's phone with room for days driven at one
+ * fix a second (about 30,000); [DOG_TOTAL_CAP] two dogs' 30 days.
  *
  * A dog not heard for longer keeps its newest [DOG_FLOOR] rows whatever their
  * age (as before #198, when every dog kept exactly that many): its last
@@ -29,9 +31,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * (src/database/LocalRetention.js holds the same ones for the JS fallback).
  */
 object LocalRetention {
-  const val ROUTE_DAYS = 30
-  const val ROUTE_CAP = 700_000L
-  const val DOG_DAYS = 7
+  const val ROUTE_DAYS = 365
+  /** About 1 GB at 253 B a row; a recorded year is about 3.3 million. */
+  const val ROUTE_CAP = 4_000_000L
+  const val DOG_DAYS = 30
   const val DOG_FLOOR = 10_000L
   /** All dogs' rows together (about 380 MB at 766 B a row). */
   const val DOG_TOTAL_CAP = 500_000L
@@ -44,15 +47,27 @@ object LocalRetention {
   const val NEXT_DOG_SQL = "SELECT MIN(slave_id) FROM dog_status WHERE slave_id > ?"
   /** The dog's (OFFSET+1)th newest row: it and every older row are beyond the newest OFFSET. */
   const val DOG_NTH_NEWEST_SQL = "SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?"
-  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT ?)"
+  // `+id`: the (slave_id, received_at) index finds the old rows; on the id
+  // index an hourly sweep with nothing to take walked every row of the dog.
+  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND +id <= ? AND received_at < ? LIMIT ?)"
   const val DOG_COUNT_SQL = "SELECT COUNT(*) FROM dog_status"
   const val DOG_NEWEST_TIME_SQL = "SELECT MAX(received_at) FROM dog_status WHERE slave_id = ?"
   /** The dog's oldest row the cap may take (below its floor and before its newest day). */
   const val DOG_OLDEST_SQL = "SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT 1"
+  // The cap: from the oldest takeable id on, in id order across every dog,
+  // each dog's part one DOG_CAP_TERM (joined with OR, [dogCapSql]). The `+`
+  // keeps SQLite on the rowid walk: with the indexes it gathered and sorted
+  // every takeable row for each batch (0.27 s a statement at 500,000 rows).
+  const val DOG_CAP_HEAD = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE id >= ? AND ("
+  const val DOG_CAP_TERM = "(+slave_id = ? AND +id <= ? AND +received_at < ?)"
+  const val DOG_CAP_TAIL = ") ORDER BY id LIMIT ?)"
+  fun dogCapSql(count: Int): String = DOG_CAP_HEAD + List(count) { DOG_CAP_TERM }.joinToString(" OR ") + DOG_CAP_TAIL
   const val ROUTE_NEWEST_ID_SQL = "SELECT MAX(id) FROM myLocationTracker"
   // The cap counts rows as written (id, #194): a row dated ahead by a clock
   // later set back cannot outlive the newer ones.
   const val ROUTE_DELETE_SQL = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? AND recorded_at < ? LIMIT ?)"
+  // The cap by rowid alone: with a time bound SQLite walks the whole time index.
+  const val ROUTE_CAP_DELETE_SQL = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? LIMIT ?)"
 
   /** What [sweep] needs from SQLite, so its decisions run in JVM unit tests. */
   interface Sql {
@@ -81,7 +96,7 @@ object LocalRetention {
     var dogs = 0L
     if (sql.first(TABLE_SQL, "myLocationTracker") != null) {
       sql.first(ROUTE_NEWEST_ID_SQL)?.let { newest ->
-        if (newest > ROUTE_CAP) route += drain(sql, ROUTE_DELETE_SQL, newest - ROUTE_CAP, Long.MAX_VALUE)
+        if (newest > ROUTE_CAP) route += drain(sql, ROUTE_CAP_DELETE_SQL, newest - ROUTE_CAP)
         route += drain(sql, ROUTE_DELETE_SQL, Long.MAX_VALUE, cutoff(now, ROUTE_DAYS, zone))
       }
     }
@@ -121,31 +136,32 @@ object LocalRetention {
 
   /**
    * Above [DOG_TOTAL_CAP] rows of all dogs together, the oldest rows go first
-   * (as written, id), whichever dog they belong to, [BATCH] a statement.
+   * (as written, id), whichever dog they belong to, [BATCH] a statement: one
+   * statement walks the ids from the oldest takeable row, so dogs heard at the
+   * same time (ids interleaved) still go a whole batch at a time.
    */
   private fun capDogs(sql: Sql, zone: TimeZone): Long {
     var excess = (sql.first(DOG_COUNT_SQL) ?: 0L) - DOG_TOTAL_CAP
     if (excess <= 0) return 0
-    // Each dog's oldest takeable id, the oldest first.
-    val oldest = mutableMapOf<Long, Long>()
-    val limits = mutableMapOf<Long, Takeable>()
+    val limits = mutableListOf<Takeable>()
+    var from: Long? = null
     for (slave in dogs(sql)) {
       val limit = takeable(sql, slave, zone) ?: continue
-      sql.first(DOG_OLDEST_SQL, slave, limit.throughId, limit.before)?.let { oldest[slave] = it; limits[slave] = limit }
+      val oldest = sql.first(DOG_OLDEST_SQL, slave, limit.throughId, limit.before) ?: continue
+      limits += limit
+      if (from == null || oldest < from) from = oldest
     }
+    if (from == null) return 0
+    val statement = dogCapSql(limits.size)
+    val terms = limits.flatMap { listOf<Any>(it.slave, it.throughId, it.before) }.toTypedArray()
     var removed = 0L
-    while (excess > 0 && oldest.isNotEmpty()) {
-      val (slave, _) = oldest.minByOrNull { it.value }!!
-      val limit = limits.getValue(slave)
-      // Up to just before the next dog's oldest, so the order across dogs holds.
-      val next = oldest.filterKeys { it != slave }.values.minOrNull()
-      val through = if (next == null) limit.throughId else minOf(limit.throughId, next - 1)
-      val gone = sql.change(DOG_DELETE_SQL, slave, through, limit.before, minOf(BATCH, excess)).toLong()
+    while (excess > 0) {
+      val wanted = minOf(BATCH, excess)
+      val gone = sql.change(statement, from, *terms, wanted).toLong()
       removed += gone
       excess -= gone
-      val again = sql.first(DOG_OLDEST_SQL, slave, limit.throughId, limit.before)
-      if (again == null) oldest.remove(slave) else oldest[slave] = again
-      if (gone == 0L && again != null && (next == null || again < next)) oldest.remove(slave)
+      // Fewer than asked: nothing takeable is left (the rest is protected).
+      if (gone < wanted) break
       if (excess > 0) sql.pause()
     }
     return removed

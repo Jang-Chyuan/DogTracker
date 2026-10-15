@@ -9,7 +9,7 @@ import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
 /**
  * Phone recording, one location row, battery recommendation and route
- * deletion; `retention` (「只存在這支手機，保留到 9/16（最近 30 天）」,
+ * deletion; `retention` (「只存在這支手機，保留到 2025/10/16（最近 1 年）」,
  * useLocalRetention) under 刪除我的路線.
  */
 export default function PhoneSettings({

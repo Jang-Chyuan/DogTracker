@@ -164,7 +164,8 @@ test('back from the background with no new fixes: nothing is read again, the day
     // The view shown before stays while its rows are read on.
     expect(s.frames.every(Boolean)).toBe(true);
     expect(s.counts.reads).toBe(1);
-    expect(db.stats.pages).toBe(1);
+    // The time index says no row came after the cursor: no page is read.
+    expect(db.stats.pages).toBe(0);
     expect(db.stats.pageRows).toBe(0);
     expect(s.counts.builds).toBe(1);
     expect(summary(s.screen.model).points).toBe(shown.points);

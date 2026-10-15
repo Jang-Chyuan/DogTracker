@@ -245,16 +245,30 @@ export function createHistoryDatabase(db) {
       let cursors = { ...after };
       // By id, not time: a cloud download can add rows older than the newest
       // one read (判定表「補下載完成」), and those must be read too.
-      async function pages(key, sql, params) {
+      // `span` (my route): first the ids the window's rows lie between, from
+      // the time index, then the pages by id within them. Alone, `id > ?`
+      // walks the table from the cursor (a year of my route is millions of
+      // rows: a day took 0.25 s on a Mac, seconds on a phone).
+      async function pages(key, sql, params, span = null) {
         const found = [];
         let cursor = cursors[key] ?? { id: -1 };
+        let from = cursor.id, through = null;
+        if (span) {
+          stopped();
+          const ends = rows(await db.executeAsync(span, [...params, cursor.id]))[0];
+          if (ends?.low == null) { cursors[key] = cursor; return found; }
+          from = Math.max(cursor.id, Number(ends.low) - 1);
+          through = Number(ends.high);
+        }
         for (;;) {
           stopped();
-          const page = rows(await db.executeAsync(`${sql} AND id > ? ORDER BY id LIMIT ${DAY_PAGE}`,
-            [...params, cursor.id]));
+          const page = rows(await db.executeAsync(
+            `${sql} AND id > ?${through == null ? '' : ' AND id <= ?'} ORDER BY id LIMIT ${DAY_PAGE}`,
+            [...params, from, ...(through == null ? [] : [through])]));
           if (!page.length) break;
           found.push(...page);
           cursor = { id: Number(page[page.length - 1].id) };
+          from = cursor.id;
           if (page.length < DAY_PAGE) break;
         }
         cursors[key] = cursor;
@@ -278,7 +292,8 @@ export function createHistoryDatabase(db) {
             WHERE recorded_at >= ? AND recorded_at < ? AND id <= ?`, [since, until, cursors.phone.id]))[0];
           if (Number(held?.n) !== (cursors.phoneCount ?? 0)) { cursors = {}; replaced = true; }
         }
-        const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);
+        const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until],
+          'SELECT MIN(id) AS low, MAX(id) AS high FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ? AND id > ?');
         // The window's rows read so far (by id, up to the cursor): what
         // `verify` compares the table with.
         cursors.phoneCount = (cursors.phoneCount ?? 0) + found.length;
