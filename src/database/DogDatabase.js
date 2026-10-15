@@ -16,7 +16,15 @@ export function createDogDatabase(connection) {
 
   let insertsSinceCleanup = 0;
 
-  // The same rule as the Android writer (LocalRetention): 7 days, each dog
+  // The live map's reads (TrackingFeed through RealTrackingRepository): every
+  // column but raw_payload, which no live model reads (TrackingPoint keeps
+  // rawPayload null). It was most of each page's JSON: a 1,000-row page was
+  // about 0.9 MB, parsed and collected on the JS thread right after the App
+  // came back (2026-10-16: JS stalls of 1–7 s on a signed-in emulator).
+  // Read once the migrations ran (initialize); until then, every column.
+  let liveColumnList = '*';
+
+  // The same rule as the Android writer (LocalRetention): 30 days, each dog
   // keeping its newest rows when quiet longer, a cap per dog.
   async function cleanupOldRecords() {
     await pruneDogStatus(db);
@@ -142,6 +150,9 @@ export function createDogDatabase(connection) {
         ON dog_status(slave_id, id DESC)
         WHERE slave_lat BETWEEN -90 AND 90 AND slave_lon BETWEEN -180 AND 180`);
       if (!native?.initializeDatabase) await cleanupOldRecords();
+      const names = rowsFromResult(await db.executeAsync("SELECT name FROM pragma_table_info('dog_status')"))
+        .map(row => row?.name).filter(name => typeof name === 'string' && name && name !== 'raw_payload');
+      if (names.length) liveColumnList = names.join(', ');
       });
     },
 
@@ -223,7 +234,7 @@ export function createDogDatabase(connection) {
 
     async getLatestStatusRow() {
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          ORDER BY id DESC
          LIMIT 1`,
@@ -236,7 +247,7 @@ export function createDogDatabase(connection) {
       const safeCursor = Math.max(0, Number(cursor) || 0);
       const safeLimit = Math.max(1, Math.min(Number(limit) || 100, 1000));
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          WHERE id > ?
          ORDER BY id ASC
@@ -284,11 +295,11 @@ export function createDogDatabase(connection) {
         // seeks. Compatible with Android 7 SQLite (no row-value comparisons).
         const result = await db.executeAsync(
           `SELECT * FROM (
-             SELECT * FROM dog_status
+             SELECT ${liveColumnList} FROM dog_status
              WHERE received_at = ? AND id > ? AND received_at <= ?
              ORDER BY id ASC LIMIT ?
            ) UNION ALL SELECT * FROM (
-             SELECT * FROM dog_status
+             SELECT ${liveColumnList} FROM dog_status
              WHERE received_at > ? AND received_at <= ?
              ORDER BY received_at ASC, id ASC LIMIT ?
            ) ORDER BY received_at ASC, id ASC LIMIT ?`,
@@ -299,7 +310,7 @@ export function createDogDatabase(connection) {
       }
 
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          WHERE received_at >= ? AND received_at <= ?
          ORDER BY received_at ASC, id ASC
@@ -345,11 +356,11 @@ export function createDogDatabase(connection) {
         // seeks. Compatible with Android 7 SQLite (no row-value comparisons).
         const result = await db.executeAsync(
           `SELECT * FROM (
-             SELECT * FROM dog_status
+             SELECT ${liveColumnList} FROM dog_status
              WHERE received_at = ? AND id < ? AND received_at >= ?
              ORDER BY id DESC LIMIT ?
            ) UNION ALL SELECT * FROM (
-             SELECT * FROM dog_status
+             SELECT ${liveColumnList} FROM dog_status
              WHERE received_at >= ? AND received_at < ?
              ORDER BY received_at DESC, id DESC LIMIT ?
            ) ORDER BY received_at DESC, id DESC LIMIT ?`,
@@ -359,7 +370,7 @@ export function createDogDatabase(connection) {
         return rowsFromResult(result);
       }
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          WHERE received_at >= ? AND received_at <= ?
          ORDER BY received_at DESC, id DESC
@@ -372,7 +383,7 @@ export function createDogDatabase(connection) {
     async getLatestValidStatusRows(masterId, slaveId, maxId) {
       const safeMaxId = Math.max(0, Math.floor(Number(maxId) || 0));
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          WHERE id IN (
            SELECT id FROM dog_status
@@ -403,7 +414,7 @@ export function createDogDatabase(connection) {
       const safeLimit = Math.max(1, Math.min(Number(limit) || 1000, 1000));
       const safeOffset = Math.max(0, Number(offset) || 0);
       const result = await db.executeAsync(
-        `SELECT *
+        `SELECT ${liveColumnList}
          FROM dog_status
          WHERE received_at >= ? AND received_at <= ?
          ORDER BY received_at ASC, id ASC

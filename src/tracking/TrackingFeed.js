@@ -7,8 +7,14 @@ import { compareRouteKeys, createLiveRouteWindow } from './LiveRouteWindow';
 import { toRouteSample } from './RouteSamples';
 
 export const DEFAULT_TRACKING_POLL_INTERVAL_MS = 1000;
-export const DEFAULT_TRACKING_BATCH_SIZE = 1000;
-export const DEFAULT_MAX_BATCHES_PER_REFRESH = 20;
+// Rows per read. Each page is parsed and handed to the map (display
+// coordinates, route window, markers) in one go on the JS thread; between
+// pages the thread is free while the next read runs natively. 1,000 rows made
+// that one go last seconds right after the App came back (a catch-up of
+// several minutes of BLE rows, the 24 h route window reloading).
+export const DEFAULT_TRACKING_BATCH_SIZE = 250;
+// As many rows per refresh as before (20 × 1,000), in smaller pieces.
+export const DEFAULT_MAX_BATCHES_PER_REFRESH = 80;
 export {
   DEFAULT_LIVE_ROUTE_MAX_POINTS,
   DEFAULT_LIVE_ROUTE_WINDOW_MS,
