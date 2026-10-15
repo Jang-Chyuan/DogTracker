@@ -154,13 +154,26 @@ export function multiDayModel(subjects, options) {
       : entries
           .flatMap(e => e.model?.dayPoints || [])
           .sort((a, b) => a.time - b.time);
-  return {
+  // The export's day when the range was not dragged (2026-10-15): the whole
+  // day, 00:00 to now (today) or to its end, not from the detected departure
+  // (the morning before it was left out). Built once, when asked.
+  let whole;
+  const wholeDay = () => {
+    if (whole === undefined) {
+      whole = multiDayModel(subjects, { ...options, kept: null, protagonist: main,
+        manual: today ? { start: dayStart, end: null, following: true }
+          : { start: dayStart, end: dayEnd - 1, following: false } });
+    }
+    return whole;
+  };
+  // Not enumerable: the day's model compares and copies as plain data.
+  return Object.defineProperty({
     protagonist: main,
     range,
     subjects: entries,
     main: mainEntry.model,
     dayPoints,
-  };
+  }, 'wholeDay', { value: wholeDay });
 }
 
 /**

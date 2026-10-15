@@ -1507,6 +1507,11 @@ const FIXTURES = {
     historyView: { manual: { start: now - 100 * MINUTE, end: now - MINUTE, following: false } } }),
   'history-dog-ends-in-stay-finished': now => ({ ...FIXTURES['history-dog-ends-in-stay'](now),
     historyView: { manual: { start: now - 100 * MINUTE, end: now - MINUTE, following: false } } }),
+  // 2026-10-15: the range dragged to end 15 seconds into the last stay (in
+  // the minute it began), the cursor at its end: the list's last row 「停 不到
+  // 1 分」 and the cursor 「停留 不到 1 分」 (it read 「停留 0 分」).
+  'history-stay-first-minute': now => ({ ...FIXTURES['history-ends-in-stay'](now),
+    historyView: { manual: { start: now - 100 * MINUTE, end: now - 35 * MINUTE - 5 * SECOND, following: false } } }),
   // H2b: my route with the range bar open; the start dragged to the walk after
   // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),

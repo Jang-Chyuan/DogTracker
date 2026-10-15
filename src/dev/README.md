@@ -169,6 +169,7 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `history-starts-with-stay-auto` | 同上，範圍是自動偵測的出發（07:00 的走路）→ 第一列是起點的空心圓（只有時間和地址，不寫「出發」），接著走路 |
 | `history-end-marker` | `history-my-route`，游標在一小時前 → 地圖起點是空心圈、終點是實心圓（路線色＋外圈） |
 | `history-ends-in-stay` | 我的路線：走路、停留、走路，之後停在原地到現在 → 最後一列只有「現在 · 停 N 分」，沒有重複的編號停留列 |
+| `history-stay-first-minute` | 同 `history-ends-in-stay`，範圍拖到最後一個停留開始後 15 秒（同一分鐘內）結束、游標在終點：清單最後一列「停 不到 1 分」，游標也寫「停留 不到 1 分」（以前「停留 0 分」，2026-10-15） |
 | `history-dog-ends-in-stay` | 同上，小黑的歷史（狗的終點是最後一筆定位，停留座標是平均） |
 | `history-ends-in-stay-finished`、`history-dog-ends-in-stay-finished` | 同上兩個，範圍放手在 1 分鐘前（不跟著現在）→「結束 · 停 N 分」 |
 | `history-gap` | 豆豆：中斷 12 分（「沒有資料」）和 40 分（「沒有資料」＋「恢復記錄」） |
