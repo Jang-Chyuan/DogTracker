@@ -917,15 +917,16 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
-  // 2026-10-15: card-ok, but 豆豆 has rested for seven hours (one packet a
-  // minute before the last half hour), longer than the card's six-hour
-  // lookback: 「休息中・超過 6 小時」, not 「已 5 小時 59 分」 or 「已 6 小時」 by
-  // turns as the lookback slides.
+  // 2026-10-15: card-ok, but 豆豆 has rested for seven hours (before the
+  // last half hour one packet a minute with its activity and no fix, so
+  // nothing holds it indoors), longer than the card's six-hour lookback:
+  // 「休息中・超過 6 小時」, not 「已 5 小時 59 分」 or 「已 6 小時」 by turns as
+  // the lookback slides.
   'card-rest-long': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
       ...track(bleRow, now, { slave: 4, from: 7 * 60 * MINUTE, to: 31 * MINUTE, every: MINUTE, battery: 62,
-        activity: 0.02, dog: (progress, where) => northEastOf(where, 420, 0) }),
+        activity: 0.02, dog: () => null }),
       ...track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 62, activity: 0.02,
         dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) }),
       ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,

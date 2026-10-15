@@ -790,7 +790,8 @@ test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows
 
 // 2026-10-15: a rest longer than the card's six-hour lookback.
 test('card-rest-long: 「休息中・超過 6 小時」', async () => {
-  const { rows } = await card('card-rest-long');
+  const { rows, keys } = await card('card-rest-long');
+  expect(keys).toEqual(['range', 'battery', 'activity']);
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '超過 6 小時', activityTone: 'rest',
     speechDetail: '活動量低超過 6 小時', at: null });
 });
