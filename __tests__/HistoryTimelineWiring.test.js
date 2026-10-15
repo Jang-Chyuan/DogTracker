@@ -183,6 +183,14 @@ describe('fixtures', () => {
     expect(kinds[0]).toBe('departure');
     expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
   });
+  // 2026-10-15 (#200): a speed lost in its uncertainty is no speed: the
+  // break that ends on 0 km/h ± 2 m/s fixes 45 m off is at the same place,
+  // one stay (before: a stay, 「沒有資料」 and another stay).
+  test('history-uncertain-speed: one stay at home across the break', async () => {
+    const { model, kinds } = await fixtureList('history-uncertain-speed');
+    expect(kinds.filter(kind => kind !== 'departure' && kind !== 'end')).toEqual(['stop']);
+    expect(model.distanceM).toBe(0);
+  });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
     expect(kinds).toEqual(['departure', 'walking', 'switch', 'driving', 'switch', 'walking', 'stop', 'end']);

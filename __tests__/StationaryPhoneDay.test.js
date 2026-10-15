@@ -56,10 +56,13 @@ test('a whole day indoors: little distance, a few long stays, the overnight brea
   // the day's first break are a short stay of their own; the rest are long.
   const stops = after.nodes.filter(n => n.type === 'stop');
   expect(stops.every(n => n.durationMs >= 3 * 60000)).toBe(true);
-  expect(stops.filter(n => n.durationMs >= 3 * 3600000)).toHaveLength(2);
-  // Preserve both actual recording gaps and uncertain boundary observations.
-  // The 18:47→19:04 bridge has no confirmed compact stationary return:
-  // it is an interruption, never a zero-distance walking section.
+  // 2026-10-15 (#200): one long stay from the morning break to the end. The
+  // 18:47→19:04 break was an interruption between two stays because the fixes
+  // after it read 0 km/h ± 1.9–2.7 m/s; such a speed is now no speed at all,
+  // quiet like a fix without one, so the break is at the same place (067)
+  // and inside the stay — never a walk.
+  expect(stops.filter(n => n.durationMs >= 3 * 3600000)).toHaveLength(1);
+  // Preserve the actual recording gap and the uncertain boundary observations.
   const gaps = after.nodes.filter(n => n.type === 'gap');
   expect(gaps.map(n => ({ start: n.start - START, end: n.end - START,
     reason: n.reason, countedDistanceM: n.countedDistanceM }))).toEqual([
@@ -68,13 +71,11 @@ test('a whole day indoors: little distance, a few long stays, the overnight brea
     { start: 0, end: 11030, reason: 'uncertain', countedDistanceM: 0 },
     { start: 218063, end: 357051, reason: 'uncertain', countedDistanceM: 0 },
     { start: 357051, end: 4707330, reason: undefined, countedDistanceM: 0 },
-    { start: 46046458, end: 47085377, reason: undefined, countedDistanceM: 0 },
-    { start: 47085377, end: 47091108, reason: 'uncertain', countedDistanceM: 0 },
   ]);
-  const returnGap = gaps.find(n => n.start === START + 46046458);
-  expect(returnGap).toMatchObject({ durationMs: 1038919, line: 'long-dashed' });
+  const evening = stops.find(n => n.start <= START + 46046458 && n.end >= START + 47085377);
+  expect(evening).toBeDefined();
   expect(after.nodes.filter(n => n.type === 'movement'
-    && n.start < returnGap.end && n.end > returnGap.start)).toHaveLength(0);
+    && n.start < START + 47085377 && n.end > START + 46046458)).toHaveLength(0);
   expect(after.edges.filter(e => e.uncertain).every(e => e.countedDistanceM === 0)).toBe(true);
   expect(count(after, 'resume')).toBeLessThanOrEqual(1);
   // 「今天 x km」 is the same history logic.

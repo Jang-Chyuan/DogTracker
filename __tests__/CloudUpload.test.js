@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
-import { bleUploadPayload, packetMasterId } from '../src/cloudUpload/BleUploadPayload';
+import { bleUploadPayload, packetMasterId, packetSlaveId } from '../src/cloudUpload/BleUploadPayload';
 import { createUploadDatabase } from '../src/cloudUpload/UploadDatabase';
 import { createUploadService } from '../src/cloudUpload/UploadService';
 
@@ -226,4 +226,20 @@ test('the Master ID is read as the receiver check reads it (a numeric string too
   const result = bleUploadPayload({ event_id: 'a', master_id: 7, received_at: 1000,
     payload_json: JSON.stringify({ ...payload, mid: '7' }) }, 'phone');
   expect(result.master_id).toBe(7);
+});
+
+// `"sid":"4"`, as `"mid":"5"` above: DogStatusStore (Kotlin) stores the dog ID
+// read the same way (ReceiverMasterId.slaveOf), and the encoder accepts it.
+test('the dog ID is read as the phone stores it (a numeric string too)', () => {
+  for (const [data, expected] of [[{ sid: 4 }, 4], [{ sid: '4' }, 4], [{ sid: ' 4 ' }, 4], [{ slave_id: 6, sid: 4 }, 6],
+    [{ slave_id: null, sid: '4' }, 4], [{ sid: 'x' }, null], [{ sid: '' }, null], [{ sid: 0 }, null], [{ sid: 4.5 }, null],
+    [{ sid: '4.5' }, null], [{}, null]]) {
+    expect([data, packetSlaveId(data)]).toEqual([data, expected]);
+  }
+  const result = bleUploadPayload({ event_id: 'a', master_id: 7, received_at: 1000,
+    payload_json: JSON.stringify({ ...payload, sid: '4', mid: '7' }) }, 'phone');
+  expect(result).toMatchObject({ master_id: 7, slave_id: 4, payload: { slaveId: 4 } });
+  for (const sid of ['x', 0, 256, '256', null])
+    expect(() => bleUploadPayload({ event_id: 'a', master_id: 7, received_at: 1000,
+      payload_json: JSON.stringify({ ...payload, sid }) }, 'phone')).toThrow();
 });
