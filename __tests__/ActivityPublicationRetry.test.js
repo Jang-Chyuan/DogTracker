@@ -1,6 +1,6 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useActivityView } from '../src/activity/useActivityView';
 
 const day = new Date(2026, 9, 9).getTime();
@@ -10,7 +10,7 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 test('past activity retries a discarded read after foreground generation changes even if offline publication never advances', async () => {
   jest.useFakeTimers();
   const first = deferred();
-  const sync = createCloudSync({ client: { from: () => { throw new Error('offline'); } }, database: {}, now: () => now });
+  const sync = createIndependentCloudSync({ client: { from: () => { throw new Error('offline'); } }, database: { latestStorageIsolated: true }, now: () => now });
   sync.setSession({ user: { id: 'owner-a' } });
   sync.setForeground(true);
   const getter = () => sync.mapPublication();

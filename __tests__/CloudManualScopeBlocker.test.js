@@ -2,7 +2,7 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { createHistoryCloud } from '../src/mapHistory/HistoryCloud';
 import { captureActivityRead, capturePageRead } from '../src/cloud/CloudPagePublication';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
@@ -15,16 +15,16 @@ const row = (id, slave, time) => ({ event_id: id, master_id: 7, slave_id: slave,
 
 test('complete manual window is readable while an unrelated partial auto job stays unpublished offline', async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [row('complete-old', 6, NOW - 10000)]);
     await database.beginDownload(owner);
     await database.savePage(owner, [row('auto-partial', 8, NOW)]);
-    sync = createCloudSync({ database, client: { from: () => { throw new Error('offline'); } } });
+    sync = createIndependentCloudSync({ database, client: { from: () => { throw new Error('offline'); } } });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     await sync.runManual(async () => {
       await database.savePage(owner, [row('manual-complete', 9, NOW)]);
@@ -37,14 +37,14 @@ test('complete manual window is readable while an unrelated partial auto job sta
     expect(await database.historyDownloadStates(owner, 9)).toEqual([
       { slave_id: 9, day: '2026-10-09', complete: 1 },
     ]);
-  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
+  } finally { await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers(); }
 });
 
 test.each([2000, 10000])('newer manual publication wins over auto repair even when returning old values (%ims)', async offset => {
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [row('existing', 6, NOW - 10000)]);
     await database.beginDownload(owner);
@@ -57,16 +57,16 @@ test.each([2000, 10000])('newer manual publication wins over auto repair even wh
     expect((await database.latestBySlave(owner, 0))[0].track_at).toBe(NOW - offset);
     await database.publishDownload(owner, 'auto');
     expect((await database.latestBySlave(owner, 0))[0].track_at).toBe(NOW - offset);
-  } finally { connection.close(); }
+  } finally { connection.close(); latest.close(); }
 });
 
 test('one completed manual dog stays visible when the next dog fails and auto has partial rows', async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [row('old', 6, NOW - 10000)]);
     await database.beginDownload(owner);
@@ -81,7 +81,7 @@ test('one completed manual dog stays visible when the next dog fails and auto ha
     await database.publishLatestSnapshot(owner, { cutoff: NOW - 5000, dogs: [{ slaveId: 6,
       packet: row('live-only', 6, NOW - 5000), fix: row('live-only', 6, NOW - 5000) }] });
     const snapshot = await database.readLatestSnapshot(owner);
-    sync = createCloudSync({ database, client });
+    sync = createIndependentCloudSync({ database, client });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     const ended = jest.fn();
     const history = createHistoryCloud({ client, database, owner, runManual: (...args) => sync.runManual(...args) });
@@ -101,23 +101,23 @@ test('one completed manual dog stays visible when the next dog fails and auto ha
     expect(captureActivityRead(() => sync.historyPublication(), owner, true).open).toBe(false);
     expect(await database.readArchivePublication(owner)).toBeNull();
     expect(await database.readLatestSnapshot(owner)).toEqual(snapshot);
-    const restarted = createCloudDatabase(connection);
+    const restarted = createCloudDatabase(connection, { latestConnection: latest });
     expect((await restarted.latestBySlave(owner, 0)).map(value => value.slave_id)).toEqual([6, 9]);
     expect(await restarted.readLatestSnapshot(owner)).toEqual(snapshot);
     expect(await restarted.readArchivePublication(owner)).toBeNull();
-  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
+  } finally { await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers(); }
 });
 
 test('cancelled manual pages never publish and a fresh manual scope cannot inherit them', async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
-  const connection = createMemoryConnection();
+  const connection = createMemoryConnection(), latest = createMemoryConnection();
   let sync;
   try {
     await createDogDatabase(connection).initialize();
-    const database = createCloudDatabase(connection);
+    const database = createCloudDatabase(connection, { latestConnection: latest });
     await database.initialize();
     await database.savePage(owner, [row('old', 6, NOW - 10000)]);
-    sync = createCloudSync({ database, client: {} });
+    sync = createIndependentCloudSync({ database, client: {} });
     sync.setForeground(true); sync.setSession({ user: { id: owner } });
     const abort = new AbortController();
     await expect(sync.runManual(async () => {
@@ -127,7 +127,7 @@ test('cancelled manual pages never publish and a fresh manual scope cannot inher
     expect((await database.latestBySlave(owner, 0)).map(value => value.slave_id)).toEqual([6]);
     await sync.runManual(async () => database.savePage(owner, [row('complete', 9, NOW)]));
     expect((await database.latestBySlave(owner, 0)).map(value => value.slave_id)).toEqual([6, 9]);
-  } finally { await sync?.dispose(); connection.close(); jest.useRealTimers(); }
+  } finally { await sync?.dispose(); connection.close(); latest.close(); jest.useRealTimers(); }
 });
 
 test('publication fence changes before commit, after commit and across later manual jobs without auto release', async () => {
@@ -135,7 +135,7 @@ test('publication fence changes before commit, after commit and across later man
   let finish, began;
   const entered = new Promise(resolve => { began = resolve; });
   const notifications = [];
-  const sync = createCloudSync({ client: {}, database: {}, onChange: state => notifications.push(state) });
+  const sync = createIndependentCloudSync({ client: {}, database: { latestStorageIsolated: true, publishDownload: async () => {} }, onChange: state => notifications.push(state) });
   sync.setSession({ user: { id: owner } }); sync.setForeground(true);
   try {
     const manual = sync.runManual(async (_lease, publishScoped) => publishScoped(() => {
@@ -143,12 +143,12 @@ test('publication fence changes before commit, after commit and across later man
     }));
     await entered;
     const during = sync.mapPublication();
-    expect(during).toMatchObject({ publishedPending: true, publishedRevision: 1, pending: true, mapSuccessRevision: 0 });
+    expect(during).toMatchObject({ publishedPending: true, publishedRevision: 1, pending: false, mapSuccessRevision: 0 });
     finish(); await manual;
-    expect(sync.mapPublication()).toMatchObject({ publishedPending: false, publishedRevision: 2, pending: true, mapSuccessRevision: 0 });
+    expect(sync.mapPublication()).toMatchObject({ publishedPending: false, publishedRevision: 4, pending: false, mapSuccessRevision: 0 });
     await sync.runManual(async (_lease, publishScoped) => publishScoped(async () => {}));
-    expect(sync.mapPublication()).toMatchObject({ publishedPending: false, publishedRevision: 4, pending: true, mapSuccessRevision: 0 });
-    expect(notifications.some(state => state.publishedPending && state.publishedRevision === 3)).toBe(true);
+    expect(sync.mapPublication()).toMatchObject({ publishedPending: false, publishedRevision: 8, pending: false, mapSuccessRevision: 0 });
+    expect(notifications.some(state => state.publishedPending && state.publishedRevision === 5)).toBe(true);
   } finally { await sync.dispose(); jest.useRealTimers(); }
 });
 
@@ -156,7 +156,7 @@ test('owner replacement keeps published reads fenced until an already-started na
   jest.useFakeTimers();
   let finish, began;
   const entered = new Promise(resolve => { began = resolve; });
-  const sync = createCloudSync({ client: {}, database: {} });
+  const sync = createIndependentCloudSync({ client: {}, database: { latestStorageIsolated: true, publishDownload: async () => {} } });
   sync.setSession({ user: { id: owner } }); sync.setForeground(true);
   try {
     const manual = sync.runManual(async (_lease, publishScoped) => publishScoped(() => {

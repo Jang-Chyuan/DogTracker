@@ -2194,8 +2194,8 @@ const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMar
 
 const ignoreWrite = () => Promise.resolve();
 
-// What a fixture's CloudSync is before the fixture's own fields: idle, as
-// the engine starts (CloudSync's initial state), with nothing of the live
+// What a fixture's cloud sync is before the fixture's own fields: idle, as
+// the engine starts (IndependentCloudSync's initial state), with nothing of the live
 // one. Spreading the live state let its latest-first publication, revisions,
 // mode, offline and auth flags reach the fixture's map, cards, S3 and
 // 本機／雲端資料 (audit L9).
@@ -2268,7 +2268,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    // On a signed-in phone nothing of the live CloudSync may leak into a
+    // On a signed-in phone nothing of the live cloud sync may leak into a
     // fixture: its latest-first state kept the fixture's dogs off the map,
     // its changing revision restarted the card's readings so 活動量 stayed
     // 「—」, and its offline/mode/failure fields changed S3 and the alerts.
