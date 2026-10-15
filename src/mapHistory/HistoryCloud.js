@@ -10,6 +10,7 @@ import { dayKey } from '../history/screen/HistoryScreenDates';
 import { useMemo, useRef } from 'react';
 import { downloadCloudHistory } from '../cloud/CloudDownload';
 import { getCloudClient } from '../cloud/CloudClient';
+import { serverClock } from '../cloud/ServerClock';
 
 // 判定表「月曆查詢雲端失敗」: a question unanswered after 10 s has failed.
 export const CLOUD_QUESTION_MS = 10000;
@@ -88,9 +89,19 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
     earliest({ slaveId, signal }) {
       return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
     },
-    /** Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone. */
-    download({ slaveId, dayStart, dayEnd, cutoff = Date.now(), signal, onDogEnd }) {
-      const coverage = historyCoverage(dayStart, dayEnd, cutoff);
+    /**
+     * Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone.
+     * `cutoff` is this phone's clock; the queries and the proof are cut at the
+     * same moment on the server's clock (`serverOffset`, HistoryCoverage).
+     */
+    download({ slaveId, dayStart, dayEnd, cutoff = Date.now(), serverOffset = serverClock.offset(), signal, onDogEnd }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const coverage = historyCoverage(dayStart, dayEnd, cutoff, offset);
+      // received_at (the server's clock) of `cutoff`.
+      const serverCutoff = cutoff + offset;
+      // A proof up to a received_at, as the coverage of the phone-clock cutoff
+      // that cuts there.
+      const coverageTo = received => historyCoverage(dayStart, dayEnd, received - offset, offset);
       const before = previous;
       const run = (async () => {
         await before.catch(() => {});
@@ -120,7 +131,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           const prefixOf = id => {
             const proof = previousStates.find(row => row.slave_id === id && row.day === day);
             if (!Number.isFinite(proof?.received_before) || proof.received_before >= coverage.received_before) return null;
-            return coversHistory(proof, historyCoverage(dayStart, dayEnd, proof.received_before)) ? proof : null;
+            return coversHistory(proof, coverageTo(proof.received_before)) ? proof : null;
           };
           const tailStart = id => {
             const proof = prefixOf(id);
@@ -155,7 +166,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           // before `received` (all saved: pages run in reception order), and
           // those rows, published with the lease like a finished day.
           const keep = async (id, received, carry) => {
-            await database.setHistoryDownloadState?.(owner, id, day, true, historyCoverage(dayStart, dayEnd, received));
+            await database.setHistoryDownloadState?.(owner, id, day, true, coverageTo(received));
             if (database.publishManualScope) {
               const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
               if (publishScoped) await publishScoped(commit);
@@ -184,12 +195,12 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               // History is bucketed by track time: a phone packet of this day can
               // reach the cloud after the reception window. Before proving a
               // closed day complete, also fetch those late phone rows.
-              if (coverage.received_before < cutoff) {
+              if (coverage.received_before < serverCutoff) {
                 // Interrupted here, the window is kept short of its end, so
                 // the next download fetches these again.
                 kept = coverage.received_before - 1;
                 count += await downloadCloudHistory({ client, database, owner,
-                  startAt: iso(coverage.received_before), endBefore: iso(cutoff), slaveId: id,
+                  startAt: iso(coverage.received_before), endBefore: iso(serverCutoff), slaveId: id,
                   phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
                   signal: network.signal, isCurrent: current });
               }
@@ -207,9 +218,12 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
             } catch (error) {
               const cancelled = network.signal.aborted;
               // Worth keeping only past the window's start and the dog's own
-              // earlier proof; a failed keep leaves the day as it was.
+              // earlier proof; a failed keep leaves the day as it was. A
+              // failed request (the network gone mid-window) keeps the same
+              // saved prefix as a cancel: the pages before it were saved in
+              // reception order, so 重試 resumes from there.
               const from = prefixOf(id)?.received_before ?? dayStart - DOWNLOAD_BEFORE_MS;
-              if (cancelled && keeping && kept != null && kept > from && !abort.signal.aborted && leaseCurrent())
+              if (keeping && kept != null && kept > from && !abort.signal.aborted && leaseCurrent())
                 await keep(id, kept, carryDone).catch(() => {});
               keeping = false;
               if (cancelled) abort.abort();

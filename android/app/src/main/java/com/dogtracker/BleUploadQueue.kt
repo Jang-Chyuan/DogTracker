@@ -27,6 +27,7 @@ internal object BleUploadQueue {
   const val THIN_SQL = "DELETE FROM ble_upload_queue WHERE id IN (SELECT o.id FROM ble_upload_queue o WHERE o.status='pending' AND EXISTS (SELECT 1 FROM ble_upload_queue k WHERE k.status='pending' AND k.owner_user_id=o.owner_user_id AND k.master_id=o.master_id AND k.slave_id=o.slave_id AND k.received_at>=o.received_at-(o.received_at%60000) AND k.received_at<=o.received_at AND (k.received_at<o.received_at OR (k.received_at=o.received_at AND k.id<o.id))) ORDER BY o.id LIMIT 2000)"
   const val DROP_SQL = "DELETE FROM ble_upload_queue WHERE id IN (SELECT id FROM ble_upload_queue WHERE status='pending' ORDER BY id LIMIT 500)"
   const val THINNED_SQL = "INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('queue_thinned_at',?)"
+  const val DUPLICATE_SQL = "SELECT id FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND fingerprint=? LIMIT 1"
   const val REFUSED_SQL = "SELECT 1 FROM ble_upload_refusals WHERE owner_user_id=? AND master_id=?"
   /** The relay's next due time: refused Masters' rows wait for 重試 and do not keep it awake. */
   const val NEXT_RETRY_SQL = "SELECT MIN(next_retry_at) FROM ble_upload_queue WHERE owner_user_id=? AND status='pending' AND master_id NOT IN (SELECT master_id FROM ble_upload_refusals WHERE owner_user_id=?)"
@@ -117,8 +118,12 @@ internal object BleUploadQueue {
     if (sql.first("SELECT mode FROM ble_upload_settings WHERE owner_user_id=? AND master_id=?", owner, masterId) != "phone") return null
     if (sql.first(REFUSED_SQL, owner, masterId) != null) return null
     val fingerprint = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    val duplicate = sql.first("SELECT id FROM ble_upload_queue WHERE owner_user_id=? AND master_id=? AND fingerprint=? AND received_at>=? LIMIT 1",
-      owner, masterId, fingerprint, (receivedAt - 60000).toString()) != null
+    // The same bytes again (the Master re-sending a quiet dog's last packet:
+    // same seq and GPS time) are the same event however late they come. A
+    // 60 s window let one copy a minute through, each with a new event_id
+    // the server cannot tell apart. Rows kept: all waiting and refused ones,
+    // the newest sent ones (UploadDatabase.prune).
+    val duplicate = sql.first(DUPLICATE_SQL, owner, masterId, fingerprint) != null
     if (duplicate) return null
     if (untilCheck <= 0) {
       // At most CHECK_EVERY rows over the cap until the next count.

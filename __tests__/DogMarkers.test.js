@@ -1,6 +1,7 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
-import { dogMarkers, nameTags, tagSize } from '../src/map/DogMarkers';
+import { dogMarkers, judgedAt, judgedFreshness, nameTags, tagSize } from '../src/map/DogMarkers';
+import { dogFreshness } from '../src/tracking/DogFreshness';
 import { dogProblems } from '../src/tracking/DogProblems';
 import DogMarkerView, { markerFrame } from '../src/map/DogMarkerView';
 import { problemBadgePosition, houseBadgePosition } from '../src/map/BadgeGeometry';
@@ -261,4 +262,27 @@ describe('stacking order and taps on overlapping dogs', () => {
     const open = [{ ...markers[0], selected: true }, markers[1]];
     expect(dogUnderTouch(open, points, tags, { x: 100, y: 130 }, dogZIndexes(open, points, tags))).toBe(104);
   });
+});
+
+// Audit B F14: while a return to the app catches the map up, the open card
+// judges the dog like its face (judgedFreshness), so for up to the catch-up's
+// 120 s the card cannot say 「沒有新位置」 under a face that is not grey.
+test('the card and the marker judge a dog the same way while catching up', () => {
+  const away = NOW - 20 * MINUTE;
+  const local = dog(4, { fixAt: away - 5 * MINUTE });
+  const options = { now: NOW, catchUpSince: away, previousStale: { 4: false } };
+  const marker = dogMarkers([local], { ...options, aliases: ALIASES })[0];
+  expect(marker.stale).toBe(false);
+  expect(judgedFreshness(local, options).stale).toBe(false);
+  // Judged by now, the card used to disagree.
+  expect(dogFreshness(local, { now: NOW }).stale).toBe(true);
+  // A dog grey before leaving stays grey on both.
+  const grey = { ...options, previousStale: { 4: true } };
+  expect(dogMarkers([local], { ...grey, aliases: ALIASES })[0].stale).toBe(true);
+  expect(judgedFreshness(local, grey).stale).toBe(true);
+  // Once caught up, both are the plain judgement again.
+  expect(judgedFreshness(local, { now: NOW }).stale).toBe(true);
+  expect(judgedAt(NOW, away)).toBe(away);
+  expect(judgedAt(NOW, NOW + MINUTE)).toBe(NOW);
+  expect(judgedAt(NOW, null)).toBe(NOW);
 });

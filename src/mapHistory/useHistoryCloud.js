@@ -6,6 +6,7 @@ import { capturePageRead } from '../cloud/CloudPagePublication';
 // only asks (HistoryCloud.js, or a screen fixture's stand-in) and remembers.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coversHistory, historyCoverage } from '../cloud/HistoryCoverage';
+import { serverClock } from '../cloud/ServerClock';
 import { dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
 import { daysBetween, monthQueryRange, monthsToCheck, walkCloudDays } from '../history/screen/HistoryCalendar';
 
@@ -249,14 +250,14 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     if (durable.scope !== scope || (cloud.coverageRequired && (!sameProofIdentity || durable.revision !== publicationRevision && !retainedProof))) return false;
     const row = completeness.find(value => value.slave_id === id && value.day === day);
     const bounds = dayBounds(day);
-    return cloud.coverageRequired ? coversHistory(row, historyCoverage(bounds.dayStart, bounds.dayEnd, at)) : !!row?.complete;
+    return cloud.coverageRequired ? coversHistory(row, historyCoverage(bounds.dayStart, bounds.dayEnd, at, serverClock.offset())) : !!row?.complete;
   }, [cloud, durable, scope, localByDog, cutoff, publicationRevision, retainedProof, sameProofIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
   // What the last physical proof read says, ignoring this screen's in-memory
   // "downloading" overrides: whether every dog's stored proof still covers
   // `at`. A failed read or a withdrawn/evicted proof answers false.
   const provenAt = useCallback((day, at) => {
     if (!enabled || !cloud?.coverageRequired || durable.scope !== scope || !Array.isArray(durable.read)) return false;
-    const bounds = dayBounds(day), needed = historyCoverage(bounds.dayStart, bounds.dayEnd, at);
+    const bounds = dayBounds(day), needed = historyCoverage(bounds.dayStart, bounds.dayEnd, at, serverClock.offset());
     return (Array.isArray(slaveId) ? slaveId : [slaveId]).every(id =>
       coversHistory(durable.read.find(row => row.slave_id === id && row.day === day), needed));
   }, [enabled, cloud, durable, scope, slaveId]);
@@ -283,7 +284,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
     completenessEpoch.current += 1;
     setDownload({ scope, day, cutoff: at, status: 'downloading', id });
     const { dayStart, dayEnd } = dayBounds(day);
-    const coverage = historyCoverage(dayStart, dayEnd, at);
+    // The proof is cut on the server's clock (HistoryCoverage); the download
+    // uses the same offset, so what it proves is what this screen checks.
+    const serverOffset = serverClock.offset();
+    const coverage = historyCoverage(dayStart, dayEnd, at, serverOffset);
     const subjects = Array.isArray(slaveId) && localByDog ? slaveId.filter(dogId => !completeFor(dogId, day, at)) : slaveId;
     const requestedIds = Array.isArray(subjects) ? subjects : [subjects];
     setDurable(current => ({ scope, revision: publication.current, read: current.scope === scope ? current.read : null, states: [
@@ -301,7 +305,7 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
         ] }));
       }
     };
-    Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, cutoff: at, signal: controller.signal, onDogEnd }))
+    Promise.resolve().then(() => cloud.download({ slaveId: subjects, dayStart, dayEnd, cutoff: at, serverOffset, signal: controller.signal, onDogEnd }))
       .then(() => {
         if (!alive.current || downloadSeq.current !== id) return;
         completenessEpoch.current += 1;

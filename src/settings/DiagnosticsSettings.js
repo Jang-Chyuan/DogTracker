@@ -19,9 +19,10 @@ export const DIAGNOSTICS_PAGES = Object.freeze([
 
 /**
  * S8 診斷: why dog positions cannot be written (where 「看原因」 leads), the
- * three data pages, and per dog the environment model's last result and the
- * moving/still speed buffer (only here: the live map shows neither). `page`
- * is DiagnosticsModel.diagnosticsPage.
+ * three data pages, per dog the environment model's last result and the
+ * moving/still speed buffer (only here: the live map shows neither), and the
+ * server clock's offset (ServerClock). `page` is
+ * DiagnosticsModel.diagnosticsPage.
  */
 export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = true }) {
   const settingsStyles = useStyles(getSettingsStyles);
@@ -87,6 +88,19 @@ export default function DiagnosticsSettings({ page, onOpen, onHide, canHide = tr
         </GroupCard>
       )}
       <Text style={styles.footnote}>{t("c963")}</Text>
+      {page.serverClock && <>
+        <GroupTitle>{t('c1390')}</GroupTitle>
+        <GroupCard flat>
+          <View
+            testID="diagnostics-server-clock"
+            style={styles.dog}
+            accessible
+            accessibilityLabel={[t('c1391'), page.serverClock.value, page.serverClock.detail].filter(Boolean).join('，')}
+          >
+            <Line label={t('c1391')} value={page.serverClock.value} extra={[page.serverClock.detail]} />
+          </View>
+        </GroupCard>
+      </>}
       {canHide && <GroupCard flat>
         <ListRow
           testID="diagnostics-hide"

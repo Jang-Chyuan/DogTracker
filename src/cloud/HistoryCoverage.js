@@ -2,9 +2,17 @@
 // rows. Both an empty result and a populated result cover the same interval.
 export const HISTORY_CONTEXT_BEFORE_MS = 30 * 60000;
 export const HISTORY_CONTEXT_AFTER_MS = 2 * 3600000;
-export function historyCoverage(dayStart, dayEnd, cutoff) {
+// `cutoff` is this phone's clock. `received_before` bounds the cloud's
+// received_at, which is the server's clock: it is cut at the same moment on
+// the server's clock (`serverOffset`, ServerClock: server − phone). A phone
+// running fast would otherwise prove rows "received" up to a time the server
+// has not reached yet, and the next download's tail would start past rows the
+// server receives meanwhile (2026-10-15). range_start/range_end bound the
+// day's own times and stay on the day's (this phone's) clock.
+export function historyCoverage(dayStart, dayEnd, cutoff, serverOffset = 0) {
+  const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
   return { range_start: dayStart, range_end: Math.min(dayEnd, cutoff),
-    received_before: Math.min(dayEnd + HISTORY_CONTEXT_AFTER_MS, cutoff) };
+    received_before: Math.min(dayEnd + HISTORY_CONTEXT_AFTER_MS, cutoff + offset) };
 }
 export function coversHistory(row, needed) {
   return !!row?.complete && Number.isFinite(row.range_start) && Number.isFinite(row.range_end)
