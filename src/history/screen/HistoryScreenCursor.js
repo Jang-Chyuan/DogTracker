@@ -6,6 +6,8 @@ import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
 import { phoneDisplayLocations, phoneStayAtTime } from '../PhoneStayDisplayAnchors';
 
+const MINUTE = 60000;
+
 /**
  * The cursor's two lines (DESIGN.md「游標和標籤」, 2026-10-14): its time, then
  * the list row it is in, in the list's words — 「停留 2・28 分」 (an
@@ -30,7 +32,11 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
     : model.locations.find(n => ['stop', 'indoor'].includes(n.type) && time >= n.start && time <= n.end)
       || phoneStayAtTime(model.displayStays, time);
   // The stay's minutes as its list row shows them (a folded short break counts).
-  const minutes = stay && listDuration(shownStayDurationMs(model.nodes, stay));
+  // A stay's first minute is 「停留 不到 1 分」, never 「停留 0 分」, as the list's
+  // 「停 不到 1 分」 (2026-10-15).
+  const shownMs = stay && shownStayDurationMs(model.nodes, stay);
+  const minutes = stay && (stay.type === 'stop' && Math.round(Math.max(0, shownMs || 0) / MINUTE) === 0
+    ? t('c1276') : listDuration(shownMs));
   // The number the list shows for this stay (start / end stays have none).
   const number = stay?.type === 'stop' && row?.type === 'stop' ? shownNumberAt(model.nodes, time) : null;
   if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })

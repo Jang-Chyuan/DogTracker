@@ -563,3 +563,56 @@ test('thinning a full day of several dogs: 400 000 points, no argument-limit cra
     times: [{ label: '08:00', end: true, time: 1, latitude: 24.98, longitude: 121.3 + shift }] });
   expect(() => thinExportTimes([layer(0), layer(0.01)])).not.toThrow();
 });
+
+// 2026-10-15: the export took the range from the detected departure, so a
+// morning at home before it was not in the files. Undragged, it is the whole
+// day (00:00 to the day's end, or to now today); a dragged range as shown.
+describe('the range an export takes', () => {
+  const { exportView } = require('../src/mapHistory/useHistoryExport');
+  const MORNING = [{ stay: 120 }, { walk: 20 }, { stay: 15 }, { walk: 10 }];
+  const rows = dogRows(6, legs(MORNING, { from: -120 }));
+  test('not dragged: the whole day, its first stay at 06:00 in the files', () => {
+    const day = dayOf([[6, rows]]);
+    expect(day.range.start).toBeGreaterThan(at(-120));
+    const { day: whole, range } = exportView({ dayModel: day, range: day.range, manual: false });
+    expect(range.start).toBe(DAY);
+    const snapshot = buildExportSnapshot({ day: whole, range, subject: 'dog', look });
+    expect(snapshot.since).toBe(DAY);
+    expect(snapshot.subjects[0].timeline[0]).toMatchObject({ kind: 'place', type: 'stop', start: at(-120) });
+    expect(snapshot.until).toBe(rows[rows.length - 1].time);
+    // Built once.
+    expect(day.wholeDay()).toBe(whole);
+  });
+  test('dragged: the range as shown', () => {
+    const manual = { start: at(-30), end: at(10), following: false };
+    const day = dayOf([[6, rows]], { manual });
+    const view = exportView({ dayModel: day, range: day.range, manual: true });
+    expect(view.day).toBe(day);
+    expect(view.range).toBe(day.range);
+    expect(view.range.start).toBe(at(-30));
+  });
+  test('today: 00:00 to now', () => {
+    const now = rows[rows.length - 1].time + 2 * MINUTE;
+    const day = dayOf([[6, rows]], { today: true, now, following: true });
+    const { range } = exportView({ dayModel: day, range: day.range, manual: false });
+    expect(range.start).toBe(DAY);
+    expect(range.end).toBeGreaterThanOrEqual(rows[rows.length - 1].time);
+  });
+  test('the window\'s title says the whole day', async () => {
+    const day = dayOf([[6, rows]]);
+    const screen = { dayModel: day, range: day.range, manual: false, subject: 'dog', look };
+    let state;
+    function Probe() { state = useHistoryExport({ screen, exporter: fakeExporter(), now: () => DAY + 5000 }); return null; }
+    let renderer;
+    await act(async () => {
+      renderer = Renderer.create(<AddressLookupContext.Provider value={{ lookupAddresses: async points => points.map(() => null) }}>
+        <Probe /></AddressLookupContext.Provider>);
+    });
+    expect(state.range).toBe(day.range);
+    act(() => state.open());
+    expect(state.range.start).toBe(DAY);
+    const { exportTitle } = require('../src/mapHistory/HistoryExportSheet');
+    expect(exportTitle(state.range)).toMatch(/^匯出 00:00–/);
+    act(() => renderer.unmount());
+  });
+});
