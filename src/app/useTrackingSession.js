@@ -42,7 +42,19 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
       (...args) => controlsRef.current?.cloudCommand(method, args) ??
         Promise.reject(new Error(t("c487"))),
     ]),
-  ), installLatestReadinessGate(gate) {
+  ),
+  // A manual history download's own commands (runManual, HistoryCloud): its
+  // lease was admitted through the archive-priority gate when it started, and
+  // it keeps running across a leave/return of the app. Its later commands
+  // must not wait at that gate again: in the background the gate is never
+  // ready, so they used to fail with 「下載已取消」 after its 10-second budget
+  // or at the return, with the lease still valid (#192). `isCurrent` is the
+  // lease; a command after it ended is refused.
+  leasedCommands(isCurrent) {
+    return Object.fromEntries(CLOUD_DATABASE_METHODS.map(method => [method,
+      (...args) => controlsRef.current?.cloudCommand(method, args, isCurrent) ??
+        Promise.reject(new Error(t("c487")))]));
+  }, installLatestReadinessGate(gate) {
     const previous = latestPriority.current;
     latestPriority.current = gate;
     if (previous !== gate) previous?.close();
@@ -330,14 +342,15 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
           commands.add(task);
           return task.finally(() => commands.delete(task));
         },
-        cloudCommand(method, args) {
+        cloudCommand(method, args, lease = null) {
           const latest = ['initializeLatest', 'readLatestSnapshot', 'publishLatestSnapshot'].includes(method);
           const local = ['loadRangeState', 'saveRangeState'].includes(method)
             || (['latestStatusRows', 'holdRows'].includes(method) && !args[0]);
           const readiness = latest ? initializeLatest : local
             ? () => initialization.real.then(() => initialLocalAttempt).then(initializeLatest) : initializeCloud;
           const task = readiness().then(async () => {
-            if (!latest && !local) await awaitArchivePriority(typeof args[0] === 'string' ? args[0] : undefined);
+            if (lease) { if (!lease()) throw new Error(t("c576")); }
+            else if (!latest && !local) await awaitArchivePriority(typeof args[0] === 'string' ? args[0] : undefined);
             if (disposed) throw new Error(t("c483"));
             return ['initialize', 'initializeLatest'].includes(method) ? undefined : databases.cloud[method](...args);
           });
