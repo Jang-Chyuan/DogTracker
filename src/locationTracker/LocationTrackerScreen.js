@@ -13,7 +13,7 @@ import {
 import { LoadState, PillButton, getDataStyles } from '../settings/DataTable';
 import { getSettingsStyles } from '../settings/SettingsUI';
 import { ROUTE_RETENTION_DAYS, retentionStartDay } from '../database/LocalRetention';
-import { shortDate } from '../history/screen/HistoryCalendar';
+import { longDate } from '../settings/useLocalRetention';
 import { useLocationTracker } from './useLocationTracker';
 
 const motionLabel = state =>
@@ -51,8 +51,8 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
       contentContainerStyle={settingsStyles.content}
     >
       <Text style={dataStyles.hint}>
-        {t("c1400", { value: formatCount(tracker.total),
-          date: shortDate(retentionStartDay(Date.now(), ROUTE_RETENTION_DAYS)), page: tracker.page })}
+        {t("c1402", { value: formatCount(tracker.total),
+          date: longDate(retentionStartDay(Date.now(), ROUTE_RETENTION_DAYS)), page: tracker.page })}
       </Text>
       <View style={dataStyles.buttons}>
         <PillButton title={t("c703")} onPress={tracker.refresh} />

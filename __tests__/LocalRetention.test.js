@@ -6,7 +6,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import {
   DOG_TOTAL_CAP, DOG_RECORD_FLOOR, DOG_RETENTION_DAYS, RETENTION_BATCH, RETENTION_SQL,
-  ROUTE_RECORD_CAP, ROUTE_RETENTION_DAYS, pruneDogStatus, readLocalRetention, retentionCutoff, retentionStartDay,
+  ROUTE_RECORD_CAP, ROUTE_RETENTION_DAYS, dogCapSql, pruneDogStatus, readLocalRetention, retentionCutoff, retentionStartDay,
 } from '../src/database/LocalRetention';
 import { retentionLabels } from '../src/settings/useLocalRetention';
 
@@ -37,8 +37,16 @@ test('the phone and the JS fallback use the same numbers and statements', () => 
     dogNthNewest: kotlinString('DOG_NTH_NEWEST_SQL'), dogDelete: kotlinString('DOG_DELETE_SQL'),
     dogCount: kotlinString('DOG_COUNT_SQL'), dogNewestTime: kotlinString('DOG_NEWEST_TIME_SQL'),
     dogOldest: kotlinString('DOG_OLDEST_SQL'),
+    dogCapHead: kotlinString('DOG_CAP_HEAD'), dogCapTerm: kotlinString('DOG_CAP_TERM'),
+    dogCapTail: kotlinString('DOG_CAP_TAIL'),
     routeNewestId: kotlinString('ROUTE_NEWEST_ID_SQL'), routeDelete: kotlinString('ROUTE_DELETE_SQL'),
+    // 記錄清單's 「已存約 N 筆」 reads the same two ends.
+    routeEnds: JSON.parse(trackerSource.match(/const val SPAN_SQL = ("[^\n]+")/)[1]),
   }).toEqual(RETENTION_SQL);
+  expect(kotlin).toMatch(/DOG_CAP_HEAD \+ List\(count\) \{ DOG_CAP_TERM \}\.joinToString\(" OR "\) \+ DOG_CAP_TAIL/);
+  expect(dogCapSql(2)).toBe(`${RETENTION_SQL.dogCapHead}${RETENTION_SQL.dogCapTerm} OR ${RETENTION_SQL.dogCapTerm}${RETENTION_SQL.dogCapTail}`);
+  // A year of my route, 30 days of the dogs (使用者 2026-10-15).
+  expect([ROUTE_RETENTION_DAYS, ROUTE_RECORD_CAP, DOG_RETENTION_DAYS]).toEqual([365, 4000000, 30]);
   // No per-row trims are left in the writers' transactions.
   expect(trackerSource).not.toMatch(/OFFSET 80000|DELETE FROM myLocationTracker WHERE id IN/);
   const store = fs.readFileSync(path.join(__dirname, '../android/app/src/main/java/com/dogtracker/DogStatusStore.kt'), 'utf8');
@@ -46,6 +54,7 @@ test('the phone and the JS fallback use the same numbers and statements', () => 
 });
 
 test('a window is whole local days, today included', () => {
+  expect(retentionStartDay(NOW, 365)).toBe('2025-10-16');
   expect(retentionStartDay(NOW, 30)).toBe('2026-09-16');
   expect(retentionStartDay(NOW, 7)).toBe('2026-10-09');
   expect(retentionCutoff(NOW, 7)).toBe(new Date(2026, 9, 9).getTime());
@@ -53,8 +62,8 @@ test('a window is whole local days, today included', () => {
   expect(retentionStartDay(new Date(2026, 9, 14, 23, 59, 59, 999).getTime(), 1)).toBe('2026-10-14');
   // 設定 says the first day kept, in the date row's form.
   expect(retentionLabels(null, NOW)).toEqual({
-    route: '只存在這支手機，保留到 9/16（最近 30 天）',
-    dogs: '這支手機收到的保留到 10/09（最近 7 天）；很久沒收到的狗留著最後的位置',
+    route: '只存在這支手機，保留到 2025/10/16（最近 1 年）',
+    dogs: '這支手機收到的保留到 9/16（最近 30 天）；很久沒收到的狗留著最後的位置',
   });
 });
 
@@ -80,13 +89,13 @@ function routeDatabase() {
   return { db, add: time => insert.run(time, time, 25, 121, 5, null, null, null) };
 }
 
-test('my route: rows before the 30th day go, the window stays whole (the first sweep after the update)', async () => {
+test('my route: rows before the 365th day go, the window stays whole', async () => {
   const { db, add } = routeDatabase();
   try {
     const cutoff = retentionCutoff(NOW, ROUTE_RETENTION_DAYS);
     db.sqlite.exec('BEGIN');
-    // An old database: 80,000 rows over 40 days (the old cap), every 43 s.
-    for (let i = 0; i < 80000; i += 1) add(NOW - 40 * DAY + i * 43200);
+    // 80,000 rows over 400 days, one every 432 s.
+    for (let i = 0; i < 80000; i += 1) add(NOW - 400 * DAY + i * 432000);
     add(cutoff - 1);
     add(cutoff);
     db.sqlite.exec('COMMIT');
@@ -106,14 +115,16 @@ test('my route: the cap keeps the newest rows as written, whatever their time', 
     db.sqlite.exec('BEGIN');
     // Written while the clock ran a day ahead, then the cap's worth of rows.
     add(NOW + DAY);
-    for (let i = 0; i < ROUTE_RECORD_CAP; i += 1) add(NOW - 1000);
+    db.sqlite.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+      INSERT INTO myLocationTracker (recorded_at, location_at, latitude, longitude) SELECT ?, ?, 25, 121 FROM n`)
+      .run(ROUTE_RECORD_CAP, NOW - 1000, NOW - 1000);
     db.sqlite.exec('COMMIT');
     await sweepRoute(db, NOW);
     expect(db.sqlite.prepare('SELECT COUNT(*) n, MIN(id) first, MAX(recorded_at) newest FROM myLocationTracker').get())
       .toEqual({ n: ROUTE_RECORD_CAP, first: 2, newest: NOW - 1000 });
     // At the cap, 設定 says the day of the oldest row kept.
     db.sqlite.prepare('UPDATE myLocationTracker SET recorded_at=? WHERE id=2').run(new Date(2026, 9, 1, 8).getTime());
-    expect((await readLocalRetention(db, NOW)).route).toEqual({ days: 30, from: '2026-10-01' });
+    expect((await readLocalRetention(db, NOW)).route).toEqual({ days: 365, from: '2026-10-01' });
   } finally { db.close(); }
 });
 
@@ -124,7 +135,7 @@ async function dogDatabase() {
   return { db, insert, ids: slave => db.sqlite.prepare('SELECT id FROM dog_status WHERE slave_id=? ORDER BY id').all(slave).map(r => r.id) };
 }
 
-test('dogs: 7 days; a quiet dog keeps its newest rows; holes and received-time disorder', async () => {
+test('dogs: 30 days; a quiet dog keeps its newest rows; holes and received-time disorder', async () => {
   const { db, insert, ids } = await dogDatabase();
   try {
     const cutoff = retentionCutoff(NOW, DOG_RETENTION_DAYS);
@@ -182,8 +193,8 @@ test('dogs: above the total cap the oldest rows of any dog go first, never a flo
     expect(ids(10)).toHaveLength(30000);
     expect(ids(9)).toHaveLength(10000);
     expect(ids(7)[0]).toBe(dog7 + 5700);
-    // 設定: the rule says 10/09; the dogs are now kept from 10/10.
-    expect((await readLocalRetention(db, NOW)).dogs).toEqual({ days: 7, from: '2026-10-10' });
+    // 設定: the rule says 9/16; the dogs are now kept from 10/10.
+    expect((await readLocalRetention(db, NOW)).dogs).toEqual({ days: 30, from: '2026-10-10' });
     // Nothing more to take: a second sweep keeps everything.
     expect(await pruneDogStatus(db, NOW)).toBe(0);
   } finally { db.close(); }
@@ -197,7 +208,72 @@ test('dogs: at the cap with nothing the cap may take, the sweep stops', async ()
     for (let i = 0; i < DOG_TOTAL_CAP + 10; i += 1) insert.run(i + 1, new Date(2026, 9, 15, 0).getTime() + i * 50, 3);
     db.sqlite.exec('COMMIT');
     expect(await pruneDogStatus(db, NOW)).toBe(0);
-    expect((await readLocalRetention(db, NOW)).dogs.from).toBe('2026-10-09');
+    expect((await readLocalRetention(db, NOW)).dogs.from).toBe('2026-09-16');
+  } finally { db.close(); }
+});
+
+test('dogs heard at the same time (ids interleaved): the cap still takes a batch a statement', async () => {
+  const { db, insert, ids } = await dogDatabase();
+  try {
+    db.sqlite.exec('BEGIN');
+    let id = 1;
+    // Two dogs heard together from 9/20, a packet each every 4 s (about 12 days).
+    const start = new Date(2026, 8, 20).getTime();
+    const each = DOG_TOTAL_CAP / 2 + 600;
+    for (let i = 0; i < each; i += 1) {
+      insert.run(id++, start + i * 4000, 12);
+      insert.run(id++, start + i * 4000 + 1, 13);
+    }
+    db.sqlite.exec('COMMIT');
+    const statements = [];
+    const counted = { executeAsync: (sql, params) => { statements.push(sql); return db.executeAsync(sql, params); } };
+    expect(await pruneDogStatus(counted, NOW)).toBe(1200);
+    // The 1,200 oldest ids, both dogs alike, in three statements (500, 500, 200).
+    expect(statements.filter(sql => sql.startsWith(RETENTION_SQL.dogCapHead))).toHaveLength(3);
+    expect(ids(12)[0]).toBe(1201);
+    expect(ids(13)[0]).toBe(1202);
+    expect(ids(12)).toHaveLength(each - 600);
+  } finally { db.close(); }
+});
+
+test('the cap and a day of my route walk the rowid, not every takeable row or the whole table', async () => {
+  const { db } = await dogDatabase();
+  const { db: route } = routeDatabase();
+  try {
+    db.sqlite.exec('ANALYZE');
+    const plan = (sqlite, sql) => sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .all(...Array(sql.split('?').length - 1).fill(0)).map(row => row.detail).join(' | ');
+    const cap = plan(db.sqlite, dogCapSql(3));
+    expect(cap).toMatch(/INTEGER PRIMARY KEY \(rowid>\?\)/);
+    expect(cap).not.toMatch(/MULTI-INDEX|TEMP B-TREE/);
+    // HistoryDatabase's phone pages: the time index finds the ids, the pages walk between them.
+    expect(plan(route.sqlite, 'SELECT id FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ? AND id > ? AND id <= ? ORDER BY id LIMIT 2000'))
+      .toMatch(/rowid>\? AND rowid<\?/);
+  } finally { db.close(); route.close(); }
+});
+
+test('a day of my route: every row in the window between its first and last id, then only new ones', async () => {
+  const { db, add } = routeDatabase();
+  try {
+    const history = createHistoryDatabase(db);
+    const day = new Date(2026, 9, 10).getTime();
+    db.sqlite.exec('BEGIN');
+    for (let i = 0; i < 3000; i += 1) add(day - 3 * DAY + i * 1000);
+    // 5,000 rows of the day (three pages), one written while the clock ran a
+    // week behind (a high id dated into the day), rows of later days between.
+    for (let i = 0; i < 5000; i += 1) add(day + 8 * 3600000 + i * 1000);
+    for (let i = 0; i < 3000; i += 1) add(day + 2 * DAY + i * 1000);
+    add(day + 12 * 3600000);
+    db.sqlite.exec('COMMIT');
+    const first = await history.historyDayRows({ subject: 'phone', start: day, end: day + DAY });
+    const inDay = first.rows.filter(row => row.time >= day && row.time < day + DAY);
+    expect(inDay).toHaveLength(5001);
+    // Polling: nothing new, then one new row of the day.
+    const again = await history.historyDayRows({ subject: 'phone', start: day, end: day + DAY, after: first.after });
+    expect(again.rows.filter(row => row.time >= day && row.time < day + DAY)).toHaveLength(0);
+    add(day + 13 * 3600000);
+    const next = await history.historyDayRows({ subject: 'phone', start: day, end: day + DAY, after: again.after });
+    expect(next.rows.filter(row => row.time >= day && row.time < day + DAY)).toHaveLength(1);
   } finally { db.close(); }
 });
 
@@ -205,12 +281,12 @@ test('設定 says the rule\'s day while no cap was reached, also without tables'
   const empty = createMemoryConnection();
   try {
     expect(await readLocalRetention(empty, NOW)).toEqual({
-      route: { days: 30, from: '2026-09-16' }, dogs: { days: 7, from: '2026-10-09' } });
+      route: { days: 365, from: '2025-10-16' }, dogs: { days: 30, from: '2026-09-16' } });
   } finally { empty.close(); }
   const { db, insert } = await dogDatabase();
   try {
-    insert.run(1, NOW - 30 * DAY, 3);
-    expect((await readLocalRetention(db, NOW)).dogs.from).toBe('2026-10-09');
+    insert.run(1, NOW - 40 * DAY, 3);
+    expect((await readLocalRetention(db, NOW)).dogs.from).toBe('2026-09-16');
     expect(await createHistoryDatabase(db).localRetention(NOW)).toEqual(await readLocalRetention(db, NOW));
   } finally { db.close(); }
 });
@@ -221,8 +297,8 @@ test('the calendar\'s days of a dog: one seek a day, the same days as a scan, pr
     const history = createHistoryDatabase(db);
     db.sqlite.exec('BEGIN');
     let id = 1;
-    // 12 days, rows around the clock (and one written while the clock was set back).
-    for (let day = 0; day < 12; day += 1) {
+    // 35 days, rows around the clock (and one written while the clock was set back).
+    for (let day = 0; day < 35; day += 1) {
       for (let i = 0; i < 300; i += 1) insert.run(id++, NOW - day * DAY - i * 287000, 5);
     }
     insert.run(id++, NOW - 40 * DAY, 5);
@@ -237,6 +313,6 @@ test('the calendar\'s days of a dog: one seek a day, the same days as a scan, pr
     const days = await history.historyDays({ subject: 'dog', slaveId: 5 });
     expect(days).toEqual(scan());
     expect(days[0]).toBe(retentionStartDay(NOW, DOG_RETENTION_DAYS));
-    expect(days).toHaveLength(7);
+    expect(days).toHaveLength(30);
   } finally { db.close(); }
 });
