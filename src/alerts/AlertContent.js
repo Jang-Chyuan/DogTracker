@@ -17,8 +17,11 @@ export function alertTarget(event) {
 }
 
 // Keep the actual elapsed minutes, including durations over an hour/day.
+// No duration when the age is not known: a position stamped in the future
+// (DogFreshness `suspect`) reads 「豆豆：沒有新位置」.
 function duration(ms) {
-  return t("c469", { minutes: Math.max(0, Math.floor((Number(ms) || 0) / 60000)) });
+  if (ms == null || !Number.isFinite(Number(ms))) return '';
+  return t("c469", { minutes: Math.max(0, Math.floor(Number(ms) / 60000)) });
 }
 
 const receiverName = number => (number != null ? t('c177', { number: number }) : t('c075'));

@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { SUSPECT_AHEAD_MS } from '../cloud/ServerClock';
 // Has a dog had a new position lately? One judgement ("未更新" in the design,
 // written 「沒有新位置」 in the app) shared by the live map (grey face, red
 // "!"), the dog's card (位置 row) and the alerts. Pure: no React, no SQLite.
@@ -28,6 +29,10 @@ import { t } from '../i18n';
 // - A dog that never had a position is not on the map at all (drawn: false).
 // - There is no upper age limit: a position older than 24 hours stays on the
 //   map, grey.
+// - Downloaded times are on this phone's clock (ServerClock). A time more
+//   than SUSPECT_AHEAD_MS (3 min) ahead of the clock it is judged against is not
+//   believed: the dog counts as stale (`suspect`), not as fresh for as long
+//   as the skew lasts.
 
 export const STALE_AFTER_MS = 10 * 60000;
 // Cloud downloads failing for longer than this: judge cloud dogs by now.
@@ -75,6 +80,13 @@ export function dogFreshness(dog, { now = Date.now(), cloud = null, pauses = [] 
     return { drawn: !!dog?.coordinate, stale: false, basis, source, lastAt: null, ageMs: null };
   }
   const reference = source === 'cloud' ? cloudClock(cloud, now) : now;
+  // A time from the future of the clock it is judged against comes from a
+  // clock running ahead (a teammate's phone, the server, or this phone's own
+  // clock set back since): it says nothing about how fresh the position is,
+  // so it is not believed and never counts as fresh (F5).
+  if (lastAt - reference > SUSPECT_AHEAD_MS) {
+    return { drawn: true, stale: true, suspect: true, basis, source, lastAt, ageMs: null };
+  }
   const ageMs = Math.max(0, reference - lastAt);
   if (source === 'cloud') return { drawn: true, stale: ageMs > STALE_AFTER_MS, basis, source, lastAt, ageMs };
   // The time the stale clock runs from: the position (or packet), moved on to

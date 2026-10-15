@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { useEffect, useRef, useState } from 'react';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { distanceMeters, fixQuality, HOLD_CONFIG } from '../placement/IndoorHold';
+import { cloudRowOnPhoneClock, serverClock } from './ServerClock';
 
 export const POLL_MS = 10000;
 // The latest rows are read from the start of what this phone stores.
@@ -252,7 +253,11 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
               const changed = snapshot.contexts ? Object.values(snapshot.contexts) : null;
               const context = changed ? changed.flatMap(value => value.rows || []) : snapshot.context || [];
               const seeds = changed ? changed.flatMap(value => value.seeds || []) : snapshot.seeds || [];
-              const normalize = row => ({ ...row, source: 'cloud', time: row.track_at,
+              // On this phone's clock, as the BLE rows they meet (ServerClock):
+              // a server or teammate clock ahead would otherwise make the
+              // range ignore this phone's own newer packets.
+              const offset = serverClock.offset();
+              const normalize = row => ({ ...row, source: 'cloud', time: cloudRowOnPhoneClock(row, offset).track_at,
                 latitude: row.slave_lat, longitude: row.slave_lon });
               const live = new Map([...context, ...(snapshot.packets || [])].map(row => [row.event_id, row]));
               state.store.ingest({ rows: [...live.values()].map(normalize), seeds: seeds.map(normalize) });

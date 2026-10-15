@@ -40,8 +40,9 @@ test('cloud dogs fall back to now before the first download and after 10 minutes
   const failing = since => ({ lastDownloadAt: NOW - 30 * MINUTE, failingSince: NOW - since * MINUTE });
   expect(cloudClock(failing(10), NOW)).toBe(NOW - 30 * MINUTE);
   expect(cloudClock(failing(11), NOW)).toBe(NOW);
-  expect(dogFreshness(cloud(25), { now: NOW, cloud: failing(9) }).stale).toBe(false);
-  expect(dogFreshness(cloud(25), { now: NOW, cloud: failing(11) }).stale).toBe(true);
+  // (A fix the last download brought: older than that download.)
+  expect(dogFreshness(cloud(31), { now: NOW, cloud: failing(9) }).stale).toBe(false);
+  expect(dogFreshness(cloud(31), { now: NOW, cloud: failing(11) }).stale).toBe(true);
 });
 
 test('a dog held indoors is timed by its packets, with the source of its newest packet', () => {
