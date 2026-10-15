@@ -1577,20 +1577,24 @@ const FIXTURES = {
       }
     };
     walk(5 * 60, 30);
+    const park = here;
     stand(60);
     round(20, 40);
     stand(5 * 60);
     walk(4 * 60, 120);
+    const corner = here;
     stand(4 * 60);
     round(2, 30);
     stand(4 * 60);
     walk(6 * 60, 200);
-    // Made-up addresses (示範路 is no real road): one long enough to wrap to
-    // two lines, short ones (layout A check: one- and two-line places).
+    // Made-up addresses (示範路 is no real road), by place: the park's long
+    // enough to wrap to two lines, the corner's one line, the others short
+    // (layout A: a one-line and a two-line stay, whatever order they load).
     return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
-      history: historyPage(now), geocoder: { names: [LONG_PLACE.names[0],
-        { line: '330台灣桃園市桃園區民生路120號' }, { line: '330台灣桃園市桃園區中正路50號' },
-        { line: '330台灣桃園市桃園區成功路三段16號' }] } };
+      history: historyPage(now), geocoder: { places: [
+        { ...park, name: LONG_PLACE.names[0] },
+        { ...corner, name: { line: '330台灣桃園市桃園區民生路120號' } }],
+      names: [{ line: '330台灣桃園市桃園區中正路50號' }, { line: '330台灣桃園市桃園區成功路三段16號' }] } };
   },
   // A candidate after staying home: show its tentative start, without status copy.
   'history-confirming': now => ({ ...FIXTURES['all-good'](now),
