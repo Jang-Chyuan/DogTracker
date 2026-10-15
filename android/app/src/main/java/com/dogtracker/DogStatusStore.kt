@@ -165,9 +165,9 @@ class DogStatusStore private constructor(private val context: Context) {
     BleUploadQueue.enqueue(db, data, payload, receivedAt)?.let { owner ->
       com.dogtracker.cloud.SearchRelayService.queued(context, owner)
     }
-    val slave = (value(data, listOf("slave_id", "sid")) as? Number)?.toDouble() ?: return
-    if (slave <= 0 || slave > Int.MAX_VALUE || slave % 1.0 != 0.0) return
-    val slaveId = slave.toInt()
+    // The service hands packets over with it as a whole number
+    // (ReceiverMasterId.normalized); read the same way regardless.
+    val slaveId = ReceiverMasterId.slaveOf(data) ?: return
     val previous = lastSaved[slaveId]
     if (previous != null && receivedAt >= previous && receivedAt - previous < 1000) return
     val row = ContentValues().apply {
