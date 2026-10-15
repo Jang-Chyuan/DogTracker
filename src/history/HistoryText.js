@@ -96,6 +96,14 @@ export function sectionText(section) {
 const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
   && Math.round(Math.max(0, stay.displayDurationMs ?? stay.durationMs ?? 0) / MINUTE) === 0;
 
+// 2026-10-15 (user, #200): a stay's own moves are its own — 「停 25 分・45 m」
+// — never a walk's hours later; a stay that did not move (rounded to 0 m)
+// reads as ever.
+const withStayMetres = (text, stay) => {
+  const distance = distanceText(stay?.countedDistanceM || 0);
+  return distance === distanceText(0) ? text : `${text}・${distance}`;
+};
+
 export function nodePill(node) {
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
@@ -112,8 +120,10 @@ export function nodePill(node) {
       return null;
     case 'stop': {
       // Under half a minute shown on its own: 「停 不到 1 分」 (as c1276 on rows).
-      const stay = t('c127', { duration: noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs) });
-      return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
+      const duration = noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs);
+      // 2026-10-15 (user, #200): a walk round one place is 「在附近走動 1 時 49 分」.
+      const stay = node.wandering ? t('c1403', { duration }) : t('c127', { duration });
+      return { text: withStayMetres(node.continuesPreviousDay ? t('c332') : stay, node), tone: 'stay' };
     }
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
@@ -249,7 +259,7 @@ export function placeSpeech(node, title) {
   const pill = nodePill(node);
   const lead =
     node.type === 'stop'
-      ? t('c136', { duration: node.number ?? '' })
+      ? (node.wandering ? t('c1404', { number: node.number ?? '' }) : t('c136', { duration: node.number ?? '' })).trim()
       : node.type === 'switch'
       ? t("c663", { number: node.number })
       : node.type === 'indoor'
@@ -263,8 +273,12 @@ export function placeSpeech(node, title) {
   // A stay of under a minute is read 「不到 1 分鐘」, as its pill (2026-10-15:
   // TalkBack said 「0 分鐘」 under 「停 不到 1 分」).
   const minutes = !end ? '' : noMinutes(node) ? t('c1276') : t("c664", { value: Math.round(length / 60000) });
+  // A stay's own metres (#200), as its pill.
+  const stay = node.terminalStay ?? (node.type === 'stop' ? node : null);
+  const metres = stay && distanceText(stay.countedDistanceM || 0) !== distanceText(0)
+    ? distanceText(stay.countedDistanceM) : '';
   return spoken(
-    [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, interruptionText(node)]
+    [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, metres, interruptionText(node)]
       .filter(Boolean)
       .join('，'),
   );

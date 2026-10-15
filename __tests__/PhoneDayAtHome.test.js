@@ -6,7 +6,7 @@ import { historyStops } from '../src/history/HistoryStops';
 import { rangeEndRows, timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
-import { timelineClockMismatches } from '../test-support/TimelineClocks';
+import { listedMetres, timelineClockMismatches } from '../test-support/TimelineClocks';
 
 // 2026-10-14 (user): a whole day at home read as five unnumbered pieces and
 // 「走路 4 分・240 m」 — a lift down and back up. Invented rows only: metres
@@ -83,8 +83,8 @@ function day(script, { from = clock(6), every = 10, seed = 7 } = {}) {
 const timeline = (rows, options = {}) => historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone',
   dayStart, dayEnd, today: true, now: rows.at(-1).time + SECOND, timezone: 'Asia/Taipei', ...options });
 const foot = n => n.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
-const rowMetres = model => timelinePresentation(model.nodes).filter(foot)
-  .reduce((sum, n) => sum + n.countedDistanceM, 0);
+// The rows' metres (#200: a stay's own moves are on its row).
+const rowMetres = model => listedMetres(model.nodes);
 const engineMetres = (rows, batch = 50) => {
   const engine = createTodayRouteEngine({ dayStart });
   let metres = 0;
@@ -241,12 +241,17 @@ describe('the summary is the sum of the rows', () => {
 
   test('pottering about the last stay on fine fixes keeps its metres in a row', () => {
     // A walk there, then a real move the visit's circle keeps inside, and no
-    // walk after it: its metres go to a walk row (here the one that arrived).
+    // walk after it: its metres are in a row. 2026-10-15 (user, #200): the
+    // stay's own (「停 N 分・M m」), not the walk that arrived 20 min before.
     const rows = day([['walk', 300, { step: 11 }], ['home', 1200], ['walk', 30, { step: 3, every: 5 }],
       ['walk', 30, { step: -3, every: 5 }], ['home', 1200]]);
     const model = timeline(rows);
     expect(model.distanceM).toBeGreaterThan(340);
     expect(rowMetres(model)).toBeCloseTo(model.distanceM, 6);
+    const shown = timelinePresentation(model.nodes);
+    const stay = shown.at(-1).terminalStay ?? shown.at(-1);
+    expect(stay.countedDistanceM).toBeGreaterThan(20);
+    expect(shown.filter(foot).reduce((sum, n) => sum + n.countedDistanceM, 0)).toBeLessThan(340);
     expect(engineMetres(rows)).toBeCloseTo(model.distanceM, 6);
   });
 });
