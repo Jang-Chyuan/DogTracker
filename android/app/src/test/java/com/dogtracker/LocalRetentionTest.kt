@@ -24,6 +24,10 @@ class LocalRetentionTest {
         LocalRetention.NEXT_DOG_SQL -> dogs!!.filter { it.slave > (args[0] as Long) }.minOfOrNull { it.slave }
         LocalRetention.DOG_NTH_NEWEST_SQL -> dogs!!.filter { it.slave == args[0] as Long }.sortedByDescending { it.id }
           .getOrNull((args[1] as Long).toInt())?.id
+        LocalRetention.DOG_COUNT_SQL -> dogs!!.size.toLong()
+        LocalRetention.DOG_NEWEST_TIME_SQL -> dogs!!.filter { it.slave == args[0] as Long }.maxOfOrNull { it.time }
+        LocalRetention.DOG_OLDEST_SQL -> dogs!!.filter { it.slave == args[0] as Long && it.id <= args[1] as Long && it.time < args[2] as Long }
+          .minOfOrNull { it.id }
         else -> error("unexpected $sql")
       }
     }
@@ -34,7 +38,7 @@ class LocalRetentionTest {
         LocalRetention.DOG_DELETE_SQL -> dogs!! to { r: Row -> r.slave == args[0] as Long && r.id <= args[1] as Long && r.time < args[2] as Long }
         else -> error("unexpected $sql")
       }
-      val gone = table.filter(match).take((args.last() as Long).toInt())
+      val gone = table.filter(match).sortedBy { it.id }.take((args.last() as Long).toInt())
       table.removeAll(gone.toSet())
       return gone.size
     }
@@ -95,15 +99,29 @@ class LocalRetentionTest {
     assertEquals(LocalRetention.DOG_FLOOR + 5, sql.dogs!!.count { it.slave == 3L }.toLong())
   }
 
-  @Test fun eachDogIsCappedOnItsOwn() {
+  @Test fun aboveTheTotalCapTheOldestOfAnyDogGoFirstButNeverAFloorOrANewestDay() {
     val sql = FakeSql(route = null)
+    val today = LocalRetention.cutoff(now, 1, taipei)
     var id = 0L
-    repeat(LocalRetention.DOG_CAP.toInt() + 700) { sql.dogs!! += Row(++id, 4, now - 1_000) }
-    repeat(3) { sql.dogs!! += Row(++id, 5, now - 1_000) }
-    LocalRetention.sweep(sql, now, taipei)
-    assertEquals(LocalRetention.DOG_CAP, sql.dogs!!.count { it.slave == 4L }.toLong())
-    assertEquals(701L, sql.dogs!!.filter { it.slave == 4L }.minOf { it.id })
-    assertEquals(3, sql.dogs!!.count { it.slave == 5L })
+    // Dog 8: quiet, exactly its floor, weeks old. Dog 10: oldest ids, all today.
+    repeat(LocalRetention.DOG_FLOOR.toInt()) { sql.dogs!! += Row(++id, 8, today - 25 * day + it) }
+    repeat(30_000) { sql.dogs!! += Row(++id, 10, today + it) }
+    repeat(5_000) { sql.dogs!! += Row(++id, 9, today - 6 * day + it) }
+    val dog7 = id + 1
+    repeat(455_700) { sql.dogs!! += Row(++id, 7, today - 5 * day + it * 1_000L) }
+    repeat(10_000) { sql.dogs!! += Row(++id, 9, today + 40_000 + it) }
+    val swept = LocalRetention.sweep(sql, now, taipei)
+    assertEquals(10_700L, swept.dogs)
+    assertEquals(LocalRetention.DOG_TOTAL_CAP, sql.dogs!!.size.toLong())
+    assertEquals(LocalRetention.DOG_FLOOR, sql.dogs!!.count { it.slave == 8L }.toLong())
+    assertEquals(30_000, sql.dogs!!.count { it.slave == 10L })
+    assertEquals(10_000, sql.dogs!!.count { it.slave == 9L })
+    assertEquals(dog7 + 5_700, sql.dogs!!.filter { it.slave == 7L }.minOf { it.id })
+    // One more packet: the next sweep takes dog 7's oldest row, not dog 10's.
+    sql.dogs!! += Row(++id, 10, today + 1)
+    assertEquals(1L, LocalRetention.sweep(sql, now, taipei).dogs)
+    assertEquals(dog7 + 5_701, sql.dogs!!.filter { it.slave == 7L }.minOf { it.id })
+    assertEquals(30_001, sql.dogs!!.count { it.slave == 10L })
   }
 
   @Test fun missingTablesAreSkipped() {

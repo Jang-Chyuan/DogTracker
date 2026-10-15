@@ -9,11 +9,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * packets this phone received 7 days, both counted in whole local days (the
  * history's calendar never offers a day that is only half there). A safety
  * cap of rows stays under each: a route recorded at one fix a second all day,
- * a dog heard around the clock.
+ * dogs heard around the clock.
  *
  * A dog not heard for longer keeps its newest [DOG_FLOOR] rows whatever their
  * age (as before #198, when every dog kept exactly that many): its last
- * position, battery and card stay on the map.
+ * position, battery and card stay on the map. All dogs together keep at most
+ * [DOG_TOTAL_CAP] rows: above it the oldest go first, whichever dog's, but
+ * never a dog's newest [DOG_FLOOR] rows nor its newest day.
  *
  * Pruning runs on its own thread ([schedule]: 30 s after the store opens, then
  * at most once an hour while BLE or the route write), [BATCH] rows a
@@ -31,7 +33,8 @@ object LocalRetention {
   const val ROUTE_CAP = 700_000L
   const val DOG_DAYS = 7
   const val DOG_FLOOR = 10_000L
-  const val DOG_CAP = 200_000L
+  /** All dogs' rows together (about 380 MB at 766 B a row). */
+  const val DOG_TOTAL_CAP = 500_000L
   const val BATCH = 500L
   const val SWEEP_EVERY_MS = 60 * 60_000L
   const val FIRST_SWEEP_DELAY_MS = 30_000L
@@ -41,7 +44,11 @@ object LocalRetention {
   const val NEXT_DOG_SQL = "SELECT MIN(slave_id) FROM dog_status WHERE slave_id > ?"
   /** The dog's (OFFSET+1)th newest row: it and every older row are beyond the newest OFFSET. */
   const val DOG_NTH_NEWEST_SQL = "SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?"
-  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? LIMIT ?)"
+  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT ?)"
+  const val DOG_COUNT_SQL = "SELECT COUNT(*) FROM dog_status"
+  const val DOG_NEWEST_TIME_SQL = "SELECT MAX(received_at) FROM dog_status WHERE slave_id = ?"
+  /** The dog's oldest row the cap may take (below its floor and before its newest day). */
+  const val DOG_OLDEST_SQL = "SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT 1"
   const val ROUTE_NEWEST_ID_SQL = "SELECT MAX(id) FROM myLocationTracker"
   // The cap counts rows as written (id, #194): a row dated ahead by a clock
   // later set back cannot outlive the newer ones.
@@ -80,16 +87,68 @@ object LocalRetention {
     }
     if (sql.first(TABLE_SQL, "dog_status") != null) {
       val cut = cutoff(now, DOG_DAYS, zone)
-      var after = 0L
-      while (true) {
-        val slave = sql.first(NEXT_DOG_SQL, after) ?: break
-        if (slave <= after) break
-        after = slave
-        sql.first(DOG_NTH_NEWEST_SQL, slave, DOG_CAP)?.let { dogs += drain(sql, DOG_DELETE_SQL, slave, it, Long.MAX_VALUE) }
+      for (slave in dogs(sql)) {
         sql.first(DOG_NTH_NEWEST_SQL, slave, DOG_FLOOR)?.let { dogs += drain(sql, DOG_DELETE_SQL, slave, it, cut) }
       }
+      dogs += capDogs(sql, zone)
     }
     return Swept(route, dogs)
+  }
+
+  private fun dogs(sql: Sql): List<Long> {
+    val found = mutableListOf<Long>()
+    var after = 0L
+    while (true) {
+      val slave = sql.first(NEXT_DOG_SQL, after) ?: return found
+      if (slave <= after) return found
+      found += slave
+      after = slave
+    }
+  }
+
+  /** What the cap may take of one dog: ids up to [throughId], times before [before]. */
+  data class Takeable(val slave: Long, val throughId: Long, val before: Long)
+
+  /**
+   * Each dog's rows the cap may take: never the newest [DOG_FLOOR] (a quiet
+   * dog's last position) nor its newest local day. Null: none.
+   */
+  fun takeable(sql: Sql, slave: Long, zone: TimeZone = TimeZone.getDefault()): Takeable? {
+    val floor = sql.first(DOG_NTH_NEWEST_SQL, slave, DOG_FLOOR) ?: return null
+    val newest = sql.first(DOG_NEWEST_TIME_SQL, slave) ?: return null
+    return Takeable(slave, floor, cutoff(newest, 1, zone))
+  }
+
+  /**
+   * Above [DOG_TOTAL_CAP] rows of all dogs together, the oldest rows go first
+   * (as written, id), whichever dog they belong to, [BATCH] a statement.
+   */
+  private fun capDogs(sql: Sql, zone: TimeZone): Long {
+    var excess = (sql.first(DOG_COUNT_SQL) ?: 0L) - DOG_TOTAL_CAP
+    if (excess <= 0) return 0
+    // Each dog's oldest takeable id, the oldest first.
+    val oldest = mutableMapOf<Long, Long>()
+    val limits = mutableMapOf<Long, Takeable>()
+    for (slave in dogs(sql)) {
+      val limit = takeable(sql, slave, zone) ?: continue
+      sql.first(DOG_OLDEST_SQL, slave, limit.throughId, limit.before)?.let { oldest[slave] = it; limits[slave] = limit }
+    }
+    var removed = 0L
+    while (excess > 0 && oldest.isNotEmpty()) {
+      val (slave, _) = oldest.minByOrNull { it.value }!!
+      val limit = limits.getValue(slave)
+      // Up to just before the next dog's oldest, so the order across dogs holds.
+      val next = oldest.filterKeys { it != slave }.values.minOrNull()
+      val through = if (next == null) limit.throughId else minOf(limit.throughId, next - 1)
+      val gone = sql.change(DOG_DELETE_SQL, slave, through, limit.before, minOf(BATCH, excess)).toLong()
+      removed += gone
+      excess -= gone
+      val again = sql.first(DOG_OLDEST_SQL, slave, limit.throughId, limit.before)
+      if (again == null) oldest.remove(slave) else oldest[slave] = again
+      if (gone == 0L && again != null && (next == null || again < next)) oldest.remove(slave)
+      if (excess > 0) sql.pause()
+    }
+    return removed
   }
 
   private fun drain(sql: Sql, statement: String, vararg args: Any): Long {

@@ -5,7 +5,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import {
-  DOG_RECORD_CAP, DOG_RECORD_FLOOR, DOG_RETENTION_DAYS, RETENTION_BATCH, RETENTION_SQL,
+  DOG_TOTAL_CAP, DOG_RECORD_FLOOR, DOG_RETENTION_DAYS, RETENTION_BATCH, RETENTION_SQL,
   ROUTE_RECORD_CAP, ROUTE_RETENTION_DAYS, pruneDogStatus, readLocalRetention, retentionCutoff, retentionStartDay,
 } from '../src/database/LocalRetention';
 import { retentionLabels } from '../src/settings/useLocalRetention';
@@ -30,11 +30,13 @@ test('the phone and the JS fallback use the same numbers and statements', () => 
   expect(kotlinNumber('ROUTE_CAP')).toBe(ROUTE_RECORD_CAP);
   expect(kotlinNumber('DOG_DAYS')).toBe(DOG_RETENTION_DAYS);
   expect(kotlinNumber('DOG_FLOOR')).toBe(DOG_RECORD_FLOOR);
-  expect(kotlinNumber('DOG_CAP')).toBe(DOG_RECORD_CAP);
+  expect(kotlinNumber('DOG_TOTAL_CAP')).toBe(DOG_TOTAL_CAP);
   expect(kotlinNumber('BATCH')).toBe(RETENTION_BATCH);
   expect({
     table: kotlinString('TABLE_SQL'), nextDog: kotlinString('NEXT_DOG_SQL'),
     dogNthNewest: kotlinString('DOG_NTH_NEWEST_SQL'), dogDelete: kotlinString('DOG_DELETE_SQL'),
+    dogCount: kotlinString('DOG_COUNT_SQL'), dogNewestTime: kotlinString('DOG_NEWEST_TIME_SQL'),
+    dogOldest: kotlinString('DOG_OLDEST_SQL'),
     routeNewestId: kotlinString('ROUTE_NEWEST_ID_SQL'), routeDelete: kotlinString('ROUTE_DELETE_SQL'),
   }).toEqual(RETENTION_SQL);
   // No per-row trims are left in the writers' transactions.
@@ -156,21 +158,46 @@ test('dogs: 7 days; a quiet dog keeps its newest rows; holes and received-time d
   } finally { db.close(); }
 });
 
-test('dogs: each dog is capped on its own, and 設定 says the capped dog\'s first day', async () => {
+test('dogs: above the total cap the oldest rows of any dog go first, never a floor or a newest day', async () => {
   const { db, insert, ids } = await dogDatabase();
   try {
+    const at = (day, hour) => new Date(2026, 9, day, hour).getTime();
     db.sqlite.exec('BEGIN');
     let id = 1;
-    const start = new Date(2026, 9, 12, 6).getTime();
-    for (let i = 0; i < DOG_RECORD_CAP + 700; i += 1) insert.run(id++, start + i * 1000, 7);
-    for (let i = 0; i < 3; i += 1) insert.run(id++, NOW - 1000, 8);
+    // Dog 8: quiet since 9/20, exactly its floor. Dog 10: oldest ids, all today
+    // (its newest day). Dog 9: a few early rows, then today. Dog 7: the bulk.
+    for (let i = 0; i < DOG_RECORD_FLOOR; i += 1) insert.run(id++, new Date(2026, 8, 20, 8).getTime() + i * 1000, 8);
+    for (let i = 0; i < 30000; i += 1) insert.run(id++, at(15, 0) + i * 1000, 10);
+    for (let i = 0; i < 5000; i += 1) insert.run(id++, at(9, 6) + i * 1000, 9);
+    const dog7 = id;
+    for (let i = 0; i < 455700; i += 1) insert.run(id++, at(10, 0) + i * 1000, 7);
+    for (let i = 0; i < 10000; i += 1) insert.run(id++, at(15, 7) + i * 1000, 9);
     db.sqlite.exec('COMMIT');
-    await pruneDogStatus(db, NOW);
-    expect(ids(7)).toHaveLength(DOG_RECORD_CAP);
-    expect(ids(7)[0]).toBe(701);
-    expect(ids(8)).toHaveLength(3);
-    // The rule says 10/09; dog 7 is kept only from 10/12 06:11 (its 701st row).
-    expect((await readLocalRetention(db, NOW)).dogs).toEqual({ days: 7, from: '2026-10-12' });
+    const removed = await pruneDogStatus(db, NOW);
+    // 510,700 rows: the 10,700 oldest the cap may take are dog 9's early ones
+    // and dog 7's first; dog 8 (floor) and dog 10 (newest day) keep every row.
+    expect(removed).toBe(10700);
+    expect(db.sqlite.prepare('SELECT COUNT(*) n FROM dog_status').get().n).toBe(DOG_TOTAL_CAP);
+    expect(ids(8)).toHaveLength(DOG_RECORD_FLOOR);
+    expect(ids(10)).toHaveLength(30000);
+    expect(ids(9)).toHaveLength(10000);
+    expect(ids(7)[0]).toBe(dog7 + 5700);
+    // 設定: the rule says 10/09; the dogs are now kept from 10/10.
+    expect((await readLocalRetention(db, NOW)).dogs).toEqual({ days: 7, from: '2026-10-10' });
+    // Nothing more to take: a second sweep keeps everything.
+    expect(await pruneDogStatus(db, NOW)).toBe(0);
+  } finally { db.close(); }
+});
+
+test('dogs: at the cap with nothing the cap may take, the sweep stops', async () => {
+  const { db, insert } = await dogDatabase();
+  try {
+    db.sqlite.exec('BEGIN');
+    // One dog, all today: its newest day.
+    for (let i = 0; i < DOG_TOTAL_CAP + 10; i += 1) insert.run(i + 1, new Date(2026, 9, 15, 0).getTime() + i * 50, 3);
+    db.sqlite.exec('COMMIT');
+    expect(await pruneDogStatus(db, NOW)).toBe(0);
+    expect((await readLocalRetention(db, NOW)).dogs.from).toBe('2026-10-09');
   } finally { db.close(); }
 });
 
