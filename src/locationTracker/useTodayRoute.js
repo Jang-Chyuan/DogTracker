@@ -10,7 +10,9 @@ export const TODAY_ROUTE_POLL_MS = 15000;
 // after 刪除我的路線, shows at once. Each read only asks for rows after the
 // cursor, and the sum is recomputed only when rows arrived.
 export const TODAY_COUNT_POLL_MS = 2000;
-const PAGE = 2000;
+// Rows per read: each page is folded into the route engine in one go on the
+// JS thread (a whole day's 2,000 rows at once took seconds on a slow phone).
+const PAGE = 500;
 
 /**
  * 「今天 x km」: today's recorded route of this phone, read incrementally from
