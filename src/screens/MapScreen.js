@@ -405,6 +405,18 @@ export default function MapScreen({
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ride = useMemo(() => currentRide, [rideKey]);
+  // The cloud rows and packets stay as last accepted while a download
+  // publishes or a return catches up (AtomicDogSnapshot); this phone's own
+  // receiver data (BLE packets, holds, ranges, batteries) and the feed's
+  // point are merged live, so the BLE dog, its card and its alerts never wait
+  // for the cloud.
+  cloudDogs = atomicDogs.current.select({
+    owner: cloudOwner, cloudDogs: incomingCloudDogs,
+    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
+    // Context can advance the engine revision before its reader returns.
+    // A same-generation applied latest remains an atomic live snapshot.
+    success: latestApplied ? incomingCloudDogs?.cloudCommit : completedMapRevision(cloudSync),
+  }).cloudDogs;
   // A dog the live tracker cannot hold from the rows it sees (a cold start's
   // half hour, inside a stay that began last night) is held where and since
   // the history holds it, so the map's 「室內」, the card's 位置 row and the
@@ -451,15 +463,7 @@ export default function MapScreen({
       fixture,
     ],
   );
-  const dogSnapshot = atomicDogs.current.select({
-    owner: cloudOwner, dogs: mergedDogs, cloudDogs,
-    busy: mapDownloadBusy(cloudSync) || !!cloudSync?.getMapPublication?.()?.busy || (!latestApplied && cloudSync?.catchUp?.phase === 'catching-up'),
-    // Context can advance the engine revision before its reader returns.
-    // A same-generation applied latest remains an atomic live snapshot.
-    success: latestApplied ? cloudDogs.cloudCommit : completedMapRevision(cloudSync),
-  });
-  const dogs = dogSnapshot.dogs;
-  cloudDogs = dogSnapshot.cloudDogs;
+  const dogs = mergedDogs;
   const noDogs =
     !historical &&
     showsNoDogs({

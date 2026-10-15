@@ -424,7 +424,7 @@ test('a DB read spanning download start cannot publish a partial cloud snapshot'
   }
 });
 
-test('Map keeps cloud and direct receiver positions through download and deferred completed read', async () => {
+test('Map holds cloud positions through download and deferred completed read; the receiver\'s dog stays live', async () => {
   jest.useFakeTimers();
   const originalOS = Platform.OS;
   Platform.OS = 'android';
@@ -450,13 +450,21 @@ test('Map keeps cloud and direct receiver positions through download and deferre
     await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-7').props.onPress(); });
     expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
     const local = { ...tracking, point: { ...trackingPoint, slaveId: 4, slaveLat: trackingPoint.slaveLat + 0.01, receivedAt: NOW + 100 } };
+    // The cloud dog stays where the accepted download put it; this phone's
+    // own receiver dog follows its new packet at once (it used to be held
+    // too, for as long as the download took).
+    const heldCloudLiveReceiver = () => {
+      expect(coordinates()['real-dog-7']).toEqual(old['real-dog-7']);
+      expect(coordinates()['real-dog-4'].latitude).toBeCloseTo(trackingPoint.slaveLat + 0.01, 6);
+      expect(old['real-dog-4'].latitude).toBeCloseTo(trackingPoint.slaveLat, 6);
+    };
     const partial = { ...cloudDogs, rows: [row('partial', 7, NOW + 100, 5, { slave_lat: 26 })] };
     await act(async () => { renderer.update(view({ tracking: local, cloudDogs: partial, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
-    expect(coordinates()).toEqual(old);
+    heldCloudLiveReceiver();
     expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(m => m.dimmed)).toBe(true);
     await act(async () => { renderer.update(view({ tracking: local, cloudDogs: { ...partial, rows: [] }, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
-    expect(coordinates()).toEqual(old);
+    heldCloudLiveReceiver();
     expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
     await act(async () => { renderer.update(view({ cloudSync: { busy: false, catchUp: { phase: 'failed', since: NOW - 1000 } } })); });
     expect(coordinates()).toEqual(old);
@@ -467,13 +475,13 @@ test('Map keeps cloud and direct receiver positions through download and deferre
       cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
     expect(renderer.root.findByType(DogCard).props.card.name).toBe('小七');
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.find(m => m.slaveId === 7).name).toBe('小七');
-    expect(coordinates()).toEqual(old);
+    heldCloudLiveReceiver();
     await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-4').props.onPress(); });
     expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(4);
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.find(m => m.slaveId === 4).selected).toBe(true);
     await act(async () => { renderer.root.findAllByType(Marker).find(n => n.props.identifier === 'real-dog-7').props.onPress(); });
     await act(async () => { renderer.update(view({ tracking: local, cloudDogs: partial, cloudSync: { busy: false, lastSuccess: NOW + 1000 } })); });
-    expect(coordinates()).toEqual(old);
+    heldCloudLiveReceiver();
     expect(renderer.root.findByType(TrackingMap).props.presentation.dogMarkers.every(m => m.dimmed)).toBe(true);
     const complete = { ...partial, cloudCommit: NOW + 1000 };
     await act(async () => { renderer.update(view({ tracking: local, cloudDogs: complete, cloudSync: { busy: false, lastSuccess: NOW + 1000 } })); });
@@ -482,7 +490,9 @@ test('Map keeps cloud and direct receiver positions through download and deferre
     expect(renderer.root.findByType(DogCard).props.card.slaveId).toBe(7);
     expect(coordinates()).not.toEqual(old);
     await act(async () => { renderer.update(view({ cloudOwner: 'b', cloudDogs: { rows: [], packets: [] }, cloudSync: { busy: true, catchUp: { phase: 'catching-up', since: NOW - 1000 } } })); });
-    expect(coordinates()).toEqual({});
+    // Another account: none of the old account's cloud dogs; the receiver's
+    // own dog does not belong to an account and stays.
+    expect(Object.keys(coordinates())).toEqual(['real-dog-4']);
   } finally {
     Platform.OS = originalOS;
     await act(async () => { renderer?.unmount(); });
