@@ -105,7 +105,7 @@ BLE 是這支手機的時鐘；Wi-Fi 上傳的 `received_at` 是伺服器的時�
 - 即時下載的截止時間在伺服器端換成伺服器時鐘（`downloadCloudLatest` 的 `serverCutoff`），手機時鐘慢時不會漏掉最新的 Wi-Fi 列。快照本身記的 `cutoff` 仍是手機時鐘。
 - 下載的列在和 BLE 列碰面前先換成這支手機的時鐘（`cloudRowOnPhoneClock`）。地圖合併前（`MapScreen`）和室內停住、接收範圍判定前（`useCloudDogs`）都會換。Wi-Fi 列扣掉時差；轉送列保留上傳手機的時間，但如果它比伺服器收到的時間還晚 2 分鐘以上，就不相信，改用伺服器收到的時間。這支手機自己的上傳回來時時間不變，HoldStore 的同列去重照舊。
 - `DogFreshness`：位置（或封包）時間比判斷用的時鐘還晚 3 分鐘以上時（上面兩個容許值相加），不相信這個時間，直接算「沒有新位置」（`suspect`），不會因為時鐘快了就一直顯示成新的。
-- 歷史與儲存的 `track_at` 沒有改，仍是上傳手機的時間。
+- 歷史儲存的 `track_at`（`cloudTrackTime`）：轉送列用上傳手機的時間，但比伺服器收到的時間晚 2 分鐘以上時改用伺服器收到的時間（和即時地圖同一條規則，2026-10-15）；之前存下的這種列在升級後的第一次 `initialize` 改過來一次（`cloud_migrations`），並撤回那幾天的下載證明。日曆的雲端查詢（`newestBefore`、`earliest`）的界線與答案用伺服器時差換算，手機時鐘偏了也不會把一天的點算到隔壁一天。
 
 ## 最新位置先發布，完整歷史另外發布（`IndependentCloudSync.js`）
 
@@ -168,6 +168,6 @@ App 不再把狗畫到手動設定的固定位置，也沒有設定表單；室�
 
 此 helper 的 SQL 識別只支援目前 audited writers 使用的普通未加引號 table DML；未來新增 CTE、替換語法、trigger 或另一個已發布表的 writer，必須同步擴充 material tracking 與真 SQLite 守護。未知／失敗的 readback 回到原 physical-revision 重讀；readback 若在 commit 後失敗也會讓 hold cursors 失效。單一 chunk 升級有四個 singleton setup／finish 指令，加 INSERT／UPDATE／eviction 三個 latch，staging 每筆不增加追蹤指令。
 
-`historyPublication()` 另帶 `lineage`：換帳號、刪除全部狗資料與 dispose 才會改變，前景切換（`setForeground`）和回前景後追趕膠囊的「重試」只改 `generation`。手動下載的歷史（`runManual`，HistoryCloud 的一天）跟著 `lineage`，不跟 `generation`：切到背景再回來（權限對話框、分享、Home 鍵）或按「重試」都不再中止它、丟掉下載到一半的部分（2026-10-15，稽核 B F10）；換帳號、刪除、dispose 才結束它，每次發布都在 native 鎖裡再檢查一次。在背景時它照樣下載完；背景的 WorkManager 工作等它放開同步鎖。一天的下載途中請求失敗時，和取消一樣保留已存好的前段（#174），重試從那裡接著下載。歷史下載的截止換成伺服器時鐘（`HistoryCoverage` 的 `received_before`，ServerClock 的時差）；手機時鐘快時不會把伺服器還沒到的時間記成已下載，下一次的尾段從伺服器真正的位置接著抓。開著今天狗歷史回到前景時，新 generation 的讀取閘要等第一次地圖 ACK 才開；同一 owner／scope／lineage 的已驗證畫面在這段時間繼續顯示（截至舊 cutoff），直到新 generation 讀到的 proof 撤回、失敗或重建出新模型。沒有 `lineage` 的發布者仍以 generation 變更為準。
+`historyPublication()` 另帶 `lineage`：換帳號、刪除全部狗資料與 dispose 才會改變，前景切換（`setForeground`）和回前景後追趕膠囊的「重試」只改 `generation`。手動下載的歷史（`runManual`，HistoryCloud 的一天）跟著 `lineage`，不跟 `generation`：切到背景再回來（權限對話框、分享、Home 鍵）或按「重試」都不再中止它、丟掉下載到一半的部分（2026-10-15，稽核 B F10）；換帳號、刪除、dispose 才結束它，每次發布都在 native 鎖裡再檢查一次。在背景時它照樣下載完：它的 SQLite 指令走 `useTrackingSession` 的 `leasedCommands(current)`，開始時已經過 archive 優先閘，之後不再等那個閘（背景時閘永遠不開，以前會在 10 秒預算或回前景時以「下載已取消」結束，#192）；租約結束後的指令一律拒絕。背景的 WorkManager 工作等它放開同步鎖。一天的下載途中請求失敗時，和取消一樣保留已存好的前段（#174），重試從那裡接著下載。歷史下載的截止換成伺服器時鐘（`HistoryCoverage` 的 `received_before`，ServerClock 的時差）；手機時鐘快時不會把伺服器還沒到的時間記成已下載，下一次的尾段從伺服器真正的位置接著抓。開著今天狗歷史回到前景時，新 generation 的讀取閘要等第一次地圖 ACK 才開；同一 owner／scope／lineage 的已驗證畫面在這段時間繼續顯示（截至舊 cutoff），直到新 generation 讀到的 proof 撤回、失敗或重建出新模型。沒有 `lineage` 的發布者仍以 generation 變更為準。
 
 這項快取調整不保證歷史頁零重算。today 的 cutoff 延伸、明確 reload、日期／帳號／範圍變更仍會重讀；已有完整模型且 material／cutoff／owner／scope／generation 完全相同時，純 physical proof 刷新保留已驗模型；proof 查詢仍重新執行並由原發布閘驗證，失敗或新 proof 不完整就遮蔽。未知 material 或新的資料／範圍仍可能短暫不可用，完成後重建模型。原生多狗慢窗口是否改善需要另做同情境量測，source 守護不能代替 Android 驗證。

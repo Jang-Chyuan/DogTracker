@@ -31,6 +31,23 @@ test('the newest row before a cutoff, for one dog, by upload time', async () => 
   expect(await none.earliest({ slaveId: 6 })).toBe(null);
 });
 
+test('the calendar asks on the server clock: a phone 10 minutes fast moves the bounds, and the answer comes back on its own clock', async () => {
+  const offset = -10 * 60000; // server − phone: this phone is 10 minutes ahead
+  const c = client(() => Promise.resolve({ data: [{ received_at: '2026-10-07T15:55:00Z' }], error: null }));
+  const cloud = createHistoryCloud({ client: c, database: {}, owner: 'u' });
+  // The phone's day 2026-10-08 (UTC+8) starts at 2026-10-07T16:00Z on its clock.
+  const time = await cloud.newestBefore({ slaveId: 6, since: Date.parse('2026-10-07T16:00:00Z'),
+    cutoff: Date.parse('2026-10-08T16:00:00Z'), serverOffset: offset });
+  expect(c.calls[0]).toEqual(expect.arrayContaining([
+    ['gte', 'received_at', '2026-10-07T15:50:00.000Z'], ['lt', 'received_at', '2026-10-08T15:50:00.000Z']]));
+  // Received 15:55 on the server = 16:05 on this phone: the 8th, not the 7th.
+  expect(time).toBe(Date.parse('2026-10-07T16:05:00Z'));
+  const first = await cloud.earliest({ slaveId: 6, serverOffset: offset });
+  expect(first).toBe(Date.parse('2026-10-07T16:05:00Z'));
+  // Unknown or within tolerance (0): unchanged.
+  expect(await cloud.newestBefore({ slaveId: 6, since: 0, cutoff: 1, serverOffset: 0 })).toBe(Date.parse('2026-10-07T15:55:00Z'));
+});
+
 test('an unanswered question fails after its limit; an error answer fails', async () => {
   jest.useFakeTimers();
   const hang = client((log, signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Aborted')))));

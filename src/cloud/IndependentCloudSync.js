@@ -415,18 +415,22 @@ export function createIndependentCloudSync({ client, database, onChange = () => 
       archiveAbort?.abort(); archiveRequest = null; manualAbort = abort;
       // Assign immediately to reserve the manual lane while its old native
       // archive drains. Latest work never borrows this promise or slot.
+      // The lease's own commands skip the session's archive-priority gate
+      // (useTrackingSession.leasedCommands): admitted above, they keep going
+      // in the background, where that gate is never ready.
+      const leased = database.leasedCommands?.(current) ?? database;
       manualRunning = (async () => {
         await archiveRunning;
         if (!current()) throw new Error(t('c576'));
         publish({ archivePending: true, busy: true, mode: 'manual' });
         return withCloudSyncSlot(async () => {
           if (!current()) throw new Error(t('c576'));
-          await database.beginDownload?.(owner, 'manual');
+          await leased.beginDownload?.(owner, 'manual');
           if (!current()) throw new Error(t('c576'));
-          const count = await work(current, commit => publishScoped(current, commit));
+          const count = await work(current, commit => publishScoped(current, commit), leased);
           if (!current()) throw new Error(t('c576'));
           // Re-checked inside the native lock, like the automatic publication.
-          await publishScoped(current, () => database.publishDownload(owner, 'manual', null, current)); return count;
+          await publishScoped(current, () => leased.publishDownload(owner, 'manual', null, current)); return count;
         });
       })();
       try { return await manualRunning; }
