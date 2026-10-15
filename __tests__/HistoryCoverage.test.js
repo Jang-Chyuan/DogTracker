@@ -105,7 +105,9 @@ test.each([false, true])('cross-day metadata repair invalidates both day proofs 
     await database.setHistoryDownloadState('a', 6, '2026-10-03', true, historyCoverage(start, end, end + 7200000));
     await database.setHistoryDownloadState('a', 6, '2026-10-04', true, historyCoverage(end, end + 86400000, end + 86400000 + 7200000));
     if (staged) await database.beginDownload('a');
-    await database.repairTrackTimes('a', [{ event_id: 'moved', received_at: new Date(start + 3600000).toISOString(),
+    // The relaying phone's time, before the server received it (a phone
+    // stamped far after reception is not believed, CloudTrackTime).
+    await database.repairTrackTimes('a', [{ event_id: 'moved', received_at: new Date(end + 7200000).toISOString(),
       upload_source: 'phone', phone_received_at: new Date(end + 3600000).toISOString() }], ['moved']);
     if (staged) {
       expect((await database.historyDownloadStates('a', 6)).every(s => s.complete === 1)).toBe(true);
@@ -124,7 +126,7 @@ test.each([false, true])('repair failure rolls back geometry and both completene
     for (const [day, at] of [['2026-10-03', start], ['2026-10-04', end]])
       await database.setHistoryDownloadState('a', 6, day, true, historyCoverage(at, at + 86400000, at + 86400000 + 7200000));
     if (staged) await database.beginDownload('a');
-    const metadata = [{ event_id: 'rollback', received_at: new Date(oldTime).toISOString(), upload_source: 'phone', phone_received_at: new Date(newTime).toISOString() }];
+    const metadata = [{ event_id: 'rollback', received_at: new Date(newTime + 3600000).toISOString(), upload_source: 'phone', phone_received_at: new Date(newTime).toISOString() }];
     if (staged) await database.repairTrackTimes('a', metadata, ['rollback']);
     await connection.executeAsync("CREATE TRIGGER deny_repair BEFORE UPDATE OF track_at ON supabase_dog_status BEGIN SELECT RAISE(ABORT,'repair failure'); END");
     await expect(staged ? database.publishDownload('a') : database.repairTrackTimes('a', metadata, ['rollback'])).rejects.toThrow('repair failure');
@@ -137,7 +139,7 @@ test('a stale copy-on-write repair cannot invalidate newer completed coverage', 
   try {
     await database.savePage('a', [row('stale-cow', start + 3600000)]);
     await database.beginDownload('a');
-    await database.repairTrackTimes('a', [{ event_id: 'stale-cow', received_at: new Date(start + 3600000).toISOString(),
+    await database.repairTrackTimes('a', [{ event_id: 'stale-cow', received_at: new Date(end + 7200000).toISOString(),
       upload_source: 'phone', phone_received_at: new Date(end + 3600000).toISOString() }], ['stale-cow']);
     // A later accepted publication changed the captured row. This simulates
     // the exact native version fence, independently of the stale auto stage.

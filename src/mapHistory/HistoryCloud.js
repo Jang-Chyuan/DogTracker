@@ -80,14 +80,23 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
     getPublication,
     publishedReads: typeof database.publishManualScope === 'function',
     downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
-    /** The time of the dog's newest row in [since, cutoff), or null. */
-    newestBefore({ slaveId, cutoff, since, signal }) {
-      return oneTime(rows(slaveId).gte('received_at', iso(since)).lt('received_at', iso(cutoff))
+    /**
+     * The time of the dog's newest row in [since, cutoff), or null. The
+     * bounds and the answer are on this phone's clock; the question is asked
+     * in received_at (the server's clock), moved by `serverOffset` (#186), so
+     * a phone whose clock is off does not put a day's rows on its neighbour.
+     */
+    async newestBefore({ slaveId, cutoff, since, signal, serverOffset = serverClock.offset() }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const time = await oneTime(rows(slaveId).gte('received_at', iso(since + offset)).lt('received_at', iso(cutoff + offset))
         .order('received_at', { ascending: false }).limit(1), signal, questionMs);
+      return time == null ? null : time - offset;
     },
-    /** The time of the dog's oldest row, or null. */
-    earliest({ slaveId, signal }) {
-      return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
+    /** The time of the dog's oldest row (this phone's clock), or null. */
+    async earliest({ slaveId, signal, serverOffset = serverClock.offset() }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const time = await oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
+      return time == null ? null : time - offset;
     },
     /**
      * Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone.
