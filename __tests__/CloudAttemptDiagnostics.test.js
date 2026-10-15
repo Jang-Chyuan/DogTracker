@@ -138,7 +138,7 @@ test('real independent engine timeout emits one fixed numeric snapshot before qu
   const { createMemoryConnection } = require('../__fixtures__/SQLiteConnection');
   const { createDogDatabase } = require('../src/database/DogDatabase');
   const { createCloudDatabase } = require('../src/cloud/CloudDatabase');
-  const { createCloudSync } = require('../src/cloud/CloudSync');
+  const { createIndependentCloudSync } = require('../src/cloud/IndependentCloudSync');
   const archive = createMemoryConnection(), latest = createMemoryConnection(), held = deferred(), summaries = [];
   let engine, state;
   const spy = jest.spyOn(console, 'info').mockImplementation((tag, text) => {
@@ -159,7 +159,7 @@ test('real independent engine timeout emits one fixed numeric snapshot before qu
     };
     const client = createClient('https://example.invalid', 'public-fixture-key', { auth: { persistSession: false, autoRefreshToken: false },
       global: { fetch: diagnostics.cloudDiagnosticFetch(fetch) } });
-    engine = createCloudSync({ client, database, onChange: value => { state = value; } });
+    engine = createIndependentCloudSync({ client, database, onChange: value => { state = value; } });
     engine.setSession({ user: { id: 'do-not-log-owner' } }); engine.setForeground(true);
     await advance(1); expect(state).toMatchObject({ busy: true, snapshotPending: false });
     await advance(120000);
