@@ -40,7 +40,7 @@ src/
 ├─ mapHistory/  HistoryScreen.js、HistoryDatabase.js、HistoryCloud.js、useHistoryExport.js  第三版歷史畫面、日期下載與匯出
 ├─ activity/  ActivityScreen.js、ActivityData.js、views/  活動畫面與統計
 ├─ alerts/  AlertEngine.js、AlertNotifications.js、useAlertEngine.js  提醒判斷與通知
-├─ cloud/  CloudSync.js、CloudDatabase.js、CloudDataScreen.js  雲端下載、帳號快取與診斷
+├─ cloud/  IndependentCloudSync.js（CloudSync.js 的舊引擎已停用）、CloudDatabase.js、CloudDataScreen.js  雲端下載、帳號快取與診斷
 ├─ cloudUpload/  UploadService.js、SearchRelay.js  BLE 轉送與搜索中繼
 ├─ placement/  IndoorHold.js、HoldStore.js、RideAlong.js、AddressLookup.js  室內停住、坐車與地址
 ├─ settings/  SettingsHome.js、PhoneSettings.js、DiagnosticsSettings.js  設定入口、手機記錄與診斷

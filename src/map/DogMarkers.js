@@ -16,6 +16,27 @@ export const INDOOR_WORD = t('c114');
 export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId, aliases));
 
 /**
+ * The clock a dog is judged by: now, or while a return to the app catches the
+ * map up (ResumeCatchUp) the moment the app went away. Never later than now:
+ * a clock that ran backwards must not age a dog.
+ */
+export const judgedAt = (now, catchUpSince = null) =>
+  (Number.isFinite(catchUpSince) ? Math.min(catchUpSince, now) : now);
+
+/**
+ * A dog's freshness as its marker shows it: judged at judgedAt, and while
+ * catching up the stale answer the map showed before (previousStale), so no
+ * dog turns grey on rows the reader has not read yet. The open card uses the
+ * same, so its 「沒有新位置」 never disagrees with the face (audit B F14).
+ */
+export function judgedFreshness(dog, { now = Date.now(), cloud = null, pauses = [], catchUpSince = null,
+  previousStale = {} } = {}) {
+  const current = dogFreshness(dog, { now: judgedAt(now, catchUpSince), cloud, pauses });
+  return Number.isFinite(catchUpSince) && Object.hasOwn(previousStale ?? {}, dog.slaveId)
+    ? { ...current, stale: previousStale[dog.slaveId] } : current;
+}
+
+/**
  * One marker per drawn dog. A dog that has never had a position is left out
  * (not drawn, no card, no alert).
  *
@@ -35,12 +56,9 @@ export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pauses =
   aliases = {}, selectedId = null, catchUpSince = null, previousStale = {} } = {}) {
   const markers = [];
   const catchingUp = Number.isFinite(catchUpSince);
-  // Never later than now: a clock that ran backwards must not age a dog.
-  const judged = catchingUp ? Math.min(catchUpSince, now) : now;
+  const judged = judgedAt(now, catchUpSince);
   for (const dog of dogs) {
-    const current = dogFreshness(dog, { now: judged, cloud, pauses });
-    const freshness = catchingUp && Object.hasOwn(previousStale, dog.slaveId)
-      ? { ...current, stale: previousStale[dog.slaveId] } : current;
+    const freshness = judgedFreshness(dog, { now, cloud, pauses, catchUpSince, previousStale });
     if (!freshness.drawn) continue;
     const range = ranges?.[dog.slaveId];
     const problems = dogProblems(dog, freshness, range);

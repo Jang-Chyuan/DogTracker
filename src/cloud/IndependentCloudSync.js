@@ -100,8 +100,11 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     }
     return accepted;
   };
-  const publishScoped = async (version, work, authorized = () => true) => {
-    if (!valid(version) || !authorized()) throw new Error(t('c576'));
+  // `current()`: the lease the publication belongs to, checked before and
+  // after it (and by the work itself inside the native lock). The automatic
+  // archive's is its generation; a manual download's its lineage (runManual).
+  const publishScoped = async (current, work, authorized = () => true) => {
+    if (!current() || !authorized()) throw new Error(t('c576'));
     const operation = {}; publishedOperation = operation;
     publish({ publishedPending: true, publishedRevision: state.publishedRevision + 1 });
     let result;
@@ -110,7 +113,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       if (publishedOperation === operation) {
         publishedOperation = null;
         publish({ publishedPending: false, publishedRevision: state.publishedRevision + 1,
-          dataRevision: valid(version) && authorized() && Number.isSafeInteger(result?.dataRevision) && result.dataRevision >= 0 ? result.dataRevision : null });
+          dataRevision: current() && authorized() && Number.isSafeInteger(result?.dataRevision) && result.dataRevision >= 0 ? result.dataRevision : null });
       }
     }
   };
@@ -140,6 +143,22 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     let timedOut = false, phase = 'initialize', committed = false;
     const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, DOWNLOAD_MS);
     const check = () => { if (!valid(version) || abort.signal.aborted) throw new Error(t('c576')); };
+    // The attempt's native latest-store calls end with the attempt: a call
+    // that never answers no longer keeps latestRunning (and with it every
+    // later attempt) forever, unseen by the 120 s timeout, which only aborts
+    // (audit B F11). The native call itself still drains in its own lock;
+    // a publication checks the attempt's lease inside it, so a late one
+    // cannot land for an attempt that has ended.
+    const bounded = promise => {
+      if (abort.signal.aborted) { Promise.resolve(promise).catch(() => {}); return Promise.reject(new Error(t('c576'))); }
+      let stop;
+      const stopped = new Promise((_, reject) => {
+        stop = () => reject(new Error(t('c576')));
+        abort.signal.addEventListener('abort', stop, { once: true });
+      });
+      Promise.resolve(promise).catch(() => {});
+      return Promise.race([promise, stopped]).finally(() => abort.signal.removeEventListener('abort', stop));
+    };
     const timings = { slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0, latestCacheReadMs: 0,
       mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0, sessionMs: 0 };
     readback = null; readbackStartedAt = startedAt;
@@ -186,8 +205,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       };
       try {
         check(); const prefetched = fetchLatest();
-        let at = now(); await database.initializeLatest(); timings.initializeMs = Math.max(0, now() - at); check();
-        at = now(); const cached = await database.readLatestSnapshot(userId, { metadataOnly: true });
+        let at = now(); await bounded(database.initializeLatest()); timings.initializeMs = Math.max(0, now() - at); check();
+        at = now(); const cached = await bounded(database.readLatestSnapshot(userId, { metadataOnly: true }));
         timings.latestCacheReadMs = Math.max(0, now() - at); check();
         publish({ snapshotBaseRevision: cached?.revision ?? null });
         let outcome = await prefetched;
@@ -195,8 +214,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         if (Object.prototype.hasOwnProperty.call(outcome, 'error')) { phase = outcome.phase; throw outcome.error; }
         const { masters, cutoff, snapshot } = outcome.value; check(); phase = 'publish'; at = now();
         publish({ snapshotPending: true, mapPending: true });
-        const revision = await database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted);
-        const value = await database.readLatestSnapshot(userId, { positionsOnly: true }); check();
+        const revision = await bounded(database.publishLatestSnapshot(userId, { ...snapshot, masterIds: masters }, () => valid(version) && !abort.signal.aborted));
+        const value = await bounded(database.readLatestSnapshot(userId, { positionsOnly: true })); check();
         if (!value?.verified || value.revision !== revision || value.cutoff !== cutoff) throw new Error(t('c588'));
         const authority = [...masters].sort((left, right) => left - right).join(',');
         if (archiveAuthority !== authority) {
@@ -226,7 +245,12 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
           reportLatestFailure(error, timedOut, attempt, phase);
           // Offline archive proof is independent work too; it must not retain
           // the latest slot while an earlier native archive transaction drains.
-          archiveRequest = { version, userId, offline: true };
+          // An archive pass an earlier success queued (still waiting for a
+          // running archive or manual download) stays queued: replacing it
+          // with this offline proof skipped that pass until the next success
+          // (audit B F12). It reads the archive publication too.
+          if (!archiveRequest || archiveRequest.offline || !valid(archiveRequest.version))
+            archiveRequest = { version, userId, offline: true };
           startArchive();
         }
       } finally {
@@ -307,7 +331,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
               signal: abort.signal, isCurrent: () => valid(version) });
           }
         }
-        check(); const material = await publishScoped(version, () => database.publishDownload(userId, 'auto', cutoff,
+        check(); const material = await publishScoped(() => valid(version), () => database.publishDownload(userId, 'auto', cutoff,
           () => valid(version) && authorized() && !abort.signal.aborted), authorized); check();
         publish({ archiveRevision: state.archiveRevision + 1, archiveCutoff: cutoff, archiveError: '',
           ...(Number.isSafeInteger(material?.dataRevision) ? { dataRevision: material.dataRevision } : {}) });
@@ -348,7 +372,9 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     setForeground(active) {
       if (foreground === active) return;
       foreground = active; generation++; clearInterval(interval);
-      latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort(); archiveRequest = null;
+      // A manual history download keeps running (runManual: its lease is the
+      // lineage, which a leave/return does not change).
+      latestAbort?.abort(); archiveAbort?.abort(); archiveRequest = null;
       if (active) { resetBackoff(); cancelBackgroundSync(); catchUp.back(); interval = setInterval(tick, 30000); wake(); }
       else { retryQueued = false; catchUp.away(); clearTimeout(immediate); }
       publish({});
@@ -358,35 +384,53 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       retryQueued = true;
       if (catchUp.state().phase === 'failed') catchUp.retry({ deferStart: true }); else wake();
     },
+    // A manual history download (HistoryCloud) belongs to the account's
+    // lineage, not to the generation: a leave/return of the app (a permission
+    // dialog, a share sheet, the home button) or 重試 on the catch-up pill
+    // bumps the generation and used to abort it, throwing away what it had
+    // downloaded (2026-10-15, audit B F10). It now keeps going through those;
+    // an account switch, a deletion or disposal (lineage++, manualAbort)
+    // still ends it, and every publication is checked against the lineage
+    // inside the native lock, so nothing is published for another account
+    // or after a deletion.
     async runManual(work, abort = new AbortController()) {
       if (deleting) throw new Error(t('c576'));
       if (manualRunning) throw new Error(t('c585'));
-      const version = generation;
-      if (releaseReadiness && !readiness.ready() && !await readiness.wait(abort.signal)) throw new Error(t('c576'));
-      if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
+      const lease = lineage, leaseOwner = owner;
+      const current = () => !disposed && !deleting && !!owner && owner === leaseOwner
+        && lineage === lease && !abort.signal.aborted;
+      // Started from the screen, so in front; the readiness wait ends early
+      // when the generation changes (a resume): wait again then, as long as
+      // the lease holds.
+      let ready = !releaseReadiness || readiness.ready();
+      for (let waits = 0; !ready && waits < 3 && current() && foreground; waits++) {
+        const before = generation;
+        ready = await readiness.wait(abort.signal);
+        if (!ready && generation === before) break;
+      }
+      if (!ready || !current() || !foreground) throw new Error(t('c576'));
       if (manualRunning) throw new Error(t('c585'));
       archiveAbort?.abort(); archiveRequest = null; manualAbort = abort;
       // Assign immediately to reserve the manual lane while its old native
       // archive drains. Latest work never borrows this promise or slot.
       manualRunning = (async () => {
         await archiveRunning;
-        if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
+        if (!current()) throw new Error(t('c576'));
         publish({ archivePending: true, busy: true, mode: 'manual' });
         return withCloudSyncSlot(async () => {
-          if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
+          if (!current()) throw new Error(t('c576'));
           await database.beginDownload?.(owner, 'manual');
-          if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
-          const count = await work(() => valid(version) && !abort.signal.aborted, commit => publishScoped(version, commit));
-          if (!valid(version) || abort.signal.aborted) throw new Error(t('c576'));
+          if (!current()) throw new Error(t('c576'));
+          const count = await work(current, commit => publishScoped(current, commit));
+          if (!current()) throw new Error(t('c576'));
           // Re-checked inside the native lock, like the automatic publication.
-          await publishScoped(version, () => database.publishDownload(owner, 'manual', null,
-            () => valid(version) && !abort.signal.aborted)); return count;
+          await publishScoped(current, () => database.publishDownload(owner, 'manual', null, current)); return count;
         });
       })();
       try { return await manualRunning; }
       finally {
-        manualRunning = null; manualAbort = null;
-        if (valid(version)) publish({ archivePending: false, revision: state.revision + 1 });
+        manualRunning = null; if (manualAbort === abort) manualAbort = null;
+        if (!disposed && lineage === lease) publish({ archivePending: false, revision: state.revision + 1 });
         updateBusy(); startArchive();
       }
     },
