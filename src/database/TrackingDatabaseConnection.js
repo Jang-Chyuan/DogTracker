@@ -31,6 +31,14 @@ export function openTrackingDatabase() {
       requireOpen();
       await native.executeDatabaseBatch(JSON.stringify(commands));
     },
+    // My route's SELECTs on their own native lane (BleBackgroundModule
+    // readDatabase): they do not wait behind the cloud sync's queue.
+    reader: native.readDatabase ? {
+      async executeAsync(query, params = []) {
+        requireOpen();
+        return JSON.parse(await native.readDatabase(query, JSON.stringify(params)));
+      },
+    } : null,
     close() {
       // Closing a JS reader must never close the active BLE service's DB.
       closed = true;

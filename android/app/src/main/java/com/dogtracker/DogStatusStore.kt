@@ -75,8 +75,28 @@ class DogStatusStore private constructor(private val context: Context) {
     }
   }
 
-  private fun retentionDelete(sql: String, args: Array<out Any>): Int = locked("retention") {
-    db.compileStatement(sql).use { statement -> bind(statement, args); statement.executeUpdateDelete() }
+  private fun retentionDelete(sql: String, args: Array<out Any>): Int = atWriterPriority {
+    locked("retention") {
+      db.compileStatement(sql).use { statement -> bind(statement, args); statement.executeUpdateDelete() }
+    }
+  }
+
+  /**
+   * The prune thread runs at the lowest priority (LocalRetention.schedule) so
+   * it never competes with the screen; but while one of its statements holds
+   * the write monitor, the BLE and route writers wait for it. On a busy CPU
+   * the lowest priority was descheduled in the middle of a 500-row DELETE (a
+   * statement with nothing to delete held the lock 0.5–6.8 s on a loaded
+   * emulator): for the statement, and the wait for the monitor, it runs at
+   * the default priority as the writers do, and drops back between batches.
+   */
+  private inline fun <T> atWriterPriority(block: () -> T): T {
+    val before = try { android.os.Process.getThreadPriority(android.os.Process.myTid()) } catch (e: Exception) { null }
+    val raise = before != null && before > android.os.Process.THREAD_PRIORITY_DEFAULT
+    if (raise) try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT) } catch (e: Exception) {}
+    try { return block() } finally {
+      if (raise && before != null) try { android.os.Process.setThreadPriority(before) } catch (e: Exception) {}
+    }
   }
 
   private fun bind(statement: SQLiteStatement, args: Array<out Any>) = args.forEachIndexed { i, value ->

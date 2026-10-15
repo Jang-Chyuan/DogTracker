@@ -23,6 +23,14 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
   private val latestDatabaseWorker = Executors.newSingleThreadExecutor { task ->
     Thread(task, "DogTracker-LatestDatabase")
   }
+  // My route's reads (the history's day and calendar, 「今天 x km」): plain
+  // SELECTs on a WAL reader connection, which need neither the monitor nor
+  // the App's queue. On [databaseWorker] they waited behind whatever the
+  // cloud sync had queued when the App came back (2026-10-15: a 10 s wait on
+  // the phone; minutes behind one cloud scan on a signed-in emulator).
+  private val readDatabaseWorker = Executors.newSingleThreadExecutor { task ->
+    Thread(task, "DogTracker-RouteRead")
+  }
 
   init {
     BleForegroundService.eventSink = { event, value ->
@@ -177,9 +185,10 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
     }
   }
 
-  private fun databaseTask(promise: Promise, label: String = "database", action: (DogStatusStore) -> Any?) {
+  private fun databaseTask(promise: Promise, label: String = "database",
+    worker: java.util.concurrent.Executor = databaseWorker, action: (DogStatusStore) -> Any?) {
     val queuedAt = SystemClock.elapsedRealtime()
-    databaseWorker.execute {
+    worker.execute {
       val startedAt = SystemClock.elapsedRealtime()
       try { promise.resolve(action(DogStatusStore.get(context))) }
       catch (error: Exception) { promise.reject("BLE_DATABASE_FAILED", error) }
@@ -209,6 +218,19 @@ class BleBackgroundModule(private val context: ReactApplicationContext) :
     databaseTask(promise, "sql#${sql.hashCode()} ${sql.trim().takeWhile { it.isLetter() }.take(12)}") {
       it.executeSql(sql, org.json.JSONArray(parameters)).toString()
     }
+
+  /** A SELECT (or WITH) only, on its own lane (see [readDatabaseWorker]). */
+  @ReactMethod
+  fun readDatabase(sql: String, parameters: String, promise: Promise) {
+    val verb = sql.trimStart().takeWhile { !it.isWhitespace() }.uppercase(java.util.Locale.ROOT)
+    if (verb != "SELECT" && verb != "WITH") {
+      promise.reject("BLE_DATABASE_FAILED", IllegalArgumentException("readDatabase takes a SELECT"))
+      return
+    }
+    databaseTask(promise, "read#${sql.hashCode()}", readDatabaseWorker) {
+      it.executeSql(sql, org.json.JSONArray(parameters)).toString()
+    }
+  }
 
   @ReactMethod
   fun executeDatabaseBatch(commands: String, promise: Promise) =
