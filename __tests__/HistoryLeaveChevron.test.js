@@ -199,7 +199,10 @@ describe('layout A: the chevron below the place block', () => {
     for (const bottom of [44, 66, 130]) {
       const track = placeTrack(firstLine, true, bottom);
       expect(track.chevron.top).toBeGreaterThanOrEqual(bottom + leaveGap);
-      expect(track.minHeight).toBeGreaterThan(track.chevron.top + track.chevron.height);
+      // The text plus the spacer under it make room for the chevron; the
+      // row's own minimum never depends on the measurement (no late growth).
+      expect(bottom + track.spacer).toBeGreaterThan(track.chevron.top + track.chevron.height + leaveGap);
+      expect(track.minHeight).toBe(placeTrack(firstLine, true).minHeight);
       // The line between the node and the chevron is not cleared.
       expect(track.clears[1].top).toBe(track.chevron.top - leaveGap);
     }

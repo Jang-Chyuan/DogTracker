@@ -312,6 +312,7 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
             </View>
             {note ? <Text style={styles.note}>{note}</Text> : null}
           </View>
+          {leaving ? <View style={{ height: track.spacer }} testID="leave-spacer" /> : null}
         </View>
       </View>
     </Pressable>
@@ -460,11 +461,18 @@ export function placeTrack(firstLineHeight, leaving, contentBottom = 0) {
   // first line, capped as the time column is) clears the block too.
   const scale = Math.min(firstLineHeight / type.cardTitle.lineHeight, TIME_MAX_SCALE);
   const timeHalf = (type.caption.lineHeight * scale) / 2;
-  const below = contentBottom + Math.max(gap, timeHalf - height / 2);
-  const top = Math.max(lineTop + leaveLine + gap, below);
+  const clearance = Math.max(gap, timeHalf - height / 2);
+  const base = lineTop + leaveLine + gap;
+  const top = Math.max(base, contentBottom + clearance);
   return {
     clears: [{ top: 0, bottom: lineTop }, { top: top - gap, bottom: top + height + gap }],
-    minHeight: Math.ceil(top + height + gap + leaveBelow),
+    // The row's height never waits for the measurement (a row growing after
+    // layout, while the addresses' LayoutAnimation ran, left the rows below
+    // it where they were on Android): the shortest row is the line's own,
+    // and `spacer`, laid out under the place's text, makes room for the
+    // chevron after however many lines it has.
+    minHeight: Math.ceil(base + height + gap + leaveBelow),
+    spacer: Math.ceil(clearance + height + gap + leaveBelow),
     // The chevron's drawn shape (not its 24-unit box): the time is level with it.
     chevron: { top, height },
     glyphTop: top - (leave * LEAVE_SHAPE.from) / 24,
