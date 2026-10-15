@@ -88,6 +88,10 @@ internal class LocationPipeline {
   private val window = java.util.ArrayDeque<LocationSample>()
   private val motion = MotionDetector()
   private var stationaryCoordinate: Pair<Double, Double>? = null
+  // Fixes accepted since the last reset (none yet, or a break over 30 s), and
+  // the newest fix rejected as a jump since the last accepted one.
+  private var acceptedSinceReset = 0
+  private var jumpRejected: LocationSample? = null
   // The newest fix the motion detector has seen (saved or motion-only) and its answer.
   private var motionSample: LocationSample? = null
   private var motionState = "moving"
@@ -120,12 +124,29 @@ internal class LocationPipeline {
     }
     val previous = latest
     val dt = if (previous == null) 0.0 else (sample.elapsedNanos - previous.elapsedNanos) / 1e9
-    val reset = previous == null || dt > 30
+    var reset = previous == null || dt > 30
     if (!reset) {
       val distance = distanceMeters(previous!!.rawLatitude, previous.rawLongitude, sample.latitude, sample.longitude)
-      if (distance > 70 * dt + previous.accuracy + sample.accuracy)
-        return reject("jump") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1123) }
+      if (distance > 70 * dt + previous.accuracy + sample.accuracy) {
+        // #200 (audit A): the first fix after a reset (a stale cached
+        // position, a Wi-Fi fix kilometres off) was wrong. Every right fix
+        // after it was a jump from it until the 30 s reset, about
+        // distance / 70 s. Two jump-rejected fixes in a row that agree with
+        // each other outvote one accepted fix: start again from them.
+        val other = jumpRejected
+        val agrees = acceptedSinceReset == 1 && other != null && other.elapsedNanos < sample.elapsedNanos &&
+          (sample.elapsedNanos - other.elapsedNanos) / 1e9 <= 30 &&
+          distanceMeters(other.latitude, other.longitude, sample.latitude, sample.longitude) <=
+            70 * (sample.elapsedNanos - other.elapsedNanos) / 1e9 + other.accuracy + sample.accuracy
+        if (!agrees) {
+          jumpRejected = sample
+          return reject("jump") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1123) }
+        }
+        reset = true
+      }
     }
+    if (reset) acceptedSinceReset = 0
+    jumpRejected = null
     // Three valid raw samples; a signal gap starts a new smoothing window.
     if (reset || dt > 3) {
       window.clear()
@@ -151,7 +172,7 @@ internal class LocationPipeline {
     } else stationaryCoordinate = null
     val shownLatitude = stationaryCoordinate?.first ?: latitude
     val shownLongitude = stationaryCoordinate?.second ?: longitude
-    if (previous != null && dt > 0 && dt <= ODOMETER_MAX_STEP_SECONDS && state == "moving" &&
+    if (previous != null && !reset && dt > 0 && dt <= ODOMETER_MAX_STEP_SECONDS && state == "moving" &&
       previous.motionState == "moving" && sample.accuracy <= ODOMETER_MAX_ACCURACY &&
       previous.accuracy <= ODOMETER_MAX_ACCURACY &&
       (sample.rawSpeed?.takeIf { it.isFinite() } ?: 0f) >= ODOMETER_MIN_SPEED_MPS)
@@ -159,6 +180,7 @@ internal class LocationPipeline {
     latest = sample.copy(latitude = shownLatitude, longitude = shownLongitude,
       speed = if (state == "stationary") 0f else sample.speed, motionState = state, odometer = odometerMeters)
     newest = sample.elapsedNanos
+    acceptedSinceReset++
     accepted++; reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1124)
     return true
   }
