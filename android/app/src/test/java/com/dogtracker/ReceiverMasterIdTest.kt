@@ -113,6 +113,56 @@ class ReceiverMasterIdTest {
     assertEquals(5, JSONObject(sql.inserts.single()["payload_json"] as String).get("mid"))
   }
 
+  // `"sid":"4"`, like `"mid":"5"` (#204): DogStatusStore only stored a
+  // numeric dog ID and the JS encoder wanted a number, so the packet was
+  // neither stored nor uploaded. Read the same way, handed over as numbers.
+  @Test fun aStringDogIdIsNormalisedToAWholeNumber() {
+    assertEquals(4, ReceiverMasterId.slaveOf(JSONObject("""{"sid":"4"}""")))
+    assertEquals(4, ReceiverMasterId.slaveOf(JSONObject("""{"sid":" 4 "}""")))
+    assertEquals(6, ReceiverMasterId.slaveOf(JSONObject("""{"slave_id":6,"sid":"4"}""")))
+    for (json in listOf("""{"sid":"x"}""", """{"sid":""}""", """{"sid":0}""", """{"sid":"4.5"}""", """{"sid":-1}""", """{}"""))
+      assertNull(json, ReceiverMasterId.slaveOf(JSONObject(json)))
+    val both = ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":"4","mid":"5"}"""))!!
+    assertEquals(4, both.get("sid"))
+    assertEquals(5, both.get("mid"))
+    val onlySid = ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":"4","mid":5}"""))!!
+    assertEquals(4, onlySid.get("sid"))
+    assertEquals(5, onlySid.get("mid"))
+    val longKey = ReceiverMasterId.normalized(JSONObject("""{"slave_id":"4","mid":5}"""))!!
+    assertEquals(4, longKey.get("sid"))
+    assertEquals(4, longKey.get("slave_id"))
+    // Without a Master ID of its own, the dog ID alone is still made a number.
+    assertEquals(4, ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":"4"}"""))!!.get("sid"))
+    assertEquals(4, ReceiverMasterId.normalized(JSONObject("""{"sid":4.0}"""))!!.get("sid"))
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":"x","mid":5}""")))
+    assertNull(ReceiverMasterId.normalized(JSONObject("""{"type":3,"sid":4,"mid":5}""")))
+  }
+
+  @Test fun aPositionPacketWithAStringDogIdTakesTheQrMasterIdAndIsQueuedWithNumbers() {
+    val sql = object : BleUploadQueue.Sql {
+      val inserts = mutableListOf<Map<String, Any?>>()
+      override fun first(sql: String, vararg args: String): String? = when {
+        sql.contains("key='owner'") -> "alice"
+        sql.contains("FROM ble_upload_settings") -> if (args.toList() == listOf("alice", "3")) "phone" else null
+        else -> null
+      }
+      override fun change(sql: String, vararg args: Any?) = 0
+      override fun insert(values: Map<String, Any?>) { inserts += values }
+    }
+    BleUploadQueue.recount()
+    val raw = JSONObject("""{"type":3,"sid":"4","seq":9,"lat":24.9892,"lon":121.3138}""")
+    assertEquals(ReceiverMasterId.Check.Missing, ReceiverMasterId.check(raw, 3))
+    // As BleForegroundService: fill the QR's Master ID, then normalise.
+    val filled = ReceiverMasterId.filled(raw, 3)!!
+    val packet = ReceiverMasterId.normalized(filled)!!
+    assertEquals("alice", BleUploadQueue.enqueue(sql, packet, packet.toString(), 1_000L) { "e1" })
+    assertEquals(3, sql.inserts.single()["master_id"])
+    assertEquals(4, sql.inserts.single()["slave_id"])
+    val queued = JSONObject(sql.inserts.single()["payload_json"] as String)
+    assertEquals(4, queued.get("sid"))
+    assertEquals(3, queued.get("mid"))
+  }
+
   @Test fun frameCountsAreThisRunsOnly() {
     val run = ReceiverFrameStats()
     run.framed(framerResyncs = 2, framerLargest = 280)
