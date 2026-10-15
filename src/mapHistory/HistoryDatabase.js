@@ -63,8 +63,20 @@ export function validateHistory(value) {
   return p;
 }
 const rows = result => result.results || result.rows?._array || [];
-// myLocationTracker's optional columns 「今天 x km」 reads (phoneRouteSince).
-const PHONE_ROUTE_COLUMNS = ['raw_speed_kmh', 'speed_accuracy_mps', 'session_id', 'odometer_m'];
+// myLocationTracker's optional columns the history logic reads: the raw fix
+// PhoneMotion runs on (latitude/longitude are the pipeline's, held on the
+// anchor while the phone stands still), the phone's own measured speed (067),
+// the detector's state, the recording session and its odometer (2026-10-13).
+// 「今天 x km」 (phoneRouteSince) and the history list (historyDayRows) read
+// this one list, so both run the same detector on the same fixes and the pill
+// says the summary's number (2026-10-15: without the raw fix the pill was up
+// to 100 m off the summary on real days).
+export const PHONE_MODEL_COLUMNS = Object.freeze(['raw_latitude', 'raw_longitude', 'speed_kmh', 'raw_speed_kmh',
+  'speed_accuracy_mps', 'motion_state', 'session_id', 'odometer_m']);
+const PHONE_TEXT_COLUMNS = new Set(['motion_state', 'session_id']);
+// The CSV export's other columns (判定表「CSV」: 照 main 的欄位), my route only.
+const PHONE_EXPORT_COLUMNS = ['location_at', 'accuracy_meters', 'altitude_meters', 'heading_degrees',
+  'display_source', 'display_location_at'];
 export function createHistoryDatabase(db) {
   // myLocationTracker's speed columns, read once per open database.
   let phoneSpeedColumns = null;
@@ -106,7 +118,8 @@ export function createHistoryDatabase(db) {
     /**
      * This phone's own recorded positions from `since` on, after the cursor
      * { time, id } (oldest first, at most `limit`): what 「今天 x km」 adds up.
-     * The pipeline's coordinates, not the display animation's.
+     * The pipeline's coordinates (not the display animation's) with the
+     * model's columns (PHONE_MODEL_COLUMNS), as historyDayRows reads them.
      */
     async phoneRouteSince(since, cursor = null, limit = 2000) {
       const exists = rows(await db.executeAsync(
@@ -114,29 +127,26 @@ export function createHistoryDatabase(db) {
       if (!exists.length) return [];
       const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
       const id = Number(cursor?.time) >= Number(since) ? Number(cursor?.id) || 0 : 0;
-      // The phone's own measured speed (067: drift it did not walk is not
-      // counted) and the recorder's odometer with its recording session
-      // (2026-10-13: the per-second path of a walk), when this install's
-      // table has the columns.
       // Kept once every column is there: the recorder adds a missing one when
       // it opens the table (an app update), possibly after the first read.
       let columns = phoneSpeedColumns;
       if (!columns) {
         const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
-        columns = PHONE_ROUTE_COLUMNS.filter(name => names.has(name));
-        if (columns.length === PHONE_ROUTE_COLUMNS.length) phoneSpeedColumns = columns;
+        columns = PHONE_MODEL_COLUMNS.filter(name => names.has(name));
+        if (columns.length === PHONE_MODEL_COLUMNS.length) phoneSpeedColumns = columns;
       }
-      const optional = value => (value == null ? null : Number(value));
+      // Each column the table has is a key of every row (null when the row
+      // has none), as on historyDayRows' rows: the logic tells a recorder
+      // that measured nothing (null) from an old one without the column.
+      const value = (name, raw) => (raw == null ? null : PHONE_TEXT_COLUMNS.has(name) ? String(raw) : Number(raw));
       return rows(await db.executeAsync(
         `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
           columns.map(name => `, ${name}`).join('')} FROM myLocationTracker
          WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
          ORDER BY recorded_at, id LIMIT ?`, [Number(since) || 0, time, time, id, limit]))
         .map(row => ({ id: Number(row.id), time: Number(row.time), latitude: Number(row.latitude),
-          longitude: Number(row.longitude), accuracy: optional(row.accuracy),
-          raw_speed_kmh: optional(row.raw_speed_kmh), speed_accuracy_mps: optional(row.speed_accuracy_mps),
-          ...(row.session_id != null ? { session_id: String(row.session_id) } : {}),
-          ...(row.odometer_m != null ? { odometer_m: Number(row.odometer_m) } : {}) }));
+          longitude: Number(row.longitude), accuracy: row.accuracy == null ? null : Number(row.accuracy),
+          ...Object.fromEntries(columns.map(name => [name, value(name, row[name])])) }));
     },
     /**
      * One dog's (or this phone's) rows of one day for the history list
@@ -188,11 +198,11 @@ export function createHistoryDatabase(db) {
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
         if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
-        // The CSV export's columns ride along (判定表「CSV」: 照 main 的欄位).
+        // The model's columns (the same as 「今天 x km」's) and the CSV
+        // export's (判定表「CSV」: 照 main 的欄位).
         const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
-        const phoneExtra = ['location_at', 'accuracy_meters', 'altitude_meters', 'speed_kmh', 'heading_degrees',
-          'raw_latitude', 'raw_longitude', 'session_id', 'raw_speed_kmh', 'speed_accuracy_mps', 'motion_state',
-          'display_source', 'display_location_at', 'odometer_m'].filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
+        const phoneExtra = [...PHONE_EXPORT_COLUMNS, ...PHONE_MODEL_COLUMNS]
+          .filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const select = `SELECT id, recorded_at AS time, latitude, longitude,
           accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker`;
         const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);

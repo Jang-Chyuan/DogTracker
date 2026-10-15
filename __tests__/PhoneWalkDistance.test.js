@@ -172,7 +172,8 @@ describe('my route with the odometer, end to end', () => {
     insert.run(2, base + 5000, base + 5000, ORIGIN.latitude, ORIGIN.longitude, 4, 4.3, 4.3, 0.2, 'fiction-walk', null);
     const route = await database.phoneRouteSince(base - 1000);
     expect(route[0]).toMatchObject({ session_id: 'fiction-walk', odometer_m: 12.5 });
-    expect(route[1]).not.toHaveProperty('odometer_m');
+    // A row the recorder wrote without one: null, as on historyDayRows' rows.
+    expect(route[1]).toMatchObject({ odometer_m: null });
     const { rows: day } = await database.historyDayRows({ subject: 'phone', start: base - 1000, end: base + 86400000 });
     expect(day[0]).toMatchObject({ session_id: 'fiction-walk', odometer_m: 12.5 });
     connection.close();
