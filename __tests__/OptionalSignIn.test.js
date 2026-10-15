@@ -46,6 +46,8 @@ function spyDatabase() {
   const calls = [];
   const record = name => jest.fn(async (...args) => { calls.push([name, ...args]); return name === 'count' ? 0 : []; });
   return {
+    latestStorageIsolated: true,
+    initializeLatest: record('initializeLatest'), readLatestSnapshot: record('readLatestSnapshot'),
     calls,
     initialize: record('initialize'), listHistory: record('listHistory'), count: record('count'),
     usage: jest.fn(async () => ({ rows: 0, bytes: 0 })), savePage: record('savePage'),
@@ -158,7 +160,7 @@ test('without an account the cloud hooks stay idle: no sync, no reads of cloud r
   expect(historyCloud.cloud).toBeNull();
   expect(s.client.from).not.toHaveBeenCalled();
   // No cloud sync pass and no read of any account's cloud rows.
-  expect(database.calls.filter(([name]) => name === 'initialize' || name === 'savePage')).toEqual([]);
+  expect(database.calls.filter(([name]) => name === 'initializeLatest' || name === 'initialize' || name === 'savePage')).toEqual([]);
   expect(database.calls.filter(([, owner]) => typeof owner === 'string')).toEqual([]);
   expect(NativeModules.CloudBackgroundSync.setOwner).toHaveBeenLastCalledWith(null);
 });
@@ -184,7 +186,7 @@ test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays 
   expect(later).toHaveBeenCalledTimes(1);
   expect(text()).toContain(i18nT('c302'));
   await act(async () => button('未登入，登入').props.onPress());
-  expect(database.calls.some(([name]) => name === 'initialize')).toBe(false);
+  expect(database.calls.some(([name]) => name === 'initializeLatest')).toBe(false);
   const input = label => renderer.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === label);
   await act(async () => {
     input('電子郵件').props.onChangeText('user@example.test');
@@ -196,7 +198,7 @@ test('signing in from 設定 → Supabase 帳號 (S3) starts the sync and stays 
   expect(NativeModules.CloudBackgroundSync.setOwner).toHaveBeenLastCalledWith('account-a');
   // The scheduler's first pass runs right away (and reaches the database).
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
-  expect(database.calls.some(([name]) => name === 'initialize')).toBe(true);
+  expect(database.calls.some(([name]) => name === 'initializeLatest')).toBe(true);
   expect(text()).toContain('user@example.test');
   expect(text()).toContain(i18nT('c209'));
 });

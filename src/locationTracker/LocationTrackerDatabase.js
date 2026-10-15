@@ -5,7 +5,6 @@ import { forgetAddresses } from '../placement/AddressLookup';
 import { locationTrackerNative } from './LocationTrackerService';
 
 export const LOCATION_PAGE_SIZE = 50;
-export const LOCATION_RECORD_LIMIT = 80000;
 
 // Android shares DogStatusStore's SQLite owner with BLE and cloud data.
 export async function readLocationPage(before = 0) {

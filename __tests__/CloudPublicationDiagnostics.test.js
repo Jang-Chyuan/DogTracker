@@ -2,16 +2,16 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSyncWithCommittedMapReader as createCloudSync } from '../__fixtures__/CommittedCloudMapReader';
+import { createIndependentCloudSyncWithCommittedMapReader as createIndependentCloudSync } from '../__fixtures__/CommittedCloudMapReader';
 
 const NOW = Date.parse('2026-10-10T12:00:00Z');
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
-let sync, connection, log;
+let sync, connection, latest, log;
 beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(NOW); log = jest.spyOn(console, 'info').mockImplementation(() => {}); });
-afterEach(async () => { await sync?.dispose(); connection?.close(); log.mockRestore(); sync = connection = null; jest.useRealTimers(); });
+afterEach(async () => { await sync?.dispose(); connection?.close(); latest?.close(); log.mockRestore(); sync = connection = null; jest.useRealTimers(); });
 async function database() {
-  connection = createMemoryConnection(); await createDogDatabase(connection).initialize();
-  const db = createCloudDatabase(connection); await db.initialize(); return db;
+  connection = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(connection).initialize();
+  const db = createCloudDatabase(connection, { latestConnection: latest }); await db.initialize(); return db;
 }
 const start = async () => { sync.setSession({ user: { id: 'a' } }); sync.setForeground(true); await jest.advanceTimersByTimeAsync(1); };
 const stages = () => log.mock.calls.filter(([name]) => ['[CloudSync] latest-published', '[CloudSync] archive-published'].includes(name));
@@ -20,7 +20,7 @@ const stages = () => log.mock.calls.filter(([name]) => ['[CloudSync] latest-publ
 const latestStage = () => ['[CloudSync] latest-published', {
   attempt: 1, elapsedMs: expect.any(Number), revision: 1,
   slotWaitMs: 0, initializeMs: 0, archiveProofMs: 0, latestCacheReadMs: 0,
-  mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0,
+  mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0, sessionMs: 0,
 }];
 
 test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes held archive; %s records only accepted publication', async mode => {
@@ -34,7 +34,7 @@ test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes hel
       if (mode === 'failure') throw new Error('archive unavailable');
     },
   });
-  sync = createCloudSync({ database: db, client: network.client });
+  sync = createIndependentCloudSync({ database: db, client: network.client });
   try {
     await start(); await entered.promise;
     expect(stages()).toEqual([latestStage()]);
@@ -61,15 +61,16 @@ test.each(['complete', 'failure', 'cancel'])('real SDK latest stage precedes hel
 
 test.each(['latest', 'archive'])('owner replacement during native %s commit cannot log its stale success', async phase => {
   const db = await database();
-  const entered = deferred(), release = deferred(), batch = connection.executeBatchAsync;
-  connection.executeBatchAsync = async commands => {
+  const target = phase === 'latest' ? latest : connection;
+  const entered = deferred(), release = deferred(), batch = target.executeBatchAsync;
+  target.executeBatchAsync = async commands => {
     const held = commands.some(command => phase === 'latest'
       ? command.query.includes('INSERT OR REPLACE INTO cloud_snapshot_state') && command.params[3] === 'remote'
       : command.query.includes('INSERT OR REPLACE INTO cloud_archive_publication'));
     if (held) { entered.resolve(); await release.promise; }
     return batch(commands);
   };
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
   try {
     await start(); await entered.promise;
     expect(stages()).toHaveLength(phase === 'latest' ? 0 : 1);
@@ -86,9 +87,9 @@ test.each(['latest', 'archive'])('owner replacement during native %s commit cann
 test('a throwing release sink leaves real latest and archive completion successful', async () => {
   const db = await database();
   log.mockImplementation(() => { throw new Error('sink refused'); });
-  sync = createCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
+  sync = createIndependentCloudSync({ database: db, client: latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] }).client });
   await start();
-  expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 2 });
+  expect(sync.mapPublication()).toMatchObject({ pending: false, mapSuccessRevision: 1 });
   expect(sync.historyPublication()).toMatchObject({ archiveRevision: 1, archiveError: '' });
   expect(await db.readArchivePublication('a')).toMatchObject({ revision: 1 });
 });

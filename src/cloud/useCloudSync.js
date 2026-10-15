@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, NativeModules } from 'react-native';
 import { getCloudClient } from './CloudClient';
-import { createCloudSync } from './CloudSync';
+import { createIndependentCloudSync } from './IndependentCloudSync';
 import { createCloudAuthRefreshLifecycle } from './CloudAuthRefreshLifecycle';
 import { storedSignIn } from './CloudSession';
 
@@ -33,7 +33,7 @@ export function useCloudSync(database, ready, clientFactory = getCloudClient, on
     let disposed = false;
     let eventSeen = false;
     let refused = false, reportedAt = 0;
-    const sync = createCloudSync({ client, database, onChange: value => {
+    const sync = createIndependentCloudSync({ client, database, onChange: value => {
       setStatus(current => ({ ...current, ...value }));
       // Once per refusal, not on every later publish or attempt of the same
       // state (it stays set until an attempt succeeds). A refusal that lasts

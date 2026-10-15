@@ -84,6 +84,33 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
     const away = carriedAway(first, ride);
     return away ? finish('confirmed', first, start, away.time) : null;
   };
+  // 2026-10-15 (#200, phone, a stop-and-go dog walk): the walk began where
+  // the phone last stayed. Going back from where the passing candidate set
+  // off (`index` in `points`), stretches standing still (measured still, or
+  // within the GPS jitter of their last fix, as `stood` below) shorter than
+  // stayMs are stops of the walk (the dog sniffing; no stay in the list
+  // either); the first stretch of stayMs is the stay the walk left, and the
+  // departure is its last fix. Never across a break, an indoor hold or a
+  // vehicle, nor more than departureWalkBackMs back (then: the earliest fix
+  // reached on the move, or the last of the stretch it stood in). The candidate that passes can be minutes into the walk when
+  // the first ones' minute three or eight fell on a stop.
+  const walkedFrom = index => {
+    if (!config.departureWalkBackMs) return null;
+    const from = points[index];
+    let last = points[index], reached = from.time, standing = false;
+    for (let j = index - 1; j >= 0; j -= 1) {
+      const p = points[j];
+      if (from.time - p.time > config.departureWalkBackMs || p.heldReason
+        || points[j + 1].time - p.time > config.gapMs || isVehiclePoint(p, movement.vehicles)) break;
+      standing = (p.phoneStationary && last.phoneStationary) || !above(distanceMeters(last, p),
+        Math.max(2 * config.minMoveM, accuracyOf(last, config), accuracyOf(p, config)));
+      if (!standing) last = p;
+      else if (last.time - p.time >= config.stayMs) return last.time;
+      reached = p.time;
+    }
+    // Stopped going back while standing: the walk began where that ended.
+    return standing ? last.time : reached;
+  };
   for (const candidate of candidates) {
     const t = candidate.time;
     while (nextRide < rides.length && rides[nextRide].start < t) {
@@ -98,6 +125,13 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
     if (elapsed < 210000) continue;
     const three = nearest(candidates, times, t + 180000, t + 150000, t + 210000);
     if (!three) continue;
+    const distance = distanceMeters(candidate, three), speed = distance / ((three.time - t) / 1000);
+    // 2026-10-15 (#200, a lift at home): the phone's 40 m must lie beyond
+    // both fixes' accuracy. In a lift the phone reports coarse fast fixes
+    // (25–50 m) 60–90 m from the flat, and that passed as three minutes on
+    // foot: a confirming departure for five minutes until minute eight.
+    const margin = config.departureBeyondAccuracy ? accuracyOf(candidate, config) + accuracyOf(three, config) : 0;
+    if (!above(distance - margin, 40) || !atLeast(speed, config.departureMinSpeed) || above(speed, config.departureMaxSpeed)) continue;
     // 2026-10-13: the three-minute window lets a brisk walk qualify a
     // candidate still standing at the stay up to three minutes before it set
     // off (stay from 07:00, walk 07:12, 出發 07:09). When the fixes after the
@@ -112,10 +146,9 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
         accuracyOf(candidate, config), accuracyOf(ahead[stood + 1], config)))) stood += 1;
     while (stood > first && above(distanceMeters(candidate, ahead[stood]), config.minMoveM)) stood -= 1;
     const setOff = ahead[stood].time - t >= 60000 ? ahead[stood].time : null;
-    const start = setOff ?? (!previous || adjacentVehicle || t - previous.time > config.gapMs || previous.heldReason
-      ? t : previous.time);
-    const distance = distanceMeters(candidate, three), speed = distance / ((three.time - t) / 1000);
-    if (!above(distance, 40) || !atLeast(speed, config.departureMinSpeed) || above(speed, config.departureMaxSpeed)) continue;
+    const plain = !previous || adjacentVehicle || t - previous.time > config.gapMs || previous.heldReason
+      ? t : previous.time;
+    const start = Math.min(setOff ?? plain, walkedFrom(base + (setOff != null ? stood : first)) ?? Infinity);
     let decisionTime = t + 480000;
     // Phone-only grace when a high-speed run at minute eight is unconfirmed.
     const at = lowerBound(edgeStarts, decisionTime) - 1;
@@ -144,7 +177,12 @@ export function historyDeparture(points, { subject = 'dog', config = configFor(s
     const transported = movement.vehicles.some(v => v.start <= decisionTime && v.end > start);
     const heldAt = lowerBound(heldTimes, t);
     const indoor = heldAt < heldTimes.length && heldTimes[heldAt] <= t + 480000;
-    if (!eight || !above(distanceMeters(candidate, eight), 80) || interrupted || transported || indoor) continue;
+    // Phone (with the walk-back): at minute eight also over 80 m from where
+    // the walk left (`start`): a candidate late in a walk out and back home
+    // is that far from home, but the phone came back.
+    const origin = config.departureWalkBackMs ? points[firstFrom(points, p => p.time, start)] : null;
+    if (!eight || !above(distanceMeters(candidate, eight), 80) || (origin && !above(distanceMeters(origin, eight), 80))
+      || interrupted || transported || indoor) continue;
     return finish('confirmed', candidate, start, decisionTime);
   }
   for (; nextRide < rides.length; nextRide += 1) {
