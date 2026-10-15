@@ -285,6 +285,7 @@ async function phoneDatabase() {
   db.exec("INSERT INTO cloud_sync_buckets VALUES ('alice', 9, 0, 3, 1)");
   db.exec("INSERT INTO myLocationTracker (recorded_at, location_at, latitude, longitude) VALUES (1, 1, 24.98, 121.31)");
   db.exec(`INSERT INTO dog_avatars VALUES (4, '{"kind":"art"}')`);
+  db.exec("INSERT INTO dog_names VALUES (6, '小黑')");
   db.exec(`INSERT INTO app_settings VALUES ('map_preferences', '{}')`);
   db.exec("INSERT INTO ble_upload_settings VALUES ('alice', 7, 'phone')");
   const queue = db.prepare(`INSERT INTO ble_upload_queue (event_id, owner_user_id, master_id, received_at, payload_json,
@@ -296,7 +297,7 @@ async function phoneDatabase() {
   return connection;
 }
 const count = (connection, table) => connection.sqlite.prepare(`SELECT COUNT(*) count FROM ${table}`).get().count;
-const KEPT = ['myLocationTracker', 'dog_avatars', 'map_history_settings', 'app_settings', 'ble_upload_settings',
+const KEPT = ['myLocationTracker', 'dog_names', 'dog_avatars', 'map_history_settings', 'app_settings', 'ble_upload_settings',
   'cloud_sync_state', 'cloud_sync_buckets'];
 
 test('刪除全部狗資料 asks about rows not uploaded; 一起刪除 removes only the dog tables', async () => {
