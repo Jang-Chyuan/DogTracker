@@ -91,17 +91,27 @@ test('start failures are visible and repeated taps do not start duplicate servic
   expect(state.busy).toBe(false);
 });
 
-test('phone route deletion clears native rows, remembered ranges and exports in order', async () => {
+test('phone route deletion clears native rows, remembered ranges, saved addresses and exports in order', async () => {
   const { NativeModules } = require('react-native');
   const { rememberRangeFor, rememberedRange } = require('../src/history/screen/RangeMemory');
+  const { addressLookup } = require('../src/placement/AddressLookup');
+  // The stays' saved addresses (home too) go with the route (audit L5).
+  const clear = jest.spyOn(addressLookup, 'clear').mockImplementation(async () => {
+    expect(locationTrackerNative.deleteAll).toHaveBeenCalled();
+  });
   rememberRangeFor('phone:today', { start: 1, end: 2 });
   NativeModules.HistoryExport = { clearExports: jest.fn(async () => {
     expect(locationTrackerNative.deleteAll).toHaveBeenCalled();
     expect(rememberedRange('phone:today')).toBeNull();
+    expect(clear).toHaveBeenCalledTimes(1);
   }) };
-  await deletePhoneRoutes();
-  expect(NativeModules.HistoryExport.clearExports).toHaveBeenCalledTimes(1);
-  delete NativeModules.HistoryExport;
+  try {
+    await deletePhoneRoutes();
+    expect(NativeModules.HistoryExport.clearExports).toHaveBeenCalledTimes(1);
+  } finally {
+    delete NativeModules.HistoryExport;
+    clear.mockRestore();
+  }
 });
 
 test('native phone deletion SQL preserves dog data and metadata', () => {

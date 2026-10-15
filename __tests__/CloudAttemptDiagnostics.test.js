@@ -161,7 +161,7 @@ test('real independent engine timeout emits one fixed numeric snapshot before qu
       global: { fetch: diagnostics.cloudDiagnosticFetch(fetch) } });
     engine = createCloudSync({ client, database, onChange: value => { state = value; } });
     engine.setSession({ user: { id: 'do-not-log-owner' } }); engine.setForeground(true);
-    await advance(1); expect(state.snapshotPending).toBe(true);
+    await advance(1); expect(state).toMatchObject({ busy: true, snapshotPending: false });
     await advance(120000);
     expect(state).toMatchObject({ snapshotPending: false, mapSuccessRevision: 0, offline: true });
     expect(summaries).toHaveLength(1);

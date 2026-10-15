@@ -17,11 +17,29 @@ const decodeContext = text => {
   const value = text ? JSON.parse(text) : [];
   return Array.isArray(value) ? { rows: value, seeds: [] } : value;
 };
+// The whole remote JSON of a row (CloudTelemetry raw_payload) is for the
+// 雲端資料 page's archive rows only. Nothing reads it from the latest map
+// set (exposed() drops it), and it is about half of each stored context row
+// (audit F8), so it is not stored here.
+const withoutPayload = record => {
+  if (!record || record.raw_payload === undefined) return record;
+  const { raw_payload: _raw, ...value } = record;
+  return value;
+};
 const exposed = record => {
   if (!record) return null;
   const { raw_payload: _raw, ...value } = record;
   return { ...value, source: 'cloud', environment: null };
 };
+// Each stored dog's context carries a token that changes whenever its
+// context does (`context_version`). The live map reads the latest set every
+// 10 s, and a silent dog's half hour does not change for hours: a reader that
+// passes the tokens it holds (`knownContexts`) gets back, and parses, only
+// the contexts that changed (audit F8: every dog's context used to be parsed,
+// twice, on every poll). A token is unique across revisions, data deletion
+// and app restarts, so a matching one always means the same stored context.
+let contextTokens = 0;
+const contextToken = () => `${Date.now().toString(36)}.${(contextTokens++).toString(36)}`;
 
 // Latest map data is its own small committed table. Archive writers, repairs
 // and retention never write it, and a snapshot never advances archive cursors.
@@ -41,6 +59,9 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       const columns = rows(await connection.executeAsync('PRAGMA table_info(cloud_snapshot_state)'));
       if (!columns.some(column => column.name === 'origin'))
         await connection.executeAsync("ALTER TABLE cloud_snapshot_state ADD COLUMN origin TEXT NOT NULL DEFAULT 'remote'");
+      const dogColumns = rows(await connection.executeAsync('PRAGMA table_info(cloud_latest_snapshot)'));
+      if (!dogColumns.some(column => column.name === 'context_version'))
+        await connection.executeAsync("ALTER TABLE cloud_latest_snapshot ADD COLUMN context_version TEXT NOT NULL DEFAULT ''");
     })).catch(error => {
       if (latestReadiness.get(connection) === readiness) latestReadiness.delete(connection);
       throw error;
@@ -68,7 +89,7 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
       return withConnectionLock(connection, async () => {
         if (!isCurrent()) throw new Error(t('c576'));
         const before = rows(await connection.executeAsync('SELECT revision FROM cloud_snapshot_state WHERE owner_user_id=?', [owner]))[0];
-        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,fix_json,context_json FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
+        const previous = new Map(rows(await connection.executeAsync('SELECT slave_id,packet_json,fix_json,context_json,context_version FROM cloud_latest_snapshot WHERE owner_user_id=?', [owner]))
           .map(row => [row.slave_id, row]));
         const revision = Number(before?.revision || 0) + 1;
         const commands = [];
@@ -82,19 +103,20 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
           const old = previous.get(dog.slaveId);
           const context = dog.context == null && old && JSON.parse(old.packet_json).master_id === dog.packet.master_id
             ? decodeContext(old.context_json) : { rows: dog.context || [], seeds: dog.seeds || [] };
-          if (snapshot.masterIds) {
-            context.rows = context.rows.filter(row => snapshot.masterIds.includes(row.master_id));
-            context.seeds = context.seeds.filter(row => snapshot.masterIds.includes(row.master_id));
-          }
-          const packetJSON = JSON.stringify(dog.packet), fixJSON = dog.fix ? JSON.stringify(dog.fix) : null;
-          const contextJSON = JSON.stringify(context);
+          const permittedRow = row => !snapshot.masterIds || snapshot.masterIds.includes(row.master_id);
+          context.rows = context.rows.filter(permittedRow).map(withoutPayload);
+          context.seeds = context.seeds.filter(permittedRow).map(withoutPayload);
+          const packetJSON = JSON.stringify(withoutPayload(dog.packet));
+          const fixJSON = dog.fix ? JSON.stringify(withoutPayload(dog.fix)) : null;
+          const contextJSON = JSON.stringify({ rows: context.rows, seeds: context.seeds });
           // Compare the complete serialized values, including context order and
           // authority filtering. Unchanged latest/context polls need not rewrite
           // large dog rows; their atomic metadata revision/cutoff still advances.
           if (old && old.packet_json === packetJSON && old.fix_json === fixJSON && old.context_json === contextJSON) continue;
+          const version = old && old.context_json === contextJSON ? old.context_version : contextToken();
           commands.push({
-          query: 'INSERT OR REPLACE INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
-          params: [owner, dog.slaveId, packetJSON, fixJSON, contextJSON],
+          query: 'INSERT OR REPLACE INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json,context_version) VALUES(?,?,?,?,?,?)',
+          params: [owner, dog.slaveId, packetJSON, fixJSON, contextJSON, version],
           });
         }
         commands.push({ query: 'INSERT OR REPLACE INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,?,?,?)',
@@ -127,9 +149,9 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
               if (options.isCurrent && !options.isCurrent()) return;
               const fixes = new Map(cached.fixes.filter(validCloudFix).map(row => [row.slave_id, row]));
               const commands = cached.packets.map(packet => ({
-                query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json) VALUES(?,?,?,?,?)',
+                query: 'INSERT INTO cloud_latest_snapshot(owner_user_id,slave_id,packet_json,fix_json,context_json,context_version) VALUES(?,?,?,?,?,?)',
                 params: [owner, packet.slave_id, JSON.stringify(packet), fixes.has(packet.slave_id) ? JSON.stringify(fixes.get(packet.slave_id)) : null,
-                  JSON.stringify(cached.contexts?.get(packet.slave_id) || { rows: [], seeds: [] })],
+                  JSON.stringify(cached.contexts?.get(packet.slave_id) || { rows: [], seeds: [] }), contextToken()],
               }));
               commands.push({ query: 'INSERT INTO cloud_snapshot_state(owner_user_id,revision,cutoff,origin) VALUES(?,0,?,?)',
                 params: [owner, Math.max(0, ...cached.packets.map(row => Number(row.received_at) || 0)), 'cache'] });
@@ -156,16 +178,34 @@ export function createLatestSnapshotDatabase(connection, initialize, bootstrap =
         // Revision 0 permits the existing one-time offline upgrade cache, not
         // a remote success; do not bootstrap, decode context or write here.
         if (options?.metadataOnly === true) return { revision: state ? Number(state.revision) : 0 };
-        const found = rows(await connection.executeAsync(`SELECT s.revision,s.cutoff,s.origin,d.packet_json,d.fix_json,d.context_json
+        // `knownContexts` ({ slaveId: context_version }): contexts the reader
+        // already holds. Those are neither read nor parsed again; the result
+        // says which it left out (`contextsKnown`). Without it every dog's
+        // context comes back, as before. Both queries run in the same lock.
+        const known = options?.knownContexts ?? null;
+        const found = rows(await connection.executeAsync(`SELECT s.revision,s.cutoff,s.origin,d.slave_id,d.packet_json,d.fix_json,d.context_version
           FROM cloud_snapshot_state s LEFT JOIN cloud_latest_snapshot d ON d.owner_user_id=s.owner_user_id
           WHERE s.owner_user_id=? ORDER BY d.slave_id`, [owner]));
         if (!found.length) return null;
+        const dogs = found.filter(row => row.packet_json);
+        const versions = Object.fromEntries(dogs.map(row => [row.slave_id, row.context_version]));
+        const wanted = dogs.filter(row => !known || known[row.slave_id] !== row.context_version).map(row => row.slave_id);
+        const texts = new Map();
+        // One read of the changed dogs only (bound parameters; a dog roster is small).
+        for (let index = 0; index < wanted.length; index += 500) {
+          const part = wanted.slice(index, index + 500);
+          rows(await connection.executeAsync(`SELECT slave_id,context_json FROM cloud_latest_snapshot
+            WHERE owner_user_id=? AND slave_id IN (${part.map(() => '?').join(',')})`, [owner, ...part]))
+            .forEach(row => texts.set(row.slave_id, row.context_json));
+        }
+        // Each dog's context parsed once (`contexts`), and all of them together as before.
+        const contexts = Object.fromEntries(wanted.map(slave => [slave, decodeContext(texts.get(slave))]));
+        const all = Object.values(contexts);
         return { revision: Number(found[0].revision), cutoff: Number(found[0].cutoff), verified: found[0].origin === 'remote',
           rows: found.filter(row => row.fix_json).map(row => exposed(JSON.parse(row.fix_json))),
-          packets: found.filter(row => row.packet_json).map(row => exposed(JSON.parse(row.packet_json))),
-          context: found.flatMap(row => decodeContext(row.context_json).rows),
-          seeds: found.flatMap(row => decodeContext(row.context_json).seeds),
-        };
+          packets: dogs.map(row => exposed(JSON.parse(row.packet_json))),
+          contexts, contextVersions: versions, contextsKnown: dogs.length - wanted.length,
+          context: all.flatMap(context => context.rows), seeds: all.flatMap(context => context.seeds) };
       });
     },
   };

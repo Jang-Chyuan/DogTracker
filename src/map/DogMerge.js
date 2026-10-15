@@ -7,6 +7,12 @@ import { advanceBattery, batteryReading, plausibleBattery } from '../tracking/Ba
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
 // per dog and takes the newest row of all sources.
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// How many dogs the map draws before it starts leaving some out. It only
+// ever leaves out dogs that are not heard by this phone and whose last packet
+// is more than MAX_AGE_MS old (rankDogs): a lent collar or a test ID from last
+// week, never a dog that is working today. The cloud roster itself is bounded
+// in time (CloudLatest ROSTER_WINDOW_MS), so this is a safety net for marker
+// count, not the usual limit.
 export const MAX_DOGS = 20;
 export const LIVE_PACKET_WINDOW_MS = 3 * 60000;
 
@@ -65,6 +71,9 @@ function bleCandidate(point, samples) {
 //
 // A dog stays on the map however old its last position is (v3 §6: older than
 // 24 hours it is kept, grey); pass `maxAgeMs` only to limit what is read.
+// Past MAX_DOGS, only dogs this phone does not hear and that have been silent
+// for over 24 hours are left out (keepDogs); the cloud only lists dogs heard
+// in the last ROSTER_WINDOW_MS to begin with (CloudLatest).
 export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRows = [],
   now = Date.now(), maxAgeMs = Infinity, windowMs = null, holds = {}, statuses = {}, ride = null, batteries = {} }) {
   const local = bleCandidate(point, samples);
@@ -131,7 +140,7 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         source, coordinate: null, receivedAt: null, retained: true });
     }
   }
-  return [...dogs.values()]
+  const merged = [...dogs.values()]
     .filter(dog => now - (packets.get(dog.slaveId)?.time ?? dog.receivedAt) <= maxAgeMs)
     // Retain old positions in the detail list for up to 24 hours. The live map
     // excludes stale markers using the selected window.
@@ -195,8 +204,31 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
         distanceMeters: held || stale || noFix || packet?.source !== 'ble' ? null
           : packet.row.distance_meters ?? null,
       };
-    })
-    .sort((left, right) => left.slaveId - right.slaveId)
-    .slice(0, MAX_DOGS);
+    });
+  return keepDogs(merged, now, point?.slaveId ?? null)
+    .sort((left, right) => left.slaveId - right.slaveId);
 }
 
+// A dog this phone hears itself: the connected pair, or a packet or fix that
+// came over this phone's receiver.
+const isLocal = (dog, liveSlaveId) => dog.slaveId === liveSlaveId
+  || dog.packetSource === 'ble' || dog.fixSource === 'ble' || dog.source === 'ble';
+
+/**
+ * Which merged dogs the map keeps (audit F4: the old `.slice(0, MAX_DOGS)`
+ * after sorting by ID dropped the highest IDs, the live BLE dog among them,
+ * once old roster dogs passed 20). Ranked: this phone's own dogs first, then
+ * dogs heard in the last MAX_AGE_MS, then the rest by their last packet. The
+ * first two tiers are always kept, however many; only the third is cut, to
+ * what is left of MAX_DOGS.
+ */
+export function keepDogs(dogs, now, liveSlaveId = null) {
+  if (dogs.length <= MAX_DOGS) return dogs;
+  const lastHeard = dog => dog.lastPacketAt ?? dog.receivedAt ?? -Infinity;
+  const tier = dog => isLocal(dog, liveSlaveId) ? 0 : now - lastHeard(dog) <= MAX_AGE_MS ? 1 : 2;
+  const ranked = dogs.map(dog => ({ dog, tier: tier(dog), heard: lastHeard(dog) }))
+    .sort((left, right) => left.tier - right.tier || right.heard - left.heard
+      || left.dog.slaveId - right.dog.slaveId);
+  const always = ranked.filter(entry => entry.tier < 2).length;
+  return ranked.slice(0, Math.max(always, MAX_DOGS)).map(entry => entry.dog);
+}

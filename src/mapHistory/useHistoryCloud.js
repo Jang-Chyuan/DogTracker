@@ -23,10 +23,11 @@ const merge = (list, more) => (more.length ? [...new Set([...list, ...more])] : 
  * `cloud`: HistoryCloud's adapter (null: signed out, or my route); `slaveId`
  * the dog; `scope` changes when the subject, account or fixture changes (all
  * that was found is forgotten); `todayKey` today's 「YYYY-MM-DD」; `local` the
- * days this phone holds. Returns { knowledge, askMonth, askYear, retryQuery,
+ * days this phone holds; `cutoffOf(day)` the cutoff a day was already shown
+ * complete at (undefined: `cutoff`). Returns { knowledge, askMonth, askYear, retryQuery,
  * stopQuery, download, startDownload, cancelDownload }.
  */
-export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null, cutoff = Date.now(), publicationRevision = 0, diagnostic = null }) {
+export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localByDog = null, active = true, seed = null, cutoff = Date.now(), cutoffOf = null, publicationRevision = 0, diagnostic = null }) {
   const enabled = !!cloud && slaveId != null;
   // `seed`: what a screen fixture says was already found (its H3c starts on
   // a cloud day); never set for real.
@@ -263,7 +264,10 @@ export function useHistoryCloud({ cloud, slaveId, scope, todayKey, local, localB
   const completeDay = useCallback(day => !enabled || (ids.every(id => completeFor(id, day))
     && !incompleteOf(scope).has(day) && !(scopedDownload?.day === day && scopedDownload.status === 'downloading')),
   [enabled, ids, completeFor, scope, scopedDownload, incompleteRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-  const partialLocal = localByDog ? local.filter(day => ids.some(id => !completeFor(id, day))) : [];
+  // `cutoffOf(day)`: the cutoff a day of this opening was already shown
+  // complete at (the screen's), else the shown day's: a day still taking rows
+  // is not 「部分」 just because it was left a minute ago.
+  const partialLocal = localByDog ? local.filter(day => ids.some(id => !completeFor(id, day, cutoffOf?.(day) ?? cutoff))) : [];
   // `at`: the cutoff of the day about to be shown, when the screen starts
   // its download in the same press that changes the day (this render's
   // `cutoff` is still the old day's).

@@ -11,6 +11,17 @@ const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upl
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
 const NONZERO = 'payload->lat.neq.0,payload->lon.neq.0';
 const CONTEXT_PAGE = 500;
+// The live map's cloud roster: dogs with a row received in the last 14 days
+// (server `received_at`, which also bounds late phone uploads). Without a
+// bound every slave_id ever stored under the user's Masters (old collars, lent
+// collars, test IDs) stayed on the roster for good, and each one costs 2-5
+// requests every 30 s plus its half-hour context (audit F4). 14 days covers a
+// collar left charging in the kennel over a long holiday (Lunar New Year with
+// its weekends is about 9-10 days) or a two-week break between field
+// rotations, while a collar unheard for longer is no longer part of the team
+// in the field. Its rows stay in the local archive: the history still lists
+// it on the days it has data (HistoryDatabase.historyDogs).
+export const ROSTER_WINDOW_MS = 14 * 24 * 60 * 60000;
 const stamp = text => {
   const time = Date.parse(text);
   const fraction = /\.(\d{1,6})(?:Z|[+-]\d{2}:\d{2})$/.exec(text)?.[1] || '';
@@ -139,9 +150,13 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     let after = null;
     for (;;) {
       // One serial cursor, with at most four discovered keys waiting for a
-      // worker. Backpressure bounds prefetch without limiting the dog roster.
+      // worker. Backpressure bounds prefetch; ROSTER_WINDOW_MS bounds the roster.
       while (queued.length >= prefetch) { await Promise.race([...active, stopped]); await guard(); }
-      let keys = base(FIELDS).order('slave_id', { ascending: true })
+      // Only key discovery is bounded: a dog on the roster still gets its
+      // newest valid fix however old (`latest(true)` below), so a collar
+      // that has had no GPS for days keeps its last known position.
+      let keys = base(FIELDS).gte('received_at', new Date(cutoff - ROSTER_WINDOW_MS).toISOString())
+        .order('slave_id', { ascending: true })
         .order('received_at', { ascending: false }).order('event_id', { ascending: false }).limit(1);
       if (after !== null) keys = keys.gt('slave_id', after);
       const key = await read(keys, 'keys');

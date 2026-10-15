@@ -155,7 +155,7 @@ test.each(['network reject', '503 Retry-After', 'ignored abort'])('real foregrou
   engine.setSession({ user: { id: OWNER } }); engine.setForeground(true);
   await jest.advanceTimersByTimeAsync(0); await flush();
   expect(network.calls.filter(dogEight)).toHaveLength(1);
-  expect(state.at(-1)).toMatchObject({ snapshotPending: true, mapSuccessRevision: 0 }); await unchanged();
+  expect(state.at(-1)).toMatchObject({ busy: true, snapshotPending: false, mapSuccessRevision: 0 }); await unchanged();
   const before = Date.now(); engine.setForeground(false); await flush();
   let disposed = false; const disposal = engine.dispose().then(() => { disposed = true; });
   await flush();

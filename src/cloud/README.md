@@ -42,11 +42,15 @@ Session 透過 `react-native-keychain` 存於 Android Keystore／iOS Keychain，
 
 Token 更新失敗但伺服器沒有拒絕登入時（剛回前景網路未通、5xx，或 SDK 在背景更新失敗後 60 秒內不再重試），SDK 的 `getSession()` 回報沒有 Session，請求會改用 publishable key 匿名送出並得到 401。所以前景每輪最新位置先等 SDK 拿到同一帳號的 Session（最多 65 秒，期間仍顯示「正在更新」）再送第一個請求；遇到 401 時強制更新 Token 一次並重送一次（`CloudSession.js`）。伺服器拒絕 Refresh Token 時照舊回報登入失效，不重試。
 
+更新 Token 的回應不是 Supabase 自己的判定時，一律當成連不上（`CloudRefreshGuard.js`）：Wi-Fi 登入頁或代理伺服器的 HTML、429、任何 5xx、其他狀態碼。SDK 只把丟出的 fetch 錯誤和 502／503／504 當成可重試；其他回應在 Access Token 已過期時（例如在背景超過一小時後回到 App）會讓 SDK 刪掉存好的登入並發出 `SIGNED_OUT`，App 就顯示登入失效、BLE 轉送也停了。只有 Supabase 的 JSON 400／401／403（Refresh Token 被撤銷、已用過、Session 不存在）才照舊結束登入。
+
+一次失敗（`error`、`authFailed`）保留到下一次成功才清除，不在每輪開始時清掉；`useCloudSync` 因此每次登入被拒只請 `AuthProvider` 確認一次，仍被拒時每 5 分鐘再確認一次（之前每 30 秒更新 Token 兩次）。
+
 `cloud_sync_state` 以 `(owner_user_id, master_id)` 為主鍵，儲存 `through_at`、`event_id`、`updated_at`。每批事件與對應進度在同一個 SQLite transaction 提交；若該範圍已讀完，進度移至本輪查詢上限，事件 ID 為空。首次即使尚無資料也會記錄起始範圍。
 
 每輪重新讀取 `device_members`，新獲授權的 Master 首次抓最近 24 小時。已完成的下載範圍從上次進度前 5 分鐘補查，利用事件唯一鍵去重；未完成的範圍用最後提交的微秒 `received_at` 加 `event_id` 精確續傳，避免有限批次一直停在同一頁。增量游標不使用 `phone_received_at`；歷史顯示維持修正後的 `track_at`。
 
-排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
+排程在 App 層執行，不依賴雲端頁。每 30 秒觸發，上一輪未完成就略過。斷網失敗下個週期重試；Supabase 回 429 或 5xx 時改為退避（1、2、4 分鐘，之後每 5 分鐘），成功、重試、回到 App 或換帳號時重新從 30 秒開始。每輪自動同步最多執行 120 秒，逾時保留已儲存批次，下輪繼續。登出取消同步並清除該手機的 Session。
 
 Android 登入後排定唯一的 WorkManager periodic work `dogtracker-cloud-history`，15 分鐘週期、首次延遲 15 分鐘，重複 Token 更新不重設排程。`NetworkType.CONNECTED` 讓無網路時等待；執行中斷網會停止工作，保留已提交的頁面，系統允許後再續傳。暫時性錯誤採 2 分鐘起的指數退避。背景先批次轉送 BLE 待傳資料（最多 30 秒，沿用 UUID、每筆檢查登入帳號及 Master 轉送設定），再執行增量下載；整輪最多 90 秒，不跑前景的整點核對／舊時間修復。前景與背景共用上傳鎖，回到前景或登出會取消背景請求；取消後未確認的事件留待重試。排程可能受 Android 省電影響延後，並非背景即時上傳。
 
@@ -87,10 +91,13 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 `slave_id` 全隊唯一，所以首頁每隻狗只有一個 marker，取 BLE 與各台 Master 的雲端資料中**最新的一筆**，並標示來源（`BLE` 或 `經 Master N・雲端`）。合併規則在 `src/map/DogMerge.js`，不依賴地圖 SDK。
 
 - 地圖只讀本機 `supabase_dog_status`（`latestBySlave`，每 10 秒一次），不直接查 Supabase；離線仍可顯示已下載的位置。
+- 雲端名單只列最近 14 天（`CloudLatest.ROSTER_WINDOW_MS`，以伺服器的 `received_at` 判斷）有資料的狗：下載最新位置時，找狗的那一步多一個 `received_at >= cutoff − 14 天` 條件；名單上的狗照樣拿最後一筆有效定位，不管多久以前（沒有 GPS 好幾天的項圈仍留在最後位置）。以前名單是這些 Master 下存過的每一個 `slave_id`，只會變多，每隻都要每 30 秒 2–5 個請求外加停住脈絡。更久沒消息的狗留在本機 archive，歷史的「＋ 加入」在牠有資料的日子仍列出來（`HistoryDatabase.historyDogs`、`useOlderHistoryDogs`）。
+- `mergeDogMarkers` 不再照編號只留前 20 隻（`MAX_DOGS`）：超過 20 隻時用 `keepDogs` 排序，這支手機收到的狗、24 小時內有消息的狗一律保留，只有剩下的名額給其他狗（最近有消息的先）。輸出仍依編號排序。
 - 每隻狗分別比較有效定位時間，雲端優先使用修正後的 `track_at`，否則使用 `received_at`；有效的 cloud-only 狗也加入集合，不受其他狗的 BLE 新鮮度限制。來源與新鮮度逐隻判斷。
 - 同一定位時間的兩筆保留 BLE；雲端比較時間優先採用修正後的 `track_at`。
 - `mergeDogMarkers` 預設 `maxAgeMs = Infinity`，超過 24 小時的最後有效位置仍保留。即時 marker 由 `DogFreshness` 判斷灰化：一般看最後有效定位，室內停住看最後封包，超過 10 分鐘標為未更新；BLE 使用目前時間（另套用手動中斷／重連規則），雲端使用最近成功即時下載的時間，尚未成功或連續失敗超過 10 分鐘才改用目前時間。即時路線的選定時間窗只裁切路線；`DogMerge.windowMs` 判斷通訊狀態（畫面傳入 3 分鐘），不等於 marker 的保留期限。從未有有效位置且沒有停住座標的狗不繪製 marker。
 - 未登入不讀雲端資料。
+- 雲端的狗整批換：最新位置正在寫入（`snapshotPending`，只有發布到讀回那一下）、已提交但地圖還沒讀到、或回到 App 還在「正在更新」時，地圖保留上一批已接受的雲端位置與雲端封包（`src/map/AtomicDogSnapshot.js`）。這支手機接收器的資料不保留：BLE 封包、停住、接收範圍、電量判斷和接收器那隻狗的位置都照常即時更新，卡片也照讀本機的列（`AtomicDogCardReader.js`）。之前整組狗連 BLE 一起保留，而且從每輪開始（等登入最多 65 秒、HTTP 最多 120 秒）就保留，網路慢或不通時這支手機自己的狗、卡片和提醒大部分時間都停住不動。
 
 BLE 是這支手機的時鐘；Wi-Fi 上傳的 `received_at` 是伺服器的時鐘；手機轉送的 `phone_received_at` 是上傳那支手機的時鐘。三個時鐘不一定一致（`src/cloud/ServerClock.js`，2026-10-15）：
 
@@ -107,6 +114,8 @@ BLE 是這支手機的時鐘；Wi-Fi 上傳的 `received_at` 是伺服器的時�
 1. **最新位置**：先取每隻可讀取的狗的最新封包與最後有效定位，提交成 latest snapshot（`snapshotRevision`），地圖立刻可用。
 2. **停住脈絡**：再補完整的室內停住脈絡，成功時同一個 snapshot 版本再前進一次；失敗或逾時只保留已接受的最新位置，不把不完整的脈絡交給停住判斷，也不用空集合蓋掉先前的脈絡。
 3. **完整歷史（archive）**：分頁下載先寫入 staging，每頁與 `event_id` 游標同一個交易提交；只有整輪完成才一次發布 staged 資料與完整性證明（`archiveRevision`）。失敗、取消或換帳號都不改已接受的 snapshot，也不發布半套歷史；重建資料庫連線或排程後從保存的游標續傳。活動頁的「完整歷史」閘門在 archive 發布前保持關閉。
+
+即時地圖每 10 秒讀一次 latest snapshot（`useCloudDogs`）。每隻狗的停住脈絡帶一個 `context_version`，只有脈絡變了才換。讀的人帶上自己已經有的版本（`knownContexts`），就只會讀回並解析變了的脈絡；兩次下載之間的輪詢一筆脈絡都不讀，一隻安靜好幾個小時的狗也不會每次都被重讀。以前每次輪詢都要把每隻狗的脈絡讀出來，而且解析兩次（稽核 F8）。版本是一次性的字串，所以刪除資料或重開 App 之後，也不會剛好撞上舊的值。存進 snapshot 的封包、定位和脈絡都不帶 `raw_payload`（整筆雲端 JSON）：地圖讀回來時本來就會丟掉它，它卻佔脈絡列的一大半。`raw_payload` 仍然存在 archive 的 `supabase_dog_status`，給雲端資料頁看。接收範圍的判定（`saveRangeState`）只在內容改變時才寫。
 
 雲端回應可能少於要求的 1,000 筆，下載必須讀到空頁才算結束：每頁 1,000 筆等於 Supabase 預設的 `max-rows`，沒有餘裕，而且結束點會成為 checkpoint 與完整性證明，所以完整歷史與手動下載不使用短頁停止。會員清單與停住脈絡每頁只要 500 筆，低於 `CloudPaging.js` 的 `CLOUD_SERVER_ROW_CAP`（1,000），回傳少於 500 筆就是最後一頁，不再多送一次空頁請求；整頁 500 筆仍會讀下一頁。手動下載指定日期是另一個交易：完成的狗與日期才有完整證明，不覆蓋地圖的 snapshot，也不帶出另一個未完成的自動下載。
 

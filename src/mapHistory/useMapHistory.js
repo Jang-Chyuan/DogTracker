@@ -24,6 +24,10 @@ export function useMapHistory(database, ready, active, owner) {
   const [busy, setBusy] = useState(false);
   const [ownedDevices, setOwnedDevices] = useState({ owner: null, value: [] });
   const devices = ownedDevices.owner === (owner || null) ? ownedDevices.value : [];
+  // Every dog this phone holds rows of (HistoryDatabase.historyDogs), for the
+  // history's 「＋ 加入」 beside the dogs on the live map.
+  const [ownedDogs, setOwnedDogs] = useState({ owner: null, value: [] });
+  const knownDogs = ownedDogs.owner === (owner || null) ? ownedDogs.value : [];
   // Stable across renders (the list's polling effect depends on it); signing
   // in or out changes `owner` in the request, not the function.
   const readDay = useRef(request => {
@@ -54,8 +58,17 @@ export function useMapHistory(database, ready, active, owner) {
       .catch(() => { if (alive) setOwnedDevices({ owner: account, value: [] }); });
     return () => { alive = false; };
   }, [loaded, active, source, owner]);
+  useEffect(() => {
+    if (!loaded || !active || !db.current?.historyDogs) return undefined;
+    let alive = true;
+    const account = owner || null;
+    db.current.historyDogs({ owner: account })
+      .then(value => { if (alive) setOwnedDogs({ owner: account, value: Array.isArray(value) ? value : [] }); })
+      .catch(() => { if (alive) setOwnedDogs({ owner: account, value: [] }); });
+    return () => { alive = false; };
+  }, [loaded, active, owner]);
   return {
-    preferences, loaded, error, busy, devices,
+    preferences, loaded, error, busy, devices, knownDogs,
     /** One day of one dog's or this phone's rows for the time-line list. */
     readDay: readDay.current,
     /** The local days with rows of one dog or my route (HistoryDatabase.historyDays). */

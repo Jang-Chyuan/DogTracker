@@ -413,3 +413,43 @@ describe('a stay going on from the day before begins its row at midnight', () =>
     expect(nodeTimes(own[0])[0]).toBe('00:01');
   });
 });
+
+// 2026-10-15 (audit of real days, live checkpoints): two shapes whose times
+// did not add up while today was still being recorded. Fictional nodes.
+describe('live rows always add up', () => {
+  const at = { latitude: 24.9892, longitude: 121.3138 };
+  test('the seconds between 恢復記錄 and the live end are a row (no hole)', () => {
+    // 57 min with no data, the recording back at 10:22:43, the end (現在) at
+    // 10:23:06: the 0 m step between the two moments was dropped.
+    const nodes = [gap(9 * 60 * MIN, 10 * 60 * MIN + 22 * MIN + 43000), { type: 'resume', ...at,
+      start: 10 * 60 * MIN + 22 * MIN + 43000, end: 10 * 60 * MIN + 22 * MIN + 43000 },
+    { type: 'end', ...at, start: 10 * 60 * MIN + 23 * MIN + 6000, end: 10 * 60 * MIN + 23 * MIN + 6000, label: '現在' }];
+    const shown = timelinePresentation(nodes);
+    for (let i = 1; i < shown.length; i += 1) expect(shown[i].start).toBe(shown[i - 1].end);
+    expect(shown.at(-1).end).toBe(10 * 60 * MIN + 23 * MIN + 6000);
+    // The phone was there: an unnumbered stay from the recording's return.
+    expect(shown.at(-1)).toMatchObject({ type: 'stop', presentationOnly: 'between-breaks', number: null,
+      start: 10 * 60 * MIN + 22 * MIN + 43000 });
+  });
+
+  test('a departure still being confirmed, still there since: the stay is the row, not a 5-minute 出發', () => {
+    const start = 16 * 60 * MIN + 4 * MIN + 39000, end = 16 * 60 * MIN + 9 * MIN + 55000;
+    const nodes = [{ type: 'departure', ...at, start, end: start, detected: true },
+      { type: 'stop', presentationOnly: 'still-here', number: null, ...at, start, end, durationMs: end - start,
+        interruptionMs: 0, gaps: [] },
+      { type: 'end', ...at, start: end, end, label: '現在' }];
+    const shown = timelinePresentation(nodes);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ type: 'stop', presentationOnly: 'still-here', start, end });
+    expect(shown.some(row => row.type === 'departure' && row.end > row.start)).toBe(false);
+  });
+
+  test('a detected departure that set off from a stay keeps its moment (unchanged)', () => {
+    const nodes = [{ type: 'departure', ...at, start: 0, end: 0, detected: true },
+      { type: 'stop', id: 'visit:1', number: 1, ...at, start: 0, end: 20000, durationMs: 20000, points: [{ time: 0, ...at }] },
+      walk(20000, 10 * MIN, 600), { type: 'end', ...at, start: 10 * MIN, end: 10 * MIN, label: '現在' }];
+    const shown = timelinePresentation(nodes);
+    expect(shown[0]).toMatchObject({ type: 'departure', start: 0, end: 0 });
+    expect(shown[1]).toMatchObject({ type: 'movement', start: 0 });
+  });
+});

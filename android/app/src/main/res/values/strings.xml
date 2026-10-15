@@ -48,7 +48,6 @@
     <string name="c1068" formatted="false">"無法保存定位詢問紀錄"</string>
     <string name="c1069" formatted="false">"無法讀取系統定位狀態"</string>
     <string name="c1070" formatted="false">"無法讀取電池最佳化狀態"</string>
-    <string name="c1071" formatted="false">"待傳佇列已滿（20,000 筆），新轉送資料未入列；請恢復上傳。"</string>
     <string name="c1072" formatted="false">"BLE 連線或訂閱逾時"</string>
     <string name="c1073" formatted="false">"Wi-Fi 指令逾時"</string>
     <string name="c1074" formatted="false">"BLE 指令逾時，重新連線"</string>
