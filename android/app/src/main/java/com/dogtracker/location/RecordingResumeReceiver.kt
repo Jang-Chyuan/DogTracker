@@ -70,7 +70,8 @@ class RecordingResumeReceiver : BroadcastReceiver() {
     // A tap opens 我的路線; the app on screen resumes the recording (resumeIfEnabled).
     val notification = NotificationCompat.Builder(context, NotificationChannels.ALERTS)
       .setSmallIcon(R.drawable.ic_stat_dog).setColor(NotificationChannels.accent(context))
-      .setContentTitle(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
+      // One sentence: as the text (wrapped when expanded), no title repeating it.
+      .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
       .setCategory(NotificationCompat.CATEGORY_REMINDER).setPriority(NotificationCompat.PRIORITY_HIGH)
       .setContentIntent(NotificationChannels.launch(context, "my-route", requestCode = NOTIFICATION_ID))
       .setAutoCancel(true).build()
