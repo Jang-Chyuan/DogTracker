@@ -15,10 +15,11 @@ class LocationTrackerStore(context: Context) {
      * rows keep their order when the recording service restarts. 600 rows is
      * ten minutes at one a second before [save] waits again.
      */
+    const val SPAN_SQL = "SELECT (SELECT MIN(id) FROM myLocationTracker) AS low, (SELECT MAX(id) FROM myLocationTracker) AS high"
     private val writer by lazy { SerialWriter("PhoneLocationDb", capacity = 600) }
   }
   private val store = DogStatusStore.get(context)
-  // Kept 30 days, at most LocalRetention.ROUTE_CAP rows: LocalRetention
+  // Kept a year (LocalRetention.ROUTE_DAYS), at most LocalRetention.ROUTE_CAP rows: LocalRetention
   // prunes on its own thread, not inside every row's transaction.
   init {
     store.executeBatch(JSONArray().put(command("CREATE TABLE IF NOT EXISTS myLocationTracker (id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at INTEGER NOT NULL, location_at INTEGER NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy_meters REAL, altitude_meters REAL, speed_kmh REAL, heading_degrees REAL)"))
@@ -80,7 +81,13 @@ class LocationTrackerStore(context: Context) {
     val where = if (before > 0) "WHERE id < ?" else ""
     val params = if (before > 0) JSONArray().put(before) else JSONArray()
     val rows = store.executeSql("SELECT * FROM myLocationTracker $where ORDER BY id DESC LIMIT 51", params).getJSONArray("results")
-    val count = store.executeSql("SELECT COUNT(*) AS total FROM myLocationTracker", JSONArray()).getJSONArray("results").getJSONObject(0).getLong("total")
+    // 「已存約 N 筆」: the span of ids, two rowid seeks. COUNT(*) walked the
+    // whole time index on every page (a year of my route: millions of rows).
+    // Exact unless rows inside it went alone (the time rule taking a row a
+    // clock dated back), as the ids only grow and every other delete takes
+    // the oldest end or everything.
+    val ends = store.executeSql(SPAN_SQL, JSONArray()).getJSONArray("results").getJSONObject(0)
+    val count = if (ends.isNull("low")) 0L else ends.getLong("high") - ends.getLong("low") + 1
     return JSONObject().put("rows", rows).put("total", count)
   }
 }

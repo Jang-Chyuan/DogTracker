@@ -80,14 +80,23 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
     getPublication,
     publishedReads: typeof database.publishManualScope === 'function',
     downloadStates: ({ slaveId }) => database.historyDownloadStates?.(owner, slaveId) ?? Promise.resolve([]),
-    /** The time of the dog's newest row in [since, cutoff), or null. */
-    newestBefore({ slaveId, cutoff, since, signal }) {
-      return oneTime(rows(slaveId).gte('received_at', iso(since)).lt('received_at', iso(cutoff))
+    /**
+     * The time of the dog's newest row in [since, cutoff), or null. The
+     * bounds and the answer are on this phone's clock; the question is asked
+     * in received_at (the server's clock), moved by `serverOffset` (#186), so
+     * a phone whose clock is off does not put a day's rows on its neighbour.
+     */
+    async newestBefore({ slaveId, cutoff, since, signal, serverOffset = serverClock.offset() }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const time = await oneTime(rows(slaveId).gte('received_at', iso(since + offset)).lt('received_at', iso(cutoff + offset))
         .order('received_at', { ascending: false }).limit(1), signal, questionMs);
+      return time == null ? null : time - offset;
     },
-    /** The time of the dog's oldest row, or null. */
-    earliest({ slaveId, signal }) {
-      return oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
+    /** The time of the dog's oldest row (this phone's clock), or null. */
+    async earliest({ slaveId, signal, serverOffset = serverClock.offset() }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const time = await oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
+      return time == null ? null : time - offset;
     },
     /**
      * Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone.
@@ -122,11 +131,13 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
         signal?.addEventListener?.('abort', cancel);
         // By upload time (received_at): rows shown on this day by their fix
         // time can arrive a little before it and up to a while after it.
-        const work = async (leaseCurrent, publishScoped) => {
+        // `db`: the lease's own commands when the sync passes them
+        // (runManual), which do not wait at the archive-priority gate.
+        const work = async (leaseCurrent, publishScoped, db = database) => {
           let count = 0, failure = null;
           // A retained completed prefix can be extended by reception-time tail.
           // Missing/evicted/legacy proof always downloads the entire window.
-          const previousStates = await database.historyDownloadStates?.(owner, ids) ?? [];
+          const previousStates = await db.historyDownloadStates?.(owner, ids) ?? [];
           // The dog's stored proof when it is a completed prefix of this window.
           const prefixOf = id => {
             const proof = previousStates.find(row => row.slave_id === id && row.day === day);
@@ -151,13 +162,13 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           // stay 「00:00 接續前一天」 the same day showed four minutes later).
           const windowStart = dayStart - DOWNLOAD_BEFORE_MS;
           let archived = null;
-          if (typeof database.readArchivePublication === 'function') {
-            try { archived = (await database.readArchivePublication(owner))?.cutoff ?? null; } catch { archived = null; }
+          if (typeof db.readArchivePublication === 'function') {
+            try { archived = (await db.readArchivePublication(owner))?.cutoff ?? null; } catch { archived = null; }
           }
-          const carryFrom = typeof database.readArchivePublication !== 'function' ? windowStart
+          const carryFrom = typeof db.readArchivePublication !== 'function' ? windowStart
             : Math.max(windowStart - CARRY_OVER_MS, Number.isFinite(archived) ? archived - TAIL_OVERLAP_MS : -Infinity);
           const markIncomplete = async () => {
-            for (const id of restart) await database.setHistoryDownloadState?.(owner, id, day, false);
+            for (const id of restart) await db.setHistoryDownloadState?.(owner, id, day, false);
           };
           if (restart.length && publishScoped) await publishScoped(markIncomplete);
           else if (restart.length) await markIncomplete();
@@ -166,9 +177,9 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           // before `received` (all saved: pages run in reception order), and
           // those rows, published with the lease like a finished day.
           const keep = async (id, received, carry) => {
-            await database.setHistoryDownloadState?.(owner, id, day, true, coverageTo(received));
-            if (database.publishManualScope) {
-              const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
+            await db.setHistoryDownloadState?.(owner, id, day, true, coverageTo(received));
+            if (db.publishManualScope) {
+              const commit = () => db.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
               if (publishScoped) await publishScoped(commit);
               else await commit();
             }
@@ -179,16 +190,16 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
             // The reception time this dog's window is saved up to (exclusive).
             let kept = null, carryDone = null;
             try {
-              await database.beginManualScope?.(owner, id, day);
+              await db.beginManualScope?.(owner, id, day);
               if (!current()) throw new Error(t("c576"));
               const carry = `${id}:${windowStart}`, carryStart = carried.has(carry) ? windowStart : carryFrom;
-              if (carryStart < windowStart) count += await downloadCloudHistory({ client, database, owner,
+              if (carryStart < windowStart) count += await downloadCloudHistory({ client, database: db, owner,
                 startAt: iso(carryStart), endBefore: iso(windowStart), slaveId: id,
                 signal: network.signal, isCurrent: current });
               carryDone = carryStart < windowStart ? carry : null;
               keeping = true;
               if (!current()) throw new Error(t("c576"));
-              count += await downloadCloudHistory({ client, database, owner,
+              count += await downloadCloudHistory({ client, database: db, owner,
                 startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
                 signal: network.signal, isCurrent: current,
                 onProgress: (processed, last) => { if (Number.isFinite(last?.received_at)) kept = last.received_at; } });
@@ -199,17 +210,17 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
                 // Interrupted here, the window is kept short of its end, so
                 // the next download fetches these again.
                 kept = coverage.received_before - 1;
-                count += await downloadCloudHistory({ client, database, owner,
+                count += await downloadCloudHistory({ client, database: db, owner,
                   startAt: iso(coverage.received_before), endBefore: iso(serverCutoff), slaveId: id,
                   phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
                   signal: network.signal, isCurrent: current });
               }
               keeping = false;
               if (!current()) throw new Error(t("c576"));
-              await database.setHistoryDownloadState?.(owner, id, day, true, coverage);
+              await db.setHistoryDownloadState?.(owner, id, day, true, coverage);
               if (!current()) throw new Error(t("c576"));
-              if (database.publishManualScope) {
-                const commit = () => database.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
+              if (db.publishManualScope) {
+                const commit = () => db.publishManualScope(owner, id, day, () => !abort.signal.aborted && leaseCurrent());
                 if (publishScoped) await publishScoped(commit);
                 else await commit();
               }

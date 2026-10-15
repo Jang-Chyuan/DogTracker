@@ -122,7 +122,7 @@ export function nodePill(node) {
       // Under half a minute shown on its own: 「停 不到 1 分」 (as c1276 on rows).
       const duration = noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs);
       // 2026-10-15 (user, #200): a walk round one place is 「在附近走動 1 時 49 分」.
-      const stay = node.wandering ? t('c1403', { duration }) : t('c127', { duration });
+      const stay = node.wandering ? t('c1405', { duration }) : t('c127', { duration });
       return { text: withStayMetres(node.continuesPreviousDay ? t('c332') : stay, node), tone: 'stay' };
     }
     case 'indoor': {
@@ -259,7 +259,7 @@ export function placeSpeech(node, title) {
   const pill = nodePill(node);
   const lead =
     node.type === 'stop'
-      ? (node.wandering ? t('c1404', { number: node.number ?? '' }) : t('c136', { duration: node.number ?? '' })).trim()
+      ? (node.wandering ? t('c1406', { number: node.number ?? '' }) : t('c136', { duration: node.number ?? '' })).trim()
       : node.type === 'switch'
       ? t("c663", { number: node.number })
       : node.type === 'indoor'

@@ -85,3 +85,41 @@ test('missing or invalid phone timestamps safely retain cloud time; Wi-Fi ignore
     expect(cloudTrackTime({ received_at: iso(20), upload_source: 'phone', phone_received_at }).track_at).toBe(base + 20000);
   expect(cloudTrackTime({ received_at: iso(20), upload_source: 'wifi', phone_received_at: iso(0) }).track_at).toBe(base + 20000);
 });
+
+// #186／#192 其他發現: a relaying phone whose clock runs ahead stamped its
+// rows in the future; the history kept that time.
+test('a relayed row stamped well after the server received it takes the server time', () => {
+  const at = seconds => cloudTrackTime(event(1, 1200, seconds)).track_at;
+  expect(at(1200 + 15 * 60)).toBe(base + 1200000);          // 15 minutes ahead: not believed
+  expect(at(1200 + 120)).toBe(base + 1320000);              // within 2 minutes: the phone's time
+  expect(at(1200 + 121)).toBe(base + 1200000);
+  expect(at(600)).toBe(base + 600000);                      // queued offline, uploaded later: kept
+  expect(cloudTrackTime(event(1, 1200, 1200 + 900)).phone_received_at).toBe(base + 2100000); // raw kept
+  expect(cloudTrackTime(event(1, 1200, null)).track_at).toBe(base + 1200000);
+});
+
+test('rows saved with a future relay time move to the server time once, withdrawing the proof of their day', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db); await cloud.initialize();
+    const ahead = mapCloudTelemetry(event(1, 1200, 1200 + 15 * 60)), fine = mapCloudTelemetry(event(2, 1201, 1201 + 60));
+    await cloud.savePage('a', [ahead, fine]);
+    // As saved by the previous version.
+    await db.executeAsync('UPDATE supabase_dog_status SET track_at=phone_received_at');
+    await db.executeAsync("DELETE FROM cloud_migrations WHERE name='relayed-future-track-at'");
+    const day = '2026-09-23';
+    await cloud.setHistoryDownloadState('a', 8, day, true,
+      { range_start: base - 3600000, range_end: base + 7200000, received_before: base + 7200000 });
+    expect((await cloud.historyDownloadStates('a', [8]))[0].complete).toBe(1);
+    await createCloudDatabase({ ...db }).initialize();
+    const times = Object.fromEntries((await cloud.listHistory('a')).map(row => [row.event_id, row.track_at]));
+    expect(times[ahead.event_id]).toBe(base + 1200000);
+    expect(times[fine.event_id]).toBe(base + 1261000);
+    expect((await cloud.historyDownloadStates('a', [8]))[0].complete).toBe(0);
+    // Once: a later start does not scan or move rows again.
+    await db.executeAsync('UPDATE supabase_dog_status SET track_at=phone_received_at');
+    await createCloudDatabase({ ...db }).initialize();
+    expect((await cloud.listHistory('a')).find(row => row.event_id === ahead.event_id).track_at).toBe(base + 2100000);
+  } finally { db.close(); }
+});

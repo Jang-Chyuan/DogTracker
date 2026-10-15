@@ -16,7 +16,7 @@ function waypoint(subject, item, piece, hold, gaps) {
   const value = minutes(piece.end - piece.start - excluded);
   // 2026-10-15 (#200): a walk round one place 「在附近走動 2・109 分」.
   const name = hold ? t("c792", { prefix, value }) : item.wandering
-    ? (item.number == null ? t("c1407", { prefix, value }) : t("c1406", { prefix, number: item.number, value }))
+    ? (item.number == null ? t("c1409", { prefix, value }) : t("c1408", { prefix, number: item.number, value }))
     : item.number == null ? t("c1310", { prefix, value })
     : t("c793", { prefix, number: item.number, value });
   const address = item.gpxCoordinate ? item.gpxAddress : item.address;

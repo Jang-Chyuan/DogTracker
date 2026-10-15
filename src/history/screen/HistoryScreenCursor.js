@@ -40,7 +40,7 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   // 2026-10-15 (user, #200): a walk round one place 「在附近走動 2・1 時 49 分」.
   const wandering = stay?.type === 'stop' && !!(stay.wandering || listedStay?.wandering);
   if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })
-    : wandering ? (number != null ? t('c1405', { number, duration: minutes }) : t('c1403', { duration: minutes }))
+    : wandering ? (number != null ? t('c1407', { number, duration: minutes }) : t('c1405', { duration: minutes }))
     : number != null ? t('c1342', { number, duration: minutes }) : t('c136', { duration: minutes })];
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)
