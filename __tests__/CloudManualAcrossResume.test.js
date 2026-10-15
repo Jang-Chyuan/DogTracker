@@ -13,7 +13,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { completedMapRevision, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
 import { t } from '../src/i18n';
@@ -39,7 +39,7 @@ beforeEach(async () => {
   network = latestArchiveRest({ events, beforeRead: async call => {
     if (failing && call.phase === 'masters') throw new TypeError('Network request failed');
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
 });
