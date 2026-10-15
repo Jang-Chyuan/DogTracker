@@ -7,7 +7,7 @@ import { logger } from '../logger';
 // by the native exporter, then Android's share sheet. 取消 (and the back
 // key) drops a running export; 重試 makes the files again from the same
 // snapshot. Temporary files go the next day.
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ADDRESS_CONFIG, AddressLookupContext } from '../placement/AddressLookup';
 import { buildCSV } from './ExportCSV';
 import { buildGPX } from './ExportGPX';
@@ -57,7 +57,22 @@ export async function cleanExports(exporter, now) {
 }
 
 /**
- * `screen`: useHistoryScreen's (dayModel, range, subject, look). `exporter`:
+ * What an export takes of the screen: the range the user dragged (`manual`)
+ * as shown; otherwise the whole day (HistoryMultiModel `wholeDay`: 00:00 to
+ * now, or to the day's end), not the range from the detected departure
+ * (2026-10-15: the morning before it was missing). One day at most, as the
+ * history shows one day.
+ * @returns {{ day, range }}
+ */
+export function exportView(screen) {
+  const day = screen?.dayModel ?? null;
+  if (!day || screen.manual || typeof day.wholeDay !== 'function') return { day, range: screen?.range ?? null };
+  const whole = day.wholeDay();
+  return whole?.range ? { day: whole, range: whole.range } : { day, range: screen.range ?? null };
+}
+
+/**
+ * `screen`: useHistoryScreen's (dayModel, range, manual, subject, look). `exporter`:
  * ExportNative's (or a fixture's). `initial`: a screen fixture opens on a state.
  * Returns { open, phase: 'closed' | 'choose' | 'generating' | 'failed',
  *   format, title, start(format), cancel(), retry(), close(), back() }.
@@ -104,7 +119,8 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
       let snapshot = snapshotReady;
       if (!snapshot) {
         // 按下那一刻的資料: the day, range and dogs now; the addresses next.
-        const day = screen.dayModel, range = screen.range, look = screen.look, subject = screen.subject;
+        const { day, range } = exportView(screen);
+        const look = screen.look, subject = screen.subject;
         if (!day || !range) throw new Error(t("c797"));
         const places = day.subjects.flatMap(entry => exportPlaces(entry.model));
         // The addresses the list already has come from the cache at once; the
@@ -171,7 +187,10 @@ export function useHistoryExport({ screen, exporter, now = Date.now,
     close();
     return true;
   }, [state.phase, close]);
-  const range = screen.range;
+  // The window's title says the range the files will cover.
+  const windowOpen = state.phase !== 'closed';
+  const range = useMemo(() => (windowOpen ? exportView(screen).range : screen.range),
+    [windowOpen, screen.dayModel, screen.manual, screen.range]); // eslint-disable-line react-hooks/exhaustive-deps
   return { ...state, open, start, save, stop, cancel: close, retry, close, back,
     canSave: !!exporter?.saveToDownloads,
     generating: state.phase === 'generating' && !state.stopped, range };

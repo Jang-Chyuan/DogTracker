@@ -30,6 +30,26 @@ test('a numbered stay says its number as its list row does', () => {
   expect(cursorLabel(numbered, 15 * minute)[1]).toBe('停留 2・10 分');
   expect(cursorLabel(numbered, 5 * minute)[1]).toBe('移動中・500 m');
 });
+// 2026-10-15: a stay's first minute read 「停留 0 分」; the list says 「停 不到 1 分」.
+test('a stay shorter than a minute is 「停留 不到 1 分」, as its list row', () => {
+  const { nodePill } = require('../src/history/HistoryText');
+  const short = { type: 'stop', start: 10 * minute, end: 10 * minute + 20000, durationMs: 20000 };
+  const brief = { ...model, locations: [short, model.locations[1]] };
+  expect(cursorLabel(brief, 10 * minute + 10000)[1]).toBe('停留 不到 1 分');
+  expect(nodePill(short).text).toBe('停 不到 1 分');
+  // TalkBack reads the row the same way, never 「0 分鐘」.
+  const { placeSpeech } = require('../src/history/HistoryText');
+  expect(placeSpeech({ ...short, latitude: 25, longitude: 121 }, '某地址')).toMatch(/，不到 1 分鐘$/u);
+  const numbered = { ...short, number: 2, latitude: 25, longitude: 121 };
+  const nodes = [{ type: 'departure', start: 0, end: 0, latitude: 25, longitude: 121 },
+    { ...model.sections[0], end: 10 * minute }, numbered,
+    { type: 'movement', start: 10 * minute + 20000, end: 30 * minute, mode: 'moving', countedDistanceM: 500 },
+    { type: 'end', start: 30 * minute, end: 30 * minute, latitude: 25, longitude: 121 }];
+  expect(cursorLabel({ ...model, locations: [numbered], nodes }, 10 * minute + 10000)[1]).toBe('停留 2・不到 1 分');
+  // From a minute on, the minutes as before.
+  const minuteLong = { ...short, end: 11 * minute, durationMs: minute };
+  expect(cursorLabel({ ...model, locations: [minuteLong] }, 10 * minute + 10000)[1]).toBe('停留 1 分');
+});
 test('drag gaps skips nearest edge; gap row selects preceding fix and stale label', () => {
   expect(screenCursor(model, 34 * minute).time).toBe(30 * minute);
   expect(screenCursor(model, 36 * minute).time).toBe(40 * minute);

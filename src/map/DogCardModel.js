@@ -12,6 +12,7 @@ import { LOW_BATTERY_PERCENT } from '../tracking/DogProblems';
 import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
 import { activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
+import { CARD_ACTIVITY_LOOKBACK_MS } from '../activity/DogCardReadings';
 import { listDuration } from '../history/HistoryText';
 
 // The phone's position is written as old (「手機位置 3 分鐘前」) after this.
@@ -133,7 +134,10 @@ export function activityRow(activity, { reference, positionAt, stale }) {
   // judged up to their newest minute, not up to now, or the minutes still to
   // come make the window look empty (「—」, 沒有資料).
   const end = old ? minuteOf(newestAt) : Math.min(minuteOf(reference) - MINUTE, minuteOf(newestAt));
-  const words = activityWords(activityState(minutes, { end }));
+  // A rest reaching back to where the rows begin: 「超過 6 小時」 (2026-10-15:
+  // 「已 5 小時 58 分」「已 6 小時」 took turns as the lookback slid).
+  const words = activityWords(activityState(minutes, { end, from: activity.from }),
+    { lookbackMinutes: CARD_ACTIVITY_LOOKBACK_MS / MINUTE });
   return { ...words, at: old && words.tone ? newestAt : null };
 }
 
