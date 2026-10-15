@@ -51,7 +51,7 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
       contentContainerStyle={settingsStyles.content}
     >
       <Text style={dataStyles.hint}>
-        {t("c1402", { value: formatCount(tracker.total),
+        {t("c1404", { value: formatCount(tracker.total),
           date: longDate(retentionStartDay(Date.now(), ROUTE_RETENTION_DAYS)), page: tracker.page })}
       </Text>
       <View style={dataStyles.buttons}>

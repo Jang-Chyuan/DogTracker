@@ -21,7 +21,7 @@ export function retentionLabels(read, now) {
   return {
     // A year back: the date with its year (「2025/10/16」), M/D alone would
     // read as the coming days.
-    route: t('c1401', { date: longDate(route) }),
+    route: t('c1403', { date: longDate(route) }),
     dogs: t('c1399', { date: shortDate(dogs), days: DOG_RETENTION_DAYS }),
   };
 }

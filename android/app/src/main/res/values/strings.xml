@@ -132,4 +132,6 @@
     <string name="c1153" formatted="false">"DogTracker"</string>
     <string name="c1159" formatted="false">"{{dogName}}：{{duration}}沒有新位置"</string>
     <string name="c1161" formatted="false">"{{dogName}}：{{duration}}沒有新資料"</string>
+    <string name="c1401" formatted="false">"DogTracker 更新完成，點一下繼續記錄路線"</string>
+    <string name="c1402" formatted="false">"手機已重新開機，點一下繼續記錄路線"</string>
 </resources>
