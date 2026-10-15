@@ -2070,6 +2070,24 @@ const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMar
 
 const ignoreWrite = () => Promise.resolve();
 
+// What a fixture's CloudSync is before the fixture's own fields: idle, as
+// the engine starts (CloudSync's initial state), with nothing of the live
+// one. Spreading the live state let its latest-first publication, revisions,
+// mode, offline and auth flags reach the fixture's map, cards, S3 and
+// 本機／雲端資料 (audit L9).
+const FIXTURE_CLOUD_SYNC = Object.freeze({
+  ownerId: null, latestFirst: false, snapshotPending: false, archivePending: false, archiveRevision: 0,
+  archiveError: '', contextPending: false, busy: false, mode: null, error: '', lastSuccess: null,
+  lastDownloadAt: null, failingSince: null, authFailed: false, offline: false, revision: 0,
+  mapSuccessRevision: undefined, mapPending: false, dataRevision: null, publishedRevision: 0,
+  publishedPending: false, catchUp: CATCH_UP_IDLE, getMapPublication: undefined, getHistoryPublication: undefined,
+  retry: () => {}, runManual: () => Promise.reject(new Error('A screen fixture never runs the cloud sync')),
+});
+
+// A fixture without a history of its own reads none, never this phone's.
+const noHistoryRows = async ({ after = {} } = {}) => ({ rows: [], seed: [], after });
+const noHistoryDays = async () => [];
+
 /**
  * Swaps a fixture's inputs into the live ones App hands the map. With no
  * fixture the live inputs come back untouched. The SQLite session itself keeps
@@ -2077,7 +2095,7 @@ const ignoreWrite = () => Promise.resolve();
  */
 export function applyScreenFixture(fixture, live, edits = null) {
   if (!fixture) return live;
-  const { tracking, phone, cloudSync, history } = live;
+  const { tracking, phone, history } = live;
   // A name or face changed on a fixture's dog page (A5) lives in memory only
   // (useFixtureEdits), so the page can be tried without touching this phone's
   // real names and faces.
@@ -2126,20 +2144,21 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    // On a signed-in phone the live CloudSync's latest-first state (its
-    // revisions, publication, catch-up, busy flags) must not leak into a
-    // fixture: it kept the fixture's dogs off the map, and its changing
-    // revision restarted the card's readings so 活動量 stayed 「—」.
-    cloudSync: { ...cloudSync, latestFirst: false, mapSuccessRevision: undefined, getMapPublication: undefined,
-      snapshotPending: false, publishedPending: false, busy: false, catchUp: CATCH_UP_IDLE, ...fixture.cloudSync },
-    // A history fixture asks its own stand-in cloud (054b), never Supabase.
-    historyCloud: fixture.history ? fixture.historyCloud : live.historyCloud,
+    // On a signed-in phone nothing of the live CloudSync may leak into a
+    // fixture: its latest-first state kept the fixture's dogs off the map,
+    // its changing revision restarted the card's readings so 活動量 stayed
+    // 「—」, and its offline/mode/failure fields changed S3 and the alerts.
+    cloudSync: { ...FIXTURE_CLOUD_SYNC, ...fixture.cloudSync },
+    // A fixture asks its own stand-in cloud (054b) or none, never Supabase:
+    // the live one would download real rows into this phone's database.
+    historyCloud: fixture.historyCloud ?? null,
     history: history && {
       ...history, preferences: { ...history.preferences, ...fixture.history?.preferences, dogAliases: aliases },
-      // A history fixture (054a) draws its own day, never this phone's.
-      ...(fixture.history ? { readDay: fixture.history.readDay,
-        readDays: fixture.history.readDays, loaded: true,
-        busy: false, error: '', key: `fixture:${fixture.name}`, devices: [] } : {}),
+      // A history fixture (054a) draws its own day, never this phone's;
+      // one without a history draws an empty one.
+      readDay: fixture.history?.readDay ?? noHistoryRows,
+      readDays: fixture.history?.readDays ?? noHistoryDays,
+      loaded: true, busy: false, error: '', key: `fixture:${fixture.name}`, devices: [],
       // The card's 看軌跡 and the dog page's name must not store a fixture's
       // dog in this phone's real history query or names.
       save: async preferences => {
