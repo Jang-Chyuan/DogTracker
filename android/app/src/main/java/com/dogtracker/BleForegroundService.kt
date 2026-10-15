@@ -47,6 +47,14 @@ class BleForegroundService : Service() {
     @Volatile var disconnectedAt = 0L
     @Volatile var instance: BleForegroundService? = null
     @Volatile var eventSink: ((String, String) -> Unit)? = null
+    const val REQUESTED_MTU = 320
+    /** What [REQUESTED_MTU] was negotiated to on this link (0: no link, 23: none), and the request's GATT status. */
+    @Volatile var mtu = 0
+    @Volatile var mtuStatus: Int? = null
+    // This service run's receiver frames (diagnostics: getState, dumpsys).
+    @Volatile var framerResyncs = 0
+    @Volatile var largestFrame = 0
+    @Volatile var framesWithoutMasterId = 0
   }
 
   private val worker = HandlerThread("DogTracker-BLE")
@@ -207,6 +215,25 @@ class BleForegroundService : Service() {
     return START_STICKY
   }
 
+  /** Counts only (no positions): the link's MTU and how its frames arrived. */
+  override fun dump(fd: java.io.FileDescriptor?, writer: java.io.PrintWriter, args: Array<out String>?) {
+    writer.println("receiver: running=$isRunning connected=$isConnected")
+    writer.println("mtu=$mtu requested=$REQUESTED_MTU status=${mtuStatus ?: "-"} largestFrame=${largestFrame}B " +
+      "fits=${mtu == 0 || largestFrame <= mtu - 3}")
+    writer.println("framerResyncs=$framerResyncs framesWithoutMasterId=$framesWithoutMasterId")
+  }
+
+  private fun recordMtu(value: Int, status: Int?) {
+    mtu = value; mtuStatus = status
+    val edit = prefs.edit().putInt("mtu", value)
+    if (status == null) edit.remove("mtuStatus") else edit.putInt("mtuStatus", status)
+    edit.apply()
+    if (status != null && status != BluetoothGatt.GATT_SUCCESS || value < REQUESTED_MTU) {
+      // A packet longer than mtu - 3 bytes arrives cut short (BleJsonFramer resyncs past it).
+      com.dogtracker.AppLog.w("DogTracker-BLE", "MTU $value (requested $REQUESTED_MTU, status ${status ?: "-"})")
+    }
+  }
+
   private fun hasPermission() = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
     ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
@@ -257,12 +284,19 @@ class BleForegroundService : Service() {
     override fun onServicesDiscovered(client: BluetoothGatt, status: Int) {
       dispatch(client) {
         if (status != BluetoothGatt.GATT_SUCCESS) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1087, status))
-        else if (!client.requestMtu(320)) subscribe(client)
+        else if (!client.requestMtu(REQUESTED_MTU)) {
+          // No MTU exchange: the default ATT MTU (23) carries 20 bytes a notification.
+          recordMtu(23, null)
+          subscribe(client)
+        }
       }
     }
 
     override fun onMtuChanged(client: BluetoothGatt, mtu: Int, status: Int) {
-      dispatch(client) { subscribe(client) }
+      dispatch(client) {
+        recordMtu(if (status == BluetoothGatt.GATT_SUCCESS) mtu else 23, status)
+        subscribe(client)
+      }
     }
 
     override fun onDescriptorWrite(client: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
@@ -285,15 +319,19 @@ class BleForegroundService : Service() {
       }
     }
 
+    // Stamped on arrival, before the handler queue and the database lock: a
+    // packet that waits there keeps its own time (DogStatusStore throttles on it).
     @Deprecated("Deprecated in Java")
     override fun onCharacteristicChanged(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+      val arrival = Arrival.now()
       val bytes = characteristic.value?.clone() ?: return
-      dispatch(client) { if (characteristic.uuid == UUID.fromString(dataUuid)) receive(bytes) }
+      dispatch(client) { if (characteristic.uuid == UUID.fromString(dataUuid)) receive(bytes, arrival) }
     }
 
     override fun onCharacteristicChanged(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+      val arrival = Arrival.now()
       val bytes = value.clone()
-      dispatch(client) { if (characteristic.uuid == UUID.fromString(dataUuid)) receive(bytes) }
+      dispatch(client) { if (characteristic.uuid == UUID.fromString(dataUuid)) receive(bytes, arrival) }
     }
 
     override fun onCharacteristicWrite(client: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
@@ -335,22 +373,30 @@ class BleForegroundService : Service() {
   }
 
   // Assemble UTF-8 bytes before decoding, including fragmented or coalesced JSON.
-  private fun receive(bytes: ByteArray) {
-    val payloads = try { framer.accept(bytes) } catch (error: IllegalArgumentException) {
+  private fun receive(bytes: ByteArray, arrival: Arrival) {
+    val payloads = try { framer.accept(bytes, arrival.elapsedMs) } catch (error: IllegalArgumentException) {
       publishStatus(error.message ?: com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1096))
       return
+    } finally {
+      framerResyncs = framer.resyncs
+      largestFrame = maxOf(largestFrame, framer.largest)
     }
     for (payload in payloads) {
         val data = try { JSONObject(payload) } catch (_: Exception) {
           publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1097))
           continue
         }
-        val masterId = if (!data.isNull("master_id")) data.optInt("master_id") else data.optInt("mid")
-        if (expectedMasterId > 0 && masterId != expectedMasterId) {
-          stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1098, expectedMasterId, masterId))
-          return
+        // Only another receiver's own number stops the session; a frame
+        // without one (or an unreadable one) is not a mismatch.
+        when (val check = ReceiverMasterId.check(data, expectedMasterId)) {
+          is ReceiverMasterId.Check.Other -> {
+            stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1098, expectedMasterId, check.masterId))
+            return
+          }
+          ReceiverMasterId.Check.Missing -> framesWithoutMasterId++
+          ReceiverMasterId.Check.Same -> Unit
         }
-        val now = System.currentTimeMillis()
+        val now = arrival.wallMs
         try {
           DogStatusStore.get(this).save(data, payload, now)
           prefs.edit().remove("storageError").apply()
@@ -453,6 +499,7 @@ class BleForegroundService : Service() {
     runCatching { previous?.close() }
     finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1108))
     framer.reset()
+    mtu = 0; mtuStatus = null
   }
 
   private fun stopSession(status: String = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1109)) {
