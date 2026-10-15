@@ -199,7 +199,10 @@ Wi-Fi Config Characteristic 使用 write-with-response，裝置收到 UTF-8 JSON
 - 每個 Slave 最多保留 10,000 筆狀態。
 - Android 原生每次寫入交易內清理該 Slave 的超額紀錄；JS 備援每 100 次寫入清理一次。
 - 查詢筆數限制為 1 至 1,000 筆。
-- `dogtracker-latest.sqlite` 的日誌模式明確設為 `journal_mode=TRUNCATE`、`synchronous=FULL`（`SqliteModes`）。這就是 Android 對 `openOrCreateDatabase` 的預設，也是 App 一直以來用的模式，現在不再交給各家手機決定。`dogtracker.sqlite` 的模式由 `DogStatusStore` 開檔時決定，資料庫鎖定的改善會把它改成 WAL，所以不在這裡設定。
+- Android 上整個檔案只由 `DogStatusStore` 的框架 SQLite 開啟，使用 WAL（稽核 A F3）：所有寫入（BLE 封包、手機路線、App 的寫入與批次交易）照舊一次一個，讀取不等鎖，在讀取專用連線上看最後一次提交的內容。一次讀取若超過一個 cursor window（約 2 MB），會改成持鎖重讀，避免兩段之間有寫入插進來；大量讀取請用 `src/database/PagedRead.js` 分頁（每次最多 1,000 筆）。
+- 手機路線的寫入交給自己的背景執行緒（`SerialWriter`），定位 looper 交出一列就回去收定位，不會因為雲端下載佔著鎖而讓排隊的定位過期。
+- 寫入等鎖的時間（BLE、手機路線）與各類工作持鎖的時間，可用 `adb shell dumpsys activity service com.dogtracker/.BleForegroundService` 或 `.location.LocationTrackerService` 查看（`database lock waits`／`holds`，只有次數與毫秒）。
+- `dogtracker-latest.sqlite` 的日誌模式明確設為 `journal_mode=TRUNCATE`、`synchronous=FULL`（`SqliteModes`）。這就是 Android 對 `openOrCreateDatabase` 的預設，也是 App 一直以來用的模式，現在不再交給各家手機決定。`dogtracker.sqlite` 由 `DogStatusStore` 以 WAL 開啟（見上），`synchronous` 用 Android 的 WAL 預設（實測 NORMAL）。
 - Android 原生 owner（`DogStatusStore`、`CloudLatestStore`）的 SELECT／PRAGMA／WITH 把**每個參數都當 TEXT 綁定**；其他語句照型別綁定。和欄位比較時欄位的 affinity 會轉回來，但和沒有 affinity 的運算式比較（`COALESCE(a,b) >= ?`、`a+0 < ?`、`MAX(x) > ?`）會變成整數對文字、結果默默出錯，這種查詢要寫 `CAST(? AS INTEGER)` 或把運算式 CAST。jest 的 `__fixtures__/SQLiteConnection.js` 照同樣的方式綁定，而且每個帶參數的讀取都會再用依型別綁定跑一次，答案不同就讓測試失敗（`SQLITE_BINDING_CHECK=0` 關閉）。
 
 ## Android 權限
