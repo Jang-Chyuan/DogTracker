@@ -1543,6 +1543,51 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
       history: historyPage(now) };
   },
+  // 2026-10-15 (#200, user option D + C): a walk to a small park, 20 minutes
+  // round it with the dog (20 s on foot, 40 s sniffing), a stop with a few
+  // steps in it, walking on: 「在附近走動 N 分・M m」 and 「停 N 分・M m」 rows,
+  // the walks keeping their own metres.
+  'history-wandering': now => {
+    const path = [];
+    let time = now - 60 * MINUTE, here = at(-40, -60), k = 0;
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.3, motion_state: 'moving' };
+    const stand = seconds => {
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND) {
+        path.push({ time, fix: { ...here, accuracy: 4, recorder: still } });
+      }
+    };
+    const walk = (seconds, bearing) => {
+      const turn = (bearing * Math.PI) / 180;
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5) {
+        time += 5 * SECOND;
+        here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
+        path.push({ time, fix: { ...here, accuracy: 4, recorder: walking } });
+      }
+    };
+    const round = (laps, pause) => {
+      for (let lap = 0; lap < laps; lap += 1) {
+        for (let q = 1; q <= 4; q += 1, k += 1) {
+          time += 5 * SECOND;
+          const angle = (k + 1) * Math.PI / 2;
+          path.push({ time, fix: { ...offset(here, 6 * Math.sin(angle), 6 * Math.cos(angle) - 6), accuracy: 4,
+            recorder: walking } });
+        }
+        stand(pause);
+      }
+    };
+    walk(5 * 60, 30);
+    stand(60);
+    round(20, 40);
+    stand(5 * 60);
+    walk(4 * 60, 120);
+    stand(4 * 60);
+    round(2, 30);
+    stand(4 * 60);
+    walk(6 * 60, 200);
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now) };
+  },
   // A candidate after staying home: show its tentative start, without status copy.
   'history-confirming': now => ({ ...FIXTURES['all-good'](now),
     phone: routePhone(legsPath(now, 20 * MINUTE, at(-40, -60),

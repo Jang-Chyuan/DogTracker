@@ -47,8 +47,8 @@ export const HISTORY_CONFIG = Object.freeze({
     // within edgeMoveMs of arriving or setting off are the walk's beside it.
     // A stay whose own moves add up to wanderM or more over wanderMinutes
     // distinct minutes or more is 「在附近走動」 (a walk round one place: on
-    // 10/11 210 m over 16 minutes of 109; the most of any other stay on the
-    // four real days was 135 m over 5 minutes).
+    // 10/11 about 200 m over 16 minutes of 109; no other stay of the four
+    // real days held more than 76 m of its own).
     edgeMoveMs: 60000, wanderM: 100, wanderMinutes: 10,
     // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
     stillPlaceM: 100,

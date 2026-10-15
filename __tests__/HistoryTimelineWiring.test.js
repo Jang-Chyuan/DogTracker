@@ -15,6 +15,8 @@ import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/TodayDistance';
 import { historyTargetOf, useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
+import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
+import { listedMetres } from '../test-support/TimelineClocks';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 
 const MINUTE = 60000;
@@ -190,6 +192,17 @@ describe('fixtures', () => {
     const { model, kinds } = await fixtureList('history-uncertain-speed');
     expect(kinds.filter(kind => kind !== 'departure' && kind !== 'end')).toEqual(['stop']);
     expect(model.distanceM).toBe(0);
+  });
+  // 2026-10-15 (#200): a walk round a small park is 「在附近走動」 with its
+  // metres; a stay with a few steps 「停 N 分・M m」; rows add up.
+  test('history-wandering: 在附近走動 and a stay with its own metres', async () => {
+    const { fixture, model } = await fixtureList('history-wandering');
+    const shown = timelinePresentation(model.nodes).map(n => n.terminalStay ?? n.departureStay ?? n);
+    const pills = shown.filter(n => n.type === 'stop').map(n => nodePill(n).text);
+    expect(pills.some(text => /^在附近走動 .+・\d+ m$/u.test(text))).toBe(true);
+    expect(pills.some(text => /^停 .+・\d+ m$/u.test(text))).toBe(true);
+    expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);
+    expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
   });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
