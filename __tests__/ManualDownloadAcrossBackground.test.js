@@ -13,7 +13,7 @@ import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { useTrackingSession } from '../src/app/useTrackingSession';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { createHistoryCloud, useHistoryCloudSource } from '../src/mapHistory/HistoryCloud';
 import { completedMapRevision, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
@@ -55,7 +55,7 @@ beforeEach(async () => {
   const client = network.client;
   network.clientFactory = () => client;
   await act(async () => { renderer = Renderer.create(<Harness />); });
-  engine = createCloudSync({ database: tracking.cloudDatabase, client,
+  engine = createIndependentCloudSync({ database: tracking.cloudDatabase, client,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
   engine.setSession({ user: { id: owner } }); engine.setForeground(true);
