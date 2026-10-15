@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
+import { useOlderHistoryDogs } from '../mapHistory/useOlderHistoryDogs';
 import { nativeExporter } from '../mapHistory/ExportNative';
 import { faceMarkers as historyFaces } from '../history/screen/HistoryMultiModel';
 import { LivePhoneReader, createLivePhoneFeed } from '../map/LivePhoneFeed';
@@ -804,21 +805,30 @@ export default function MapScreen({
     avatars,
     screen.map,
   ]);
-  // The dogs that can be added (「＋ 加入」): every dog that has ever had a
-  // position, by collar number (never-fixed sources are not dogs yet).
-  const historyCandidates = useMemo(
-    () =>
-      historical
-        ? dogs
-            .filter(dog => dog.coordinate)
-            .map(dog => ({
-              id: dog.slaveId,
-              name: displayName(dog.slaveId, dogAliases),
-              avatar: avatars[dog.slaveId] ?? null,
-            }))
-        : [],
-    [historical, dogs, dogAliases, avatars],
-  );
+  // The dogs that can be added (「＋ 加入」): every dog on the live map that
+  // has had a position, by collar number (never-fixed sources are not dogs
+  // yet), and the older dogs this phone holds rows of on the day shown
+  // (useOlderHistoryDogs: the live map only lists dogs heard in the last 14
+  // days, the history still reaches older ones).
+  const olderIds = useOlderHistoryDogs({
+    active: historical,
+    knownDogs: history?.knownDogs,
+    mapDogIds: dogs.map(dog => dog.slaveId),
+    checkDay: screen.checkDay,
+    day: screen.dayKey,
+  });
+  const historyCandidates = useMemo(() => {
+    if (!historical) return [];
+    const candidate = id => ({
+      id,
+      name: displayName(id, dogAliases),
+      avatar: avatars[id] ?? null,
+    });
+    return [
+      ...dogs.filter(dog => dog.coordinate).map(dog => candidate(dog.slaveId)),
+      ...olderIds.map(candidate),
+    ];
+  }, [historical, dogs, olderIds, dogAliases, avatars]);
   // ---- the dog's card (A3) ------------------------------------------------
   // The card belongs to a dog drawn on the live map: it goes when the dog
   // does (a dog that never had a position has no card).
