@@ -238,7 +238,17 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
   const pill = nodePill(node);
   const pending = place?.state === 'pending';
   const leaving = leavesFrom(node, next);
-  const track = useMemo(() => placeTrack(firstLine.height, leaving), [firstLine.height, leaving]);
+  // Where the place's text ends (from the row's top), once laid out.
+  const [contentBottom, setContentBottom] = useState(0);
+  const onContentLayout = leaving ? event => {
+    const { y, height } = event.nativeEvent.layout;
+    // `y` is inside the place box, which starts space.xs above the row and
+    // pads space.xs back down: from the row's top it is y - space.xs.
+    const bottom = Math.ceil(y - space.xs + height);
+    setContentBottom(previous => (previous === bottom ? previous : bottom));
+  } : undefined;
+  const track = useMemo(() => placeTrack(firstLine.height, leaving, contentBottom),
+    [firstLine.height, leaving, contentBottom]);
   // No address (not found, offline, timed out): the place's coordinates.
   const title = lines.title;
   return (
@@ -291,15 +301,17 @@ function PlaceRowView({ node, next, color, place, selected, onPress, onRowLayout
           {/* 2026-10-15 (user, layout A): the address (or coordinates) on its
               own line at full width, level with the time and the node; the
               pill on the line under it, never squeezing the address. */}
-          <View style={styles.placeHeading}>
-            {pending ? <View style={[styles.address, styles.addressPending, firstLine]}>
-              <Skeleton shape="address" testID="place-address-pending" />
-            </View> : <Text style={[styles.address, place?.state !== 'found' && styles.addressMissing]} testID="place-title">
-              {title}
-            </Text>}
-            {pill && <View style={styles.pillLine} testID="place-pill-line"><Pill pill={pill} color={color} /></View>}
+          <View onLayout={onContentLayout} testID="place-content">
+            <View style={styles.placeHeading}>
+              {pending ? <View style={[styles.address, styles.addressPending, firstLine]}>
+                <Skeleton shape="address" testID="place-address-pending" />
+              </View> : <Text style={[styles.address, place?.state !== 'found' && styles.addressMissing]} testID="place-title">
+                {title}
+              </Text>}
+              {pill && <View style={styles.pillLine} testID="place-pill-line"><Pill pill={pill} color={color} /></View>}
+            </View>
+            {note ? <Text style={styles.note}>{note}</Text> : null}
           </View>
-          {note ? <Text style={styles.note}>{note}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -436,12 +448,20 @@ const isSection = node => ['movement', 'gap'].includes(node?.type);
  * line, then the chevron with a gap above and below, then the line goes on
  * to the movement icon. The row is at least tall enough for that.
  */
-export function placeTrack(firstLineHeight, leaving) {
+export function placeTrack(firstLineHeight, leaving, contentBottom = 0) {
   const { leaveGap: gap, leaveLine, leaveBelow, leave } = sizes.timeline;
   const lineTop = firstLineHeight / 2 + sizes.timeline.node.stop / 2 + gap;
   if (!leaving) return { clears: [{ top: 0, bottom: lineTop }], minHeight: 0, chevron: null, glyphTop: 0 };
-  const top = lineTop + leaveLine + gap;
+  // 2026-10-15 (user, layout A): the chevron and its time come after the
+  // place's last line (`contentBottom`: its address lines and the pill, as
+  // laid out), never beside the pill or a wrapped address.
   const height = (leave * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
+  // The departure time (centred on the chevron, at the font scale of the
+  // first line, capped as the time column is) clears the block too.
+  const scale = Math.min(firstLineHeight / type.cardTitle.lineHeight, TIME_MAX_SCALE);
+  const timeHalf = (type.caption.lineHeight * scale) / 2;
+  const below = contentBottom + Math.max(gap, timeHalf - height / 2);
+  const top = Math.max(lineTop + leaveLine + gap, below);
   return {
     clears: [{ top: 0, bottom: lineTop }, { top: top - gap, bottom: top + height + gap }],
     minHeight: Math.ceil(top + height + gap + leaveBelow),

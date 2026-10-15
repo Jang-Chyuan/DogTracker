@@ -187,3 +187,64 @@ describe('PNG: the chevron on the line, as on screen', () => {
     });
   });
 });
+
+// 2026-10-15 (user, layout A): the chevron says "set off from here" — it
+// and its time always come after the place's whole block (address lines,
+// then the pill), never beside the pill or a wrapped address line.
+describe('layout A: the chevron below the place block', () => {
+  const firstLine = type.cardTitle.lineHeight;
+  test('placeTrack: after the block\'s last line, however tall; unchanged when the block is short', () => {
+    const short = placeTrack(firstLine, true, 20);
+    expect(short).toEqual(placeTrack(firstLine, true));
+    for (const bottom of [44, 66, 130]) {
+      const track = placeTrack(firstLine, true, bottom);
+      expect(track.chevron.top).toBeGreaterThanOrEqual(bottom + leaveGap);
+      expect(track.minHeight).toBeGreaterThan(track.chevron.top + track.chevron.height);
+      // The line between the node and the chevron is not cleared.
+      expect(track.clears[1].top).toBe(track.chevron.top - leaveGap);
+    }
+  });
+
+  test('on screen: once the place block is laid out, the chevron and its time move below it', async () => {
+    const lookup = { lookup: () => '虛構地址很長很長的一段路名一百二十八巷六十四弄三十二號', subscribe: () => () => {} };
+    let renderer;
+    await Renderer.act(async () => { renderer = Renderer.create(<AddressLookupContext.Provider value={lookup}>
+      <HistoryTimelineList model={model()} color="#1A73E8" />
+    </AddressLookupContext.Provider>); });
+    const host = id => renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === id);
+    const style = node => StyleSheet.flatten(node.props.style) || {};
+    // The first leaving stay: a two-line address and its pill, 70dp tall.
+    const content = host('place-content').find(node => node.props.onLayout);
+    await Renderer.act(async () => content.props.onLayout({ nativeEvent: { layout: { x: 0, y: 4, width: 300, height: 70 } } }));
+    const chevron = host('leave-chevron')[0], time = host('leave-time-box')[0];
+    const shapeTop = style(chevron).top + (sizes.timeline.leave * LEAVE_SHAPE.from) / 24;
+    expect(shapeTop).toBeGreaterThanOrEqual(70 + leaveGap - 1e-9);
+    // The time's text (centred in its box) starts below the block too.
+    const box = style(time);
+    expect(box.top + box.height / 2 - type.caption.lineHeight / 2).toBeGreaterThanOrEqual(70 - 1e-9);
+    await Renderer.act(async () => renderer.unmount());
+  });
+
+  test('PNG: after the address lines and the pill, one or two address lines', () => {
+    const measure = (text, size) => String(text).length * size;
+    for (const title of ['虛構地址', '虛構地址很長很長的一段路名一百二十八巷六十四弄三十二號附近再長一點']) {
+      const rows = exportTimelineRows(model().nodes, () => title);
+      let y = 0;
+      const blocks = rows.map(row => { const laid = layoutRow(row, measure); const block = { type: 'row', row, ...laid, color: '#123456', y }; y += laid.height; return block; });
+      const ops = pngDrawPages({ pages: [{ width: 1080, height: y + 40, titleLines: [], subtitleLines: [], legend: [], blocks,
+        footer: { page: '1', y, height: 40 } }] })[0].ops;
+      const leaving = blocks.filter(block => block.row.leave);
+      expect(leaving.length).toBe(3);
+      for (const block of leaving) {
+        const chevron = ops.find(op => op.t === 'icon' && op.name === 'leave' && op.y > block.y && op.y < block.y + block.height);
+        const shapeTop = chevron.y + (chevron.size * LEAVE_SHAPE.from) / 24;
+        const pill = ops.filter(op => op.t === 'rect' && op.y >= block.y && op.y < block.y + block.height).pop();
+        expect(pill).toBeDefined();
+        expect(shapeTop).toBeGreaterThanOrEqual(pill.y + pill.h + 12 - 0.5);
+        const time = ops.find(op => op.t === 'text' && op.text === block.row.leaveTime && op.y > block.y);
+        expect(time.y).toBeGreaterThanOrEqual(pill.y + pill.h);
+        expect(shapeTop + chevron.size).toBeLessThanOrEqual(block.y + block.height);
+      }
+    }
+  });
+});

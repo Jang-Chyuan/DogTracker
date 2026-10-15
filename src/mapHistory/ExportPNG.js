@@ -76,14 +76,17 @@ export function pngTitle(snapshot, subjects) {
 // under its node (ExportDraw leaveChevron): the node, the line, the chevron
 // and the line again before the row ends (3 × the screen's). On dots the
 // chevron sits on the page's dot grid, so up to one dot step more.
-function leavingRowHeight(kind) {
+function leavingRowHeight(kind, contentHeight = 0) {
   const e = tokenSize.export;
   const lineTop = e.rowInset + S.addressLine / 2 + S.nodeSize / 2 + e.leaveGap;
   const chevron = (e.leaveGlyph * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
   const step = S.dottedLine.diameter + S.dottedLine.gap;
   // The chevron's centre at the latest: two dots and the grid's next one (dots), or the car's line.
-  const center = kind === 'dots' ? S.dottedLine.diameter / 2 + 3 * step : e.leaveLine + e.leaveGap + chevron / 2;
-  return Math.ceil(lineTop + center + chevron / 2 + e.leaveGap + e.leaveBelow);
+  const center = lineTop + (kind === 'dots' ? S.dottedLine.diameter / 2 + 3 * step : e.leaveLine + e.leaveGap + chevron / 2);
+  // 2026-10-15 (user, layout A): never beside the address or the pill — below
+  // the place's last line (on dots, the grid's next dot after it).
+  const below = e.rowInset + contentHeight + e.leaveGap + chevron / 2 + (kind === 'dots' ? step : 0);
+  return Math.ceil(Math.max(center, below) + chevron / 2 + e.leaveGap + e.leaveBelow);
 }
 
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */
@@ -115,8 +118,8 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   }
   const secondLines = placed.length;
   const height = Math.max(S.placeMin, tokenSize.export.rowInset * 2 + contentHeight + S.rowGap,
-    row.leave ? leavingRowHeight(row.line) : 0);
-  return { titleLines, titleX, titleY, items: placed, secondLines, height };
+    row.leave ? leavingRowHeight(row.line, contentHeight) : 0);
+  return { titleLines, titleX, titleY, items: placed, secondLines, height, contentHeight };
 }
 
 /**
