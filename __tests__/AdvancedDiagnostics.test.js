@@ -15,7 +15,8 @@ import {
   DELETE_BODY, OFFLINE_PROBLEM, deleteDialog, unsentQuestion, uploadProblem, useDeleteDogData,
 } from '../src/settings/DeleteDogData';
 import { settleMovement, settleSeries } from '../src/diagnostics/SpeedBuffer';
-import { diagnosticsPage } from '../src/diagnostics/DiagnosticsModel';
+import { diagnosticsPage, serverClockLine } from '../src/diagnostics/DiagnosticsModel';
+import { createServerClock } from '../src/cloud/ServerClock';
 import { buildFixture, fixturePageFromUrl, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { settingsHome, settingsInput } from '../src/settings/SettingsModel';
 import { storageProblem } from '../src/map/TopAlerts';
@@ -75,7 +76,7 @@ test('diagnostics-ok: each dog has its environment result; the receiver dog its 
 test('diagnostics-empty: no dog, no reason; diagnostics-error: the storage reason first', () => {
   const empty = buildFixture('diagnostics-empty');
   expect(diagnosticsPage({ packets: empty.cloudDogs.packets, rows: empty.raw.ble, now: empty.now }))
-    .toEqual({ storage: null, dogs: [] });
+    .toEqual({ storage: null, dogs: [], serverClock: { value: i18nT('c1395'), detail: null } });
   const error = buildFixture('diagnostics-error');
   expect(error.openRoute).toBe('diagnostics');
   const page = diagnosticsPage({ packets: error.cloudDogs.packets, rows: error.raw.ble,
@@ -104,6 +105,32 @@ test('a packet without a fix carries no speed; the newer environment window wins
   expect(page.dogs[0].name).toBe('狗 5');
   expect(page.dogs[0].movement.label).toBe(i18nT("c624"));
   expect(page.dogs[0].environment).toMatchObject({ label: '室外（信心 90%）', source: i18nT('c075') });
+});
+
+test('S8 shows the server clock offset (ServerClock, #186) and whether cloud times are moved by it', async () => {
+  const clock = createServerClock({ log: null });
+  expect(serverClockLine(clock)).toEqual({ value: '還沒收到伺服器的回應', detail: null });
+  const at = Date.parse('2026-10-15T02:00:00Z');
+  // Within a minute: shown, not applied.
+  clock.observe(new Date(at + 12000).toUTCString(), at - 250, at + 250);
+  expect(serverClockLine(clock)).toEqual({ value: '伺服器快 13 秒', detail: '差 1 分鐘內，雲端的時間不調整' });
+  // A phone running 10 minutes fast: the server is behind, and applied.
+  const fast = createServerClock({ log: null });
+  for (let i = 0; i < 3; i++) fast.observe(new Date(at - 600000).toUTCString(), at + 500, at + 500);
+  expect(serverClockLine(fast)).toEqual({ value: '伺服器慢 600 秒', detail: '雲端的時間調整 -600 秒後再和這支手機比較' });
+  const slow = createServerClock({ log: null });
+  slow.observe(new Date(at + 120000).toUTCString(), at - 500, at - 500);
+  expect(serverClockLine(slow).detail).toBe('雲端的時間調整 +120 秒後再和這支手機比較');
+  const same = createServerClock({ log: null });
+  same.observe(new Date(at).toUTCString(), at + 500, at + 500);
+  expect(serverClockLine(same).value).toBe('和這支手機一致');
+  const page = diagnosticsPage({ clock: fast });
+  let renderer;
+  await act(async () => { renderer = Renderer.create(<DiagnosticsSettings page={page} onOpen={() => {}} />); });
+  const row = renderer.root.findByProps({ testID: 'diagnostics-server-clock' });
+  expect(row.props.accessibilityLabel).toBe('伺服器時差，伺服器慢 600 秒，雲端的時間調整 -600 秒後再和這支手機比較');
+  expect(text(renderer)).toContain('雲端時鐘');
+  await act(async () => renderer.unmount());
 });
 
 test('S8 draws the reason, the three pages and each dog without cutting lines short', async () => {

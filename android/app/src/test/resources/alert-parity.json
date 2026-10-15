@@ -1,5 +1,241 @@
 [
  {
+  "name": "a position from the future (a clock running ahead) is stale, without a duration",
+  "preferences": {},
+  "steps": [
+   {
+    "at": 1760000000000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000180000,
+      "packetAt": 1760000180000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": null,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000010000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000240000,
+      "packetAt": 1760000240000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000300000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "notify",
+     "title": "DogTracker・2 隻狗要注意",
+     "lines": [
+      "豆豆：沒有新位置",
+      "小黑：沒有新資料"
+     ],
+     "target": {
+      "screen": "map",
+      "dogId": 4
+     },
+     "delivered": [
+      "dog-stale:4",
+      "dog-stale:5"
+     ],
+     "vibration": [
+      0,
+      250
+     ],
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {
+       "dog-stale:4": {
+        "key": "dog-stale:4",
+        "startedAt": 1760000010000,
+        "level": 1
+       },
+       "dog-stale:5": {
+        "key": "dog-stale:5",
+        "startedAt": 1760000010000,
+        "level": 1
+       }
+      },
+      "batteries": {},
+      "seen": {
+       "dog-stale:4": {
+        "token": "1760000010000:1",
+        "at": 1760000010000,
+        "reminded": false
+       },
+       "dog-stale:5": {
+        "token": "1760000010000:1",
+        "at": 1760000010000,
+        "reminded": false
+       }
+      },
+      "pending": {},
+      "lastAttentionAt": 1760000010000,
+      "pause": null
+     }
+    }
+   },
+   {
+    "at": 1760000120000,
+    "dogs": [
+     {
+      "slaveId": 4,
+      "name": "豆豆",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000240000,
+      "packetAt": 1760000240000,
+      "held": false,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     },
+     {
+      "slaveId": 5,
+      "name": "小黑",
+      "coordinate": {
+       "latitude": 24.9895,
+       "longitude": 121.314
+      },
+      "fixAt": 1760000000000,
+      "packetAt": 1760000300000,
+      "held": true,
+      "farFixes": 0,
+      "batteryPercentage": 80,
+      "charging": false,
+      "range": {
+       "status": "in",
+       "clearing": [],
+       "nearBack": 0,
+       "cloudOnly": false
+      }
+     }
+    ],
+    "receiver": {
+     "enabled": true,
+     "running": true,
+     "connected": true,
+     "disconnectedAt": 0,
+     "number": 7,
+     "batteryPercentage": 62
+    },
+    "expect": {
+     "notification": "cancel",
+     "title": null,
+     "lines": [],
+     "target": null,
+     "delivered": [],
+     "vibration": null,
+     "critical": false,
+     "sound": false,
+     "state": {
+      "version": 1,
+      "active": {},
+      "batteries": {},
+      "seen": {},
+      "pending": {},
+      "lastAttentionAt": 1760000010000,
+      "pause": null
+     }
+    }
+   }
+  ]
+ },
+ {
   "name": "numbered dog stale: 75 actual minutes",
   "preferences": {},
   "steps": [
