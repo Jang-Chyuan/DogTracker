@@ -46,7 +46,7 @@ import {
   receiverLink,
   receiverNumber,
 } from '../map/ReceiverState';
-import { dogMarkers, dogName } from '../map/DogMarkers';
+import { dogMarkers, dogName, judgedFreshness } from '../map/DogMarkers';
 import { coldStartCoordinates, lastKnownPhoneFix, phoneFix, PHONE_FIX_MAX_AGE_S } from '../map/MapFraming';
 import { locationTrackerNative } from '../locationTracker/LocationTrackerService';
 import DogCard from '../map/DogCard';
@@ -59,7 +59,6 @@ import { useDogCardReadings } from '../map/useDogCardReadings';
 import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
 import {
   cloudClock,
-  dogFreshness,
   isIndoorHold,
 } from '../tracking/DogFreshness';
 import { layout, space, radius, size as sizes, type } from '../theme/tokens';
@@ -927,12 +926,18 @@ export default function MapScreen({
   const address = useAddress(
     cardDog && isIndoorHold(cardDog) ? cardDog.coordinate : null,
   );
+  // Judged like the dog's face (DogMarkers.judgedFreshness): while a return
+  // to the app catches the map up, at the moment it went away, with the stale
+  // answer shown before, so the card and the marker never disagree (F14).
+  const catchUpSince = catchUp.phase === 'catching-up' ? catchUp.since : null;
   const cardModel = useMemo(() => {
     if (!cardDog) return null;
-    const freshness = dogFreshness(cardDog, {
+    const freshness = judgedFreshness(cardDog, {
       now,
       cloud: cloudClockInput,
       pauses,
+      catchUpSince,
+      previousStale: previousMarkerStale.current,
     });
     return dogCard(cardDog, {
       freshness,
@@ -953,6 +958,7 @@ export default function MapScreen({
     now,
     cloudClockInput,
     pauses,
+    catchUpSince,
     cloudDogs?.ranges,
     readings,
     livePhone,
@@ -1002,7 +1008,8 @@ export default function MapScreen({
   // own too.
   const reserve = useMemo(() => {
     const others = otherDogs.map((dog, index) => {
-      const freshness = dogFreshness(dog, { now, cloud: cloudClockInput, pauses });
+      const freshness = judgedFreshness(dog, { now, cloud: cloudClockInput, pauses, catchUpSince,
+        previousStale: previousMarkerStale.current });
       const place = otherPlaces[index];
       const asking = isIndoorHold(dog) && place?.state === 'pending';
       const model = dogCard(dog, {
@@ -1021,7 +1028,7 @@ export default function MapScreen({
     const asking = isIndoorHold(cardDog) && !address;
     const own = asking ? { ...cardModel.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : cardModel.rows[0];
     return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
-  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, cloudDogs?.ranges, livePhone, nativePhone, fixture,
+  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, catchUpSince, cloudDogs?.ranges, livePhone, nativePhone, fixture,
     dogAliases, cardModel, cardDog, address]);
   const switcher = useMemo(() => {
     if (!switching) return null;

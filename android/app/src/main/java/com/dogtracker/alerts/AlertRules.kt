@@ -213,11 +213,18 @@ data class Freshness(val drawn: Boolean, val stale: Boolean, val basis: String, 
 
 object FreshnessRule {
   const val STALE_AFTER_MS = 10 * 60000L
+  // DogFreshness.js / ServerClock.SUSPECT_AHEAD_MS (#186): a time this much
+  // ahead of the clock it is judged against comes from a clock running ahead
+  // (or this phone's clock set back since). It says nothing about how fresh
+  // the position is, so it is not believed: stale, with no age, never fresh
+  // for as long as the skew lasts.
+  const val SUSPECT_AHEAD_MS = 3 * 60000L
 
   fun of(dog: AlertDog, now: Long, pauses: List<ReceiverPause>): Freshness {
     val basis = if (dog.held) "packet" else "position"
     val lastAt = if (dog.held) dog.packetAt ?: dog.fixAt else dog.fixAt
     if (dog.coordinate == null || lastAt == null) return Freshness(dog.coordinate != null, false, basis, null, null)
+    if (lastAt - now > SUSPECT_AHEAD_MS) return Freshness(true, true, basis, lastAt, null)
     val age = max(0L, now - lastAt)
     var from: Long = lastAt
     for (pause in pauses.sortedBy { it.pausedAt }) {
@@ -436,8 +443,11 @@ object Content {
     else -> Target("receiver-settings")
   }
 
+  // No duration when the age is not known (a suspect time, FreshnessRule):
+  // 「豆豆：沒有新位置」, as AlertContent.js.
   fun duration(ms: Long?): String {
-    val minutes = max(0L, floor((ms ?: 0L) / 60000.0).toLong())
+    if (ms == null) return ""
+    val minutes = max(0L, floor(ms / 60000.0).toLong())
     return com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c469, minutes)
   }
 
