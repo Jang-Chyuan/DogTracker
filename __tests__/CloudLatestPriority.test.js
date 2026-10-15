@@ -3,13 +3,13 @@ import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 const NOW = Date.parse('2026-10-10T12:00:00Z'), clock = () => Date.now();
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
-let db, database, engine, screen, update, dogs, current, releases;
+let latest, db, database, engine, screen, update, dogs, current, releases;
 function Harness() {
   const [state, setState] = useState({ latestFirst: true }); update = setState;
   dogs = useCloudDogs(database, current?.owner ?? 'invented-owner', true, clock, null,
@@ -19,18 +19,18 @@ function Harness() {
 }
 beforeEach(async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW); releases = []; update = null; dogs = current = null;
-  db = createMemoryConnection(); await createDogDatabase(db).initialize(); database = createCloudDatabase(db);
+  db = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(db).initialize(); database = createCloudDatabase(db, { latestConnection: latest });
   db.executeAsync.mockClear();
   jest.spyOn(console, 'info').mockImplementation(() => {});
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
 });
 afterEach(async () => {
   for (const release of releases) release();
   await act(async () => { screen?.unmount(); update = null; await jest.advanceTimersByTimeAsync(1); await engine.dispose(); });
-  db.close(); screen = null; jest.restoreAllMocks(); jest.useRealTimers();
+  db.close(); latest.close(); screen = null; jest.restoreAllMocks(); jest.useRealTimers();
 });
 async function mount() { await act(async () => { screen = Renderer.create(<Harness />); }); }
 async function start() { await act(async () => { engine.setSession({ user: { id: 'invented-owner' } }); engine.setForeground(true); await jest.advanceTimersByTimeAsync(1); }); }
@@ -55,7 +55,8 @@ test('a real React-committed latest snapshot precedes held archive maintenance o
   const readback = engine.mapPublication().readback;
   expect(Object.isFrozen(readback)).toBe(true);
   expect(Object.isFrozen(readback.snapshot.rows[0])).toBe(true);
-  expect(dogs.acceptedReadback).toBe(readback);
+  expect(dogs.cloudPublication).toMatchObject({ owner: readback.owner, scope: readback.scope,
+    generation: readback.generation, attempt: readback.attempt, revision: readback.revision });
   expect(engine.historyPublication()).toMatchObject({ archiveRevision: 0, archiveCutoff: null });
   retained.gate.resolve(); await act(async () => jest.advanceTimersByTimeAsync(1));
   expect(current.archiveRevision).toBe(1);
@@ -78,7 +79,7 @@ test('no mounted reader defers archive after the bounded ACK wait without claimi
 test('a successful empty committed set is acknowledged while archive is still held', async () => {
   await engine.dispose();
   const network = latestArchiveRest({ events: [] });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
   const retained = holdRetention(); await mount(); await start();
@@ -99,8 +100,8 @@ test('background cancels an unacknowledged pass promptly; the next generation re
 });
 
 test('a committed readback cannot certify a different SQLite revision and never reaches archive', async () => {
-  const execute = db.executeAsync.getMockImplementation(); let corrupted = false;
-  db.executeAsync.mockImplementation(async (sql, params) => {
+  const execute = latest.executeAsync.getMockImplementation(); let corrupted = false;
+  latest.executeAsync.mockImplementation(async (sql, params) => {
     const result = await execute(sql, params);
     if (!corrupted && sql.includes('s.origin,d.packet_json,d.fix_json') && !sql.includes('d.context_json') && result.results.length) {
       corrupted = true; result.results[0].revision += 1;
@@ -113,10 +114,10 @@ test('a committed readback cannot certify a different SQLite revision and never 
   expect(engine.mapPublication().readback).toBeNull();
 });
 
-test('cleanup drains an already-started committed SQL readback and rejects its late publication', async () => {
+test('cleanup settles while a native SQL readback drains and rejects its late publication', async () => {
   const held = deferred(); releases.push(held.resolve);
-  const execute = db.executeAsync.getMockImplementation(); let entered = false;
-  db.executeAsync.mockImplementation(async (sql, params) => {
+  const execute = latest.executeAsync.getMockImplementation(); let entered = false;
+  latest.executeAsync.mockImplementation(async (sql, params) => {
     if (sql.includes('s.origin,d.packet_json,d.fix_json') && !sql.includes('d.context_json')) {
       entered = true; await held.promise;
     }
@@ -124,7 +125,7 @@ test('cleanup drains an already-started committed SQL readback and rejects its l
   });
   await start(); expect(entered).toBe(true);
   let closed = false; const drain = engine.dispose().then(() => { closed = true; });
-  await Promise.resolve(); expect(closed).toBe(false);
+  await act(async () => { await jest.advanceTimersByTimeAsync(1); }); expect(closed).toBe(true);
   held.resolve(); await act(async () => { await drain; });
   expect(engine.mapPublication().mapSuccessRevision).toBe(0);
   expect(engine.mapPublication().readback).toBeNull();
@@ -141,17 +142,17 @@ test('a genuinely absent snapshot uses the preserved archive fallback only after
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: async ({ phase }) => {
     if (phase === 'packet') throw new TypeError('Network request failed');
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     onChange: value => { current = value; update?.(value); } });
   await mount();
-  expect(db.sqlite.prepare('SELECT * FROM cloud_snapshot_state').all()).toEqual([]);
+  expect(latest.sqlite.prepare('SELECT * FROM cloud_snapshot_state').all()).toEqual([]);
   expect(db.executeAsync.mock.calls.some(([sql]) => sql === 'PRAGMA table_info(supabase_dog_status)')).toBe(false);
   await start(); await act(async () => jest.advanceTimersByTimeAsync(1));
   expect(current.mapSuccessRevision).toBe(0);
   expect(current.error).toBeTruthy();
-  expect(dogs).toMatchObject({ cachedBaseline: true, cloudCommit: null, cloudPublication: null,
+  expect(dogs).toMatchObject({ cachedBaseline: false, cloudCommit: null, cloudPublication: { revision: null },
     rows: [expect.objectContaining({ event_id: 'legacy-cache' })] });
-  expect(db.sqlite.prepare('SELECT revision,origin FROM cloud_snapshot_state').get()).toMatchObject({ revision: 0, origin: 'cache' });
+  expect(latest.sqlite.prepare('SELECT revision,origin FROM cloud_snapshot_state').get()).toMatchObject({ revision: 0, origin: 'cache' });
   expect(current.archiveRevision).toBe(0);
 });
 
@@ -163,7 +164,7 @@ test('an offline fresh failure restores only a prior durable archive proof, not 
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: async ({ phase }) => {
     if (phase === 'packet') throw new TypeError('Network request failed');
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     onChange: value => { current = value; update?.(value); } });
   await mount(); await start();
   expect(current).toMatchObject({ archiveCutoff: NOW - 100, archiveRevision: 1,
@@ -188,7 +189,7 @@ test('a durable offline proof that resolves after owner replacement cannot certi
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: async ({ phase }) => {
     if (phase === 'packet') throw new TypeError('Network request failed');
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     onChange: value => { current = value; update?.(value); } });
   await start(); expect(entered).toBe(true);
   await act(async () => {
@@ -204,7 +205,7 @@ test('a later context publication does not strand the already committed first AC
   await engine.dispose();
   const context = deferred(); releases.push(() => context.resolve({ cutoff: NOW, dogs: [] }));
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] });
-  engine = createCloudSync({ client: network.client, database, downloadContext: () => context.promise,
+  engine = createIndependentCloudSync({ client: network.client, database, downloadContext: () => context.promise,
     onChange: value => { current = value; update?.(value); } });
   await mount(); await start();
   const first = engine.mapPublication().readback;
@@ -214,7 +215,7 @@ test('a later context publication does not strand the already committed first AC
   context.resolve({ cutoff: NOW, dogs: [{ slaveId: packet.slave_id,
     packet, fix: first.snapshot.rows[0], context: [packet], seeds: [] }] });
   await act(async () => jest.advanceTimersByTimeAsync(1));
-  expect(current).toMatchObject({ mapSuccessRevision: 2, contextPending: false, archiveRevision: 1, busy: false });
+  expect(current).toMatchObject({ mapSuccessRevision: 1, contextPending: false, archiveRevision: 1, busy: false });
   expect(latestMapApplied({ ...current, getMapPublication: () => engine.mapPublication() }, 'invented-owner', dogs)).toBe(true);
   expect(first.revision).toBe(1);
 });
@@ -228,10 +229,10 @@ test('a true HTTP deadline retains the prior durable offline proof without accep
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)], beforeRead: ({ phase }) => {
     if (phase === 'packet') return transport.promise;
   } });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     onChange: value => { current = value; update?.(value); } });
   await mount(); await start();
-  expect(current).toMatchObject({ mapSuccessRevision: 0, archiveRevision: 0, snapshotPending: true });
+  expect(current).toMatchObject({ mapSuccessRevision: 0, archiveRevision: 0, snapshotPending: false });
   await act(async () => jest.advanceTimersByTimeAsync(120000));
   expect(current).toMatchObject({ archiveCutoff: NOW - 100, archiveRevision: 1,
     mapSuccessRevision: 0, lastSuccess: null, snapshotPending: false, offline: true, busy: false });

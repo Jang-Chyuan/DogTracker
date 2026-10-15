@@ -6,7 +6,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useTrackingSession } from '../src/app/useTrackingSession';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { createHistoryCloud } from '../src/mapHistory/HistoryCloud';
 import { useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import HistoryScreen from '../src/mapHistory/HistoryScreen';
@@ -15,7 +15,7 @@ import { t } from '../src/i18n';
 const NOW = Date.parse('2026-10-10T12:00:00Z'), OWNER = 'invented-owner';
 const clock = () => Date.now();
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
-let connection, tracking, screen, factory, engine, cloud, renderer, transport;
+let latest, connection, tracking, screen, factory, engine, cloud, renderer, transport;
 const target = { subject: 'phone', slaveId: null };
 function PhonePage() {
   screen = useHistoryScreen({ target, read: tracking.historyDatabase.historyDayRows,
@@ -29,19 +29,20 @@ function Harness({ phone = false }) {
 beforeEach(async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
   jest.spyOn(console, 'info').mockImplementation(() => {});
-  connection = createMemoryConnection(); transport = deferred();
+  connection = createMemoryConnection(); latest = createMemoryConnection(); transport = deferred();
   const real = createDogDatabase(connection); await real.initialize();
   await connection.executeAsync('CREATE TABLE myLocationTracker (id INTEGER PRIMARY KEY,recorded_at INTEGER,latitude REAL,longitude REAL,accuracy_meters REAL)');
   await connection.executeAsync('INSERT INTO myLocationTracker VALUES(1,?,25,121,5)', [NOW - 60000]);
   await connection.executeAsync('INSERT INTO myLocationTracker VALUES(2,?,25.0002,121.0002,5)', [NOW - 30000]);
-  const database = createCloudDatabase(connection);
+  const database = createCloudDatabase(connection, { latestConnection: latest });
   jest.spyOn(database, 'initialize');
   factory = () => ({ real, cloud: database, history: createHistoryDatabase(connection), close: jest.fn(),
     settings: { initialize: async () => {}, load: async () => ({ mode: 'real' }), save: async () => {} } });
+  factory.latestStorageIsolated = true;
   await act(async () => { renderer = Renderer.create(<Harness />); });
   const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)],
     beforeRead: ({ phase }) => phase === 'packet' ? transport.promise : undefined });
-  engine = createCloudSync({ database: tracking.cloudDatabase, client: network.client });
+  engine = createIndependentCloudSync({ database: tracking.cloudDatabase, client: network.client });
   engine.setSession({ user: { id: OWNER } }); engine.setForeground(true);
   cloud = createHistoryCloud({ database: tracking.cloudDatabase, client: network.client, owner: OWNER,
     runManual: (...args) => engine.runManual(...args), getPublication: () => engine.historyPublication() });
@@ -50,13 +51,13 @@ beforeEach(async () => {
 afterEach(async () => {
   transport.resolve();
   await act(async () => { renderer?.unmount(); await engine?.dispose(); await jest.advanceTimersByTimeAsync(1); });
-  connection.close(); jest.restoreAllMocks(); jest.useRealTimers();
+  connection.close(); latest.close(); jest.restoreAllMocks(); jest.useRealTimers();
 });
 
 test('signed-in 我的路線 reads actual local rows/dates while latest is pending, without archive cancellation or a dog download', async () => {
   const archive = factory().cloud;
   await act(async () => { renderer.update(<Harness phone />); await jest.advanceTimersByTimeAsync(10001); });
-  expect(engine.mapPublication().pending).toBe(true);
+  expect(engine.mapPublication().pending).toBe(false);
   expect(engine.historyPublication().latestReadReady).toBe(false);
   expect(archive.initialize).not.toHaveBeenCalled();
   expect(cloud.download).not.toHaveBeenCalled();

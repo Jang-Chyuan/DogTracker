@@ -7,7 +7,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { CLOUD_FAILING_GRACE_MS, dogFreshness } from '../src/tracking/DogFreshness';
 import { dogMarkers } from '../src/map/DogMarkers';
 
@@ -20,7 +20,7 @@ async function start(network) {
   archive = createMemoryConnection(); latest = createMemoryConnection();
   await createDogDatabase(archive).initialize();
   const database = createCloudDatabase(archive, { latestConnection: latest });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; } });
   engine.setSession({ user: { id: OWNER } });
