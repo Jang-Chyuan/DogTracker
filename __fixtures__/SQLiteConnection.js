@@ -73,6 +73,8 @@ export function createMemoryConnection({ binding = 'android', checkBinding = che
     const results = sqlite.prepare(query).all(...bind(query, params));
     return {
       results,
+      // A write's changed rows, as the native owner answers (executeUpdateDelete).
+      ...(READS.has(sqlVerb(query)) ? {} : { rowsAffected: Number(sqlite.prepare('SELECT changes() AS n').get().n) }),
       insertId: Number(
         sqlite.prepare('SELECT last_insert_rowid() AS id').get().id,
       ),

@@ -75,6 +75,7 @@ import {
   PHONE_FIX_MAX_AGE_S,
   regionForFrame,
   overlayFramePadding,
+  focusPointY,
 } from './MapFraming';
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox, compassBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
@@ -1341,7 +1342,10 @@ function GoogleTrackingMapRenderer({
     const map = mapRef.current;
     if (!map?.coordinateForPoint) return Promise.resolve(null);
     const { width, height } = cursorLayout;
-    const target = requestedTarget ?? { x: width / 2, y: (overlayTop + height - overlayBottom) / 2 };
+    // Above the card and, on the live map, above its bottom row (「今天 x
+    // km」, 我的位置) too: a point brought there is never under them.
+    const freeBottom = height - overlayBottom - (bottomRow ? bottomRow + layout.floatingGap : 0);
+    const target = requestedTarget ?? { x: width / 2, y: focusPointY({ top: overlayTop, bottom: freeBottom }) };
     const middle = {
       x: width / 2,
       y: topInset + (height - topInset - bottomInset) / 2,
@@ -1350,7 +1354,7 @@ function GoogleTrackingMapRenderer({
       x: middle.x + point.x - target.x,
       y: middle.y + point.y - target.y,
     });
-  }, [cursorLayout, overlayTop, overlayBottom, topInset, bottomInset]);
+  }, [cursorLayout, overlayTop, overlayBottom, topInset, bottomInset, bottomRow]);
   // A dog whose card just opened: when the card (or a screen edge) covers it,
   // move the map so it shows in the middle of what is left above the card
   // (300 ms). Asked once per opening.
@@ -1399,7 +1403,12 @@ function GoogleTrackingMapRenderer({
           point.y < overlayTop + margin ||
           point.y > height - overlayBottom - margin - buttons - tag;
         if (!hidden || focused.current !== focusDog.key) return;
-        const moved = point ? await centreInView(point) : null;
+        // Its face and name tag in the middle of the map left above the card
+        // and the bottom row (at 200% font the card is tall and the band
+        // small: the face is kept clear of 「今天 x km」).
+        const freeBottom = height - overlayBottom - (bottomRow ? bottomRow + layout.floatingGap : 0);
+        const moved = point ? await centreInView(point, { x: width / 2,
+          y: focusPointY({ top: overlayTop, bottom: freeBottom, up: point.y - box.top, down: box.bottom - point.y }) }) : null;
         if (focused.current !== focusDog.key) return;
         takeCamera();
         map.animateCamera(

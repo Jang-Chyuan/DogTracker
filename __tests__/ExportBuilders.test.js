@@ -136,6 +136,20 @@ test('only one active dog uses single layout and filename; no data yields no pag
   expect(buildExportFilename(data, 'gpx')).toContain('小黑-4');
 });
 
+// 2026-10-15: a dog without a name exported as 「DogTracker_狗 4-4_…」 — its
+// default name 「狗 4」 already is its 訊號源 number, and the 「-4」 repeated it.
+test('a dog without a name is 「狗 4」 once in the file name, GPX and PNG title', () => {
+  for (const name of [undefined, '狗 4']) {
+    const data = snapshot(dog({ name }));
+    expect(buildExportFilename(data, 'gpx')).toBe('DogTracker_狗 4_19700101-0000_19700101-0100.gpx');
+    expect(buildGPX(data)).toContain('<name>狗 4</name>');
+    expect(buildGPX(data)).not.toContain('狗 4-4');
+    expect(buildPNGLayout(data).pages[0].title).not.toContain('訊號源');
+  }
+  // A named dog keeps its 訊號源 number.
+  expect(buildExportFilename(snapshot(dog()), 'png')).toBe('DogTracker_小黑-4_19700101-0000_19700101-0100.png');
+});
+
 // Design spec.txt:490: | 檔名 | 格式：DogTracker_〔對象〕_〔開始〕_〔結束〕.〔png／gpx／csv〕，開始、結束寫成 20261003-0803；例：DogTracker_我的路線_20261003-0803_20261003-1211.png、DogTracker_小黑-4_20261003-0803_20261003-1211.gpx、DogTracker_狗的歷史_20261003-0800_20261003-1211.csv；三種格式同一個主檔名；PNG 多張加 _1、_2；不能當檔名的字換成「_」
 test('filenames, multi PNG suffix, temp identity and cleanup use local calendar day not elapsed 24h', () => {
   const data = snapshot(dog({ name: '小/黑:*\n' }));

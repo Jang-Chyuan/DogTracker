@@ -158,6 +158,20 @@ export function regionForFrame(points, padding, view) {
   };
 }
 
+/**
+ * Where (y, dp from the map's top) to bring a point so that it shows in the
+ * middle of the free band from `top` (below the top cards) to `bottom` (above
+ * the card and, on the live map, the bottom row: 「今天 x km」 and 我的位置),
+ * with what is drawn around it — `up` dp above (the face, its 「!」) and
+ * `down` dp below (the face and its name tag) — inside the band too. A band
+ * too small for all of it (a tall card at 200% font) keeps the face at its
+ * top: never under the bottom row (2026-10-15).
+ */
+export function focusPointY({ top, bottom, up = 0, down = 0 }) {
+  if (bottom - top >= up + down) return (top + bottom + up - down) / 2;
+  return top + up;
+}
+
 /** Padding inside the SDK map padding, clear of the card or history panel. */
 export function overlayFramePadding(padding, { topInset = 0, bottomInset = 0,
   overlayTop = topInset, overlayBottom = bottomInset } = {}) {

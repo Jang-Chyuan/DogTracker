@@ -8,10 +8,23 @@ function number(data, key, min, max, scale = 1) {
   if (result < min || result > max || (scale === 1 && !Number.isInteger(value))) throw new Error(t("c604", { key: key }));
   return result;
 }
+/**
+ * A packet's own Master ID as the receiver check and the upload queue read it
+ * (ReceiverMasterId.of in Kotlin): `master_id`, else `mid`; a number or a
+ * numeric string (`"mid":"5"`), whole, 1–65535. null when it has none.
+ */
+export function packetMasterId(data) {
+  const raw = data?.master_id != null ? data.master_id : data?.mid;
+  const value = typeof raw === 'number' ? raw
+    : typeof raw === 'string' && /^\+?\d+(\.\d*)?$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : null;
+}
+
 export function bleUploadPayload(row, phoneId) {
   const d = JSON.parse(row.payload_json);
   if (d.type !== 3) throw new Error(t("c600"));
-  const master = number(d, 'mid', 1, 65535), slave = number(d, 'sid', 1, 255);
+  const master = packetMasterId(d), slave = number(d, 'sid', 1, 255);
+  if (master == null) throw new Error(t("c603", { key: 'mid' }));
   if (master !== row.master_id) throw new Error(t("c602"));
   const signal = key => {
     if (typeof d[key] !== 'number' || !Number.isFinite(d[key]) || Math.abs(d[key]) > 300) throw new Error(t("c601", { key: key }));

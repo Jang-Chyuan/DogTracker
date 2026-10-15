@@ -1,12 +1,10 @@
 import { t } from '../../i18n';
-import { clock, listDuration } from '../HistoryText';
+import { clock, stayDuration } from '../HistoryText';
 import { distanceText } from '../../utils/distanceText';
 import { shownNumberAt, shownRowAt, shownStayDurationMs } from '../HistoryTimelinePresentation';
 import { snapToRoute } from '../../mapHistory/CursorGeometry';
 import { nearestRecord } from './HistoryScreenRange';
 import { phoneDisplayLocations, phoneStayAtTime } from '../PhoneStayDisplayAnchors';
-
-const MINUTE = 60000;
 
 /**
  * The cursor's two lines (DESIGN.md「游標和標籤」, 2026-10-14): its time, then
@@ -35,8 +33,8 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   // A stay's first minute is 「停留 不到 1 分」, never 「停留 0 分」, as the list's
   // 「停 不到 1 分」 (2026-10-15).
   const shownMs = stay && shownStayDurationMs(model.nodes, stay);
-  const minutes = stay && (stay.type === 'stop' && Math.round(Math.max(0, shownMs || 0) / MINUTE) === 0
-    ? t('c1276') : listDuration(shownMs));
+  // An indoor hold's too: 「室內・不到 1 分」, never 「室內・0 分」.
+  const minutes = stay && stayDuration(shownMs);
   // The number the list shows for this stay (start / end stays have none).
   const number = stay?.type === 'stop' && row?.type === 'stop' ? shownNumberAt(model.nodes, time) : null;
   if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })

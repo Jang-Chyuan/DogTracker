@@ -3,8 +3,8 @@ import { openTrackingDatabase } from './TrackingDatabaseConnection';
 import { NativeModules, Platform } from 'react-native';
 import { bleDisplayRows } from '../ble/BleDisplayCoordinates';
 import { withConnectionLock } from './connectionLock';
+import { pruneDogStatus } from './LocalRetention';
 
-const MAX_STATUS_RECORDS_PER_SLAVE = 10000;
 const CLEANUP_INTERVAL_INSERTS = 100;
 
 function rowsFromResult(result) {
@@ -16,29 +16,10 @@ export function createDogDatabase(connection) {
 
   let insertsSinceCleanup = 0;
 
+  // The same rule as the Android writer (LocalRetention): 7 days, each dog
+  // keeping its newest rows when quiet longer, a cap per dog.
   async function cleanupOldRecords() {
-    const slaves = await db.executeAsync(`
-      SELECT DISTINCT slave_id
-      FROM dog_status
-      WHERE slave_id IS NOT NULL
-    `);
-
-    for (const { slave_id: slaveId } of slaves.results || []) {
-      await db.executeAsync(
-        `DELETE FROM dog_status
-         WHERE slave_id = ?
-           -- The 10001st newest row is the last row removed; NULL deletes none.
-           AND id <= (
-             SELECT id
-             FROM dog_status
-             WHERE slave_id = ?
-             ORDER BY id DESC
-             LIMIT 1 OFFSET ?
-           )`,
-        [slaveId, slaveId, MAX_STATUS_RECORDS_PER_SLAVE],
-      );
-    }
-
+    await pruneDogStatus(db);
     insertsSinceCleanup = 0;
   }
 
@@ -50,7 +31,7 @@ export function createDogDatabase(connection) {
     initialize() {
       return withConnectionLock(db, async () => {
       // Android queries and writes share DogStatusStore's SQLite engine.
-      // Other platforms retain the Nitro fallback and upstream retention.
+      // Other platforms keep the Nitro fallback and prune here (cleanupOldRecords).
       await db.executeAsync('PRAGMA busy_timeout=5000');
       if (native?.initializeDatabase) await native.initializeDatabase();
       // Cloud downloads use a separate table with the same local row format.
@@ -125,7 +106,7 @@ export function createDogDatabase(connection) {
       // not pay for two equivalent index writes forever.
       await db.executeAsync('DROP INDEX IF EXISTS idx_dog_status_received_at');
 
-      // Replace the legacy all-slaves trigger with upstream per-slave retention.
+      // Replace the legacy all-slaves trigger with the per-dog retention.
       await db.executeAsync(
         'DROP TRIGGER IF EXISTS trim_dog_status_after_insert',
       );

@@ -4,6 +4,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { parseHistoryRange } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
+import { readLocalRetention } from '../database/LocalRetention';
 
 // The history list reads this much before the day too: a visit or a drive
 // running over midnight, a break before the first fix (判定表「跨午夜」).
@@ -14,7 +15,7 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
-  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs'];
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs', 'localRetention'];
 // historyDogs lists at most this many dogs (each one is one indexed seek).
 export const HISTORY_DOGS_LIMIT = 200;
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
@@ -343,23 +344,24 @@ export function createHistoryDatabase(db) {
       const dayOf = time => `strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')`;
       const found = new Set();
       const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
+      // Not a DISTINCT over every row (my route keeps 30 days, a dog 7: up to
+      // hundreds of thousands, each converted to local time, on the
+      // connection the day's own read waits for): from each day's first row,
+      // the time index jumps straight to the next local day's first one.
+      const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
+      const firstOfEachDay = (from, time, where) => `WITH RECURSIVE first(t) AS (
+          SELECT MIN(${time}) FROM ${from} WHERE ${where}
+          UNION ALL SELECT (SELECT MIN(${time}) FROM ${from}
+            WHERE ${where} AND ${time} >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
+        SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`;
       if (subject === 'phone') {
-        // Not a DISTINCT over every row (80 000 at the recorder's cap, each
-        // converted to local time, on the connection the day's own read
-        // waits for): from each day's first fix, the time index jumps
-        // straight to the next local day's first one.
-        const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
         if (await table('myLocationTracker')) {
-          add(rows(await db.executeAsync(`WITH RECURSIVE first(t) AS (
-              SELECT MIN(recorded_at) FROM myLocationTracker
-              UNION ALL SELECT (SELECT MIN(recorded_at) FROM myLocationTracker
-                WHERE recorded_at >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
-            SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`)));
+          add(rows(await db.executeAsync(firstOfEachDay('myLocationTracker', 'recorded_at', '1'))));
         }
       } else {
         if (await table('dog_status')) {
-          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('received_at')} AS day FROM dog_status
-            WHERE slave_id = ?`, [slaveId])));
+          // dog_status(slave_id, received_at DESC) answers each MIN with one seek.
+          add(rows(await db.executeAsync(firstOfEachDay('dog_status', 'received_at', 'slave_id = ?'), [slaveId, slaveId])));
         }
         if (owner && await table('supabase_dog_status')) {
           add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('CAST(COALESCE(track_at, received_at) AS INTEGER)')} AS day
@@ -398,6 +400,13 @@ export function createHistoryDatabase(db) {
           ORDER BY slave_id LIMIT 1`, [owner]);
       }
       return [...found].sort((left, right) => left - right).slice(0, HISTORY_DOGS_LIMIT);
+    },
+    /**
+     * The first day this phone keeps my route and the dogs' packets from
+     * (設定的「保留到 M/D」; LocalRetention).
+     */
+    localRetention(now = Date.now()) {
+      return readLocalRetention(db, now);
     },
     /**
      * Which Master/Slave pairs this phone actually holds for a source. The card
