@@ -8,6 +8,10 @@ import {
   saveAlertState, sendAlertEffects,
 } from '../src/alerts/AlertNotifications';
 import { useNativeAlertState } from '../src/alerts/useNativeAlertState';
+import { isLocalDog, LOCAL_RECEPTION_MS } from '../src/alerts/AlertNotifications';
+import { localReception } from '../src/alerts/LocalReception';
+import { mergeDogMarkers } from '../src/map/DogMerge';
+import { advanceRange } from '../src/tracking/ReceiverRange';
 
 const content = { title: 'DogTracker・1 隻狗要注意', lines: ['豆豆 不在接收範圍'], target: { screen: 'map', dogId: 4 },
   actions: [] };
@@ -53,6 +57,69 @@ test('the hand-over: this phone\'s dogs with their names, holds and range judgem
   handOverAlerts(snapshot);
   handOverAlerts(snapshot);
   expect(Native.handOver).toHaveBeenCalledTimes(1);
+});
+
+// F7: the same collar heard by this phone's receiver and by a teammate's. The
+// teammate's cloud row is newer, yet the dog is still this phone's: it is
+// handed over with its name and range judgement, timed by this phone's packets.
+describe('a dog a teammate also hears', () => {
+  const NOW = Date.parse('2026-10-15T08:00:00Z');
+  const receiver = { masterLat: 24.989, masterLon: 121.313 };
+  const point = { slaveId: 4, masterId: 3, slaveLat: 24.99, slaveLon: 121.314, receivedAt: NOW - 20000, ...receiver };
+  const teammate = { slave_id: 4, master_id: 9, slave_lat: 24.9901, slave_lon: 121.3141,
+    track_at: NOW - 5000, received_at: NOW - 5000 };
+  const range = advanceRange(undefined, { time: NOW - 20000, source: 'ble', latitude: 24.99, longitude: 121.314,
+    receiverLatitude: 24.989, receiverLongitude: 121.313 });
+  const shared = () => {
+    const [dog] = mergeDogMarkers({ point, cloudRows: [teammate], now: NOW, windowMs: 180000 });
+    const reception = localReception({ point });
+    return { ...dog, name: '豆豆', range, localPacketAt: reception[4].packetAt, localFixAt: reception[4].fixAt };
+  };
+
+  test('is handed over although the cloud row is newest', () => {
+    const dog = shared();
+    expect(dog).toMatchObject({ fixSource: 'cloud', packetSource: 'cloud' });
+    const snapshot = alertSnapshot([dog], null, NOW);
+    expect(snapshot.dogs).toHaveLength(1);
+    // This phone's own times, not the teammate's (another clock).
+    expect(snapshot.dogs[0]).toMatchObject({ slaveId: 4, name: '豆豆', fixAt: NOW - 20000, packetAt: NOW - 20000,
+      range: { status: 'in', lastLocalAt: NOW - 20000 } });
+    expect(snapshot.others).toEqual([]);
+  });
+
+  test('stays this phone\'s from the range judgement alone', () => {
+    const { localPacketAt, localFixAt, ...dog } = shared();
+    expect(localPacketAt).toBe(NOW - 20000);
+    expect(localFixAt).toBe(NOW - 20000);
+    expect(isLocalDog(dog, NOW)).toBe(true);
+    expect(alertSnapshot([dog], null, NOW).dogs[0]).toMatchObject({ packetAt: NOW - 20000, fixAt: null });
+  });
+
+  test('becomes the cloud\'s once this phone has stopped hearing it', () => {
+    const silent = { ...shared(), localPacketAt: NOW - LOCAL_RECEPTION_MS - 60000, localFixAt: null };
+    expect(isLocalDog(silent, NOW)).toBe(false);
+    const snapshot = alertSnapshot([silent], null, NOW);
+    expect(snapshot.dogs).toEqual([]);
+    // Its name and judgement still go, for a packet while the app is away.
+    expect(snapshot.others).toEqual([{ slaveId: 4, name: '豆豆', range }]);
+    // Nobody hears it lately, but this phone heard it last within the window
+    // of the teammate's row: still this phone's.
+    expect(isLocalDog({ ...silent, packetAt: NOW - LOCAL_RECEPTION_MS }, NOW)).toBe(true);
+    // A dog only ever heard through the cloud.
+    expect(isLocalDog({ slaveId: 5, fixSource: 'cloud', packetSource: 'cloud', packetAt: NOW }, NOW)).toBe(false);
+  });
+
+  test('this phone\'s reception: the newest BLE packet and the newest BLE fix', () => {
+    const packets = [
+      { slave_id: 4, source: 'ble', received_at: NOW - 9000, track_at: NOW - 9000, slave_lat: 0, slave_lon: 0 },
+      { slave_id: 4, source: 'ble', received_at: NOW - 30000, track_at: NOW - 30000, slave_lat: 24.99, slave_lon: 121.3 },
+      { slave_id: 4, source: 'cloud', received_at: NOW - 1000, track_at: NOW - 1000, slave_lat: 24.99, slave_lon: 121.3 },
+      { slave_id: 6, source: 'cloud', received_at: NOW - 1000, slave_lat: 24.99, slave_lon: 121.3 },
+    ];
+    expect(localReception({ packets })).toEqual({ 4: { packetAt: NOW - 9000, fixAt: NOW - 30000 } });
+    expect(localReception({ packets, point })).toEqual({ 4: { packetAt: NOW - 9000, fixAt: NOW - 20000 } });
+    expect(localReception()).toEqual({});
+  });
 });
 
 test('the shared state: a save on an old revision is refused', async () => {

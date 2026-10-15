@@ -32,6 +32,7 @@ import {
 } from '../map/TrackingMapPresentation';
 import { mergeDogMarkers, LIVE_PACKET_WINDOW_MS } from '../map/DogMerge';
 import { cloudRowsOnPhoneClock, serverClock } from '../cloud/ServerClock';
+import { localReception } from '../alerts/LocalReception';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
 import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
@@ -502,6 +503,12 @@ export default function MapScreen({
   const alertBatteryPercentage =
     otherReceiver || point?.id == null ? null : point.masterBatteryPercentage;
   const alertSource = fixture?.name ?? 'live';
+  // This phone's own reception of each dog, whichever row is newest: the
+  // background alerts keep a dog a teammate also hears (isLocalDog).
+  const alertReception = useMemo(
+    () => localReception({ point, packets: cloudDogs?.packets }),
+    [point, cloudDogs?.packets],
+  );
   useEffect(() => {
     onAlertInput?.({
       source: alertSource,
@@ -511,6 +518,8 @@ export default function MapScreen({
         name: dogName(dog.slaveId, alertDogAliases),
         range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
         indoorState: cloudDogs?.statuses?.[dog.slaveId]?.indoorState ?? null,
+        localPacketAt: alertReception[dog.slaveId]?.packetAt ?? null,
+        localFixAt: alertReception[dog.slaveId]?.fixAt ?? null,
       })),
       receiverBattery:
         alertBatteryValid == null
@@ -525,6 +534,7 @@ export default function MapScreen({
     alertDogAliases,
     cloudDogs?.ranges,
     cloudDogs?.statuses,
+    alertReception,
     alertBatteryValid,
     alertBatteryPercentage,
   ]);

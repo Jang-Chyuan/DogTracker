@@ -818,7 +818,7 @@ function TrackerApp({ resume = null, onRestart }) {
       )
         return null;
       // What the background check needs once the app is off screen.
-      if (!fixture) handOverAlerts(alertSnapshot(input.dogs, alertPreferences.value));
+      if (!fixture) handOverAlerts(alertSnapshot(input.dogs, alertPreferences.value, Date.now()));
       return {
         dogs: input.dogs,
         receiverBattery: input.receiverBattery,

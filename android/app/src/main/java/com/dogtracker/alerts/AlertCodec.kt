@@ -194,6 +194,20 @@ object AlertCodec {
 
   fun writeDogs(dogs: Collection<AlertDog>) = JSONArray(dogs.map(::writeDog))
 
+  /** The hand-over's `others`: dogs not checked here, with their names and range judgements. */
+  fun readOthers(array: JSONArray?): Map<Int, OtherDog> {
+    if (array == null) return emptyMap()
+    return (0 until array.length()).mapNotNull { index ->
+      val json = array.optJSONObject(index) ?: return@mapNotNull null
+      val slaveId = json.int("slaveId") ?: return@mapNotNull null
+      OtherDog(slaveId, json.text("name"), readRange(json.optJSONObject("range")))
+    }.associateBy { it.slaveId }
+  }
+
+  fun writeOthers(others: Collection<OtherDog>) = JSONArray(others.map { other ->
+    JSONObject().put("slaveId", other.slaveId).put("range", writeRange(other.range)).also { put(it, "name", other.name) }
+  })
+
   /**
    * One stored BLE packet as the background check reads it (the same keys
    * DogStatusStore accepts, long or short).
