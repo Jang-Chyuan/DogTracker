@@ -12,6 +12,17 @@ import { beginCloudAttemptDiagnostic } from '../diagnostics/CloudAttemptDiagnost
 import { contextFailureKind } from './CloudErrors';
 
 const DOWNLOAD_MS = 120000, CONTEXT_MS = 10000, SWEEP_MS = 600000;
+// Supabase answered but refused or failed the request (429, 5xx): it is up and
+// struggling, so the automatic attempts space out (1, 2, 4, then every 5 min)
+// instead of repeating every 30 s. No network keeps the 30 s cadence: those
+// attempts cost the server nothing and the map recovers as soon as it can.
+// A success, 重試, a return to the app or another account starts over.
+export const SERVER_BACKOFF_FIRST_MS = 60000, SERVER_BACKOFF_MAX_MS = 300000;
+const failureStatus = error => {
+  const status = error?.status ?? error?.context?.status ?? error?.cause?.status ?? error?.cause?.context?.status;
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+};
+const serverTrouble = status => status === 429 || status >= 500;
 
 // Requires a genuinely independent latest native file, worker, monitor and JS
 // lock. An archive operation already inside native SQL remains owned/draining;
@@ -30,6 +41,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
   let initialStarted = false, retryQueued = false, sweptAt = 0, failureDiagnostic = null;
   let archiveAuthority = null, archiveAuthorityVersion = 0;
   let deleting = false;
+  let backoffMs = 0, backoffUntil = 0;
+  const resetBackoff = () => { backoffMs = 0; backoffUntil = 0; };
   // The first map ACK of a foreground generation opens archive priority. A
   // later 30-second latest attempt must not close it again: archive/manual
   // commands and history readers already admitted would otherwise wait out
@@ -102,10 +115,14 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
     }
   };
   const reportLatestFailure = (error, timedOut, attempt, phase) => {
-    const status = error?.status ?? error?.context?.status ?? error?.cause?.status ?? error?.cause?.context?.status;
+    const status = failureStatus(error);
     const diagnostic = { attempt, phase, failureKind: timedOut ? 'timeout' : isAuthFailure(error) ? 'auth'
       : isNetworkFailure(error) ? 'network' : ['initialize', 'publish'].includes(phase) ? 'storage' : 'unknown',
-    status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null };
+    status };
+    if (!timedOut && serverTrouble(status)) {
+      backoffMs = backoffMs ? Math.min(SERVER_BACKOFF_MAX_MS, backoffMs * 2) : SERVER_BACKOFF_FIRST_MS;
+      backoffUntil = now() + backoffMs;
+    } else resetBackoff();
     if (!failureDiagnostic || ['phase', 'failureKind', 'status'].some(key => diagnostic[key] !== failureDiagnostic[key]))
       cloudSyncDiagnostic('failure', diagnostic);
     failureDiagnostic = diagnostic;
@@ -116,6 +133,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
 
   function tick() {
     if (disposed || deleting || !foreground || !owner || latestRunning) return latestRunning;
+    if (!retryQueued && now() < backoffUntil) return null;
     const version = generation, userId = owner, startedAt = now(), attempt = state.mapAttempt + 1;
     const observation = beginCloudAttemptDiagnostic(attempt);
     const abort = new AbortController(); latestAbort = abort;
@@ -126,8 +144,10 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       mastersMs: 0, latestHTTPMs: 0, snapshotCommitMs: 0, sessionMs: 0 };
     readback = null; readbackStartedAt = startedAt;
     catchUp.started(retryQueued || !initialStarted); retryQueued = false; initialStarted = true;
-    publish({ busy: true, mode: manualRunning ? 'manual' : 'auto', error: '', authFailed: false,
-      mapAttempt: attempt });
+    // The last failure (error, authFailed) stays until an attempt succeeds:
+    // clearing it here made every failing attempt a new refusal, and
+    // useCloudSync asked AuthProvider to refresh again every 30 s.
+    publish({ busy: true, mode: manualRunning ? 'manual' : 'auto', mapAttempt: attempt });
     // snapshotPending / mapPending mark only the moment the latest store
     // changes (publish → readback), not the session wait or the HTTP: the map
     // holds its cloud dogs while they are pending, and an attempt on a slow
@@ -187,7 +207,8 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
         readback = accepted; timings.snapshotCommitMs = Math.max(0, now() - at); committed = true;
         publish({ snapshotPending: false, mapPending: false, snapshotRevision: state.snapshotRevision + 1, snapshotCutoff: cutoff,
           mapSuccessRevision: state.mapSuccessRevision + 1, lastSuccess: now(), lastDownloadAt: cutoff,
-          failingSince: null, authFailed: false, offline: false });
+          failingSince: null, error: '', authFailed: false, offline: false });
+        resetBackoff();
         cloudSyncDiagnostic('latest-published', { attempt, elapsedMs: Math.max(0, now() - startedAt), revision: state.snapshotRevision, ...timings });
         catchUp.caughtUp();
         if (failureDiagnostic) { cloudSyncDiagnostic('recovered', { attempt, elapsedMs: Math.max(0, now() - startedAt) }); failureDiagnostic = null; }
@@ -317,7 +338,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       cancelBackgroundSync(); latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort();
       owner = next; generation++; lineage++; readback = null; archiveRequest = null; sweptAt = 0;
       archiveAuthority = null; archiveAuthorityVersion++;
-      initialStarted = retryQueued = false; failureDiagnostic = null; resetCatchUp();
+      initialStarted = retryQueued = false; failureDiagnostic = null; resetCatchUp(); resetBackoff();
       publish({ error: '', lastSuccess: null, lastDownloadAt: null, failingSince: null, authFailed: false, offline: false,
         snapshotPending: false, snapshotRevision: 0, snapshotCutoff: null, snapshotBaseRevision: null, contextPending: false,
         archivePending: false, archiveRevision: 0, archiveCutoff: null, archiveError: '', mapSuccessRevision: 0, mapPending: false,
@@ -328,7 +349,7 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       if (foreground === active) return;
       foreground = active; generation++; clearInterval(interval);
       latestAbort?.abort(); archiveAbort?.abort(); manualAbort?.abort(); archiveRequest = null;
-      if (active) { cancelBackgroundSync(); catchUp.back(); interval = setInterval(tick, 30000); wake(); }
+      if (active) { resetBackoff(); cancelBackgroundSync(); catchUp.back(); interval = setInterval(tick, 30000); wake(); }
       else { retryQueued = false; catchUp.away(); clearTimeout(immediate); }
       publish({});
     },

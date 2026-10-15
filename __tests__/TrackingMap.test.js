@@ -1080,40 +1080,67 @@ test('a tap on the map reaches onMapPress, and the camera heading is reported', 
 });
 
 
-test('看軌跡 whose save finishes after the card closed does not open history', async () => {
-  const tracking = {
+// 2026-10-15 (audit): the history opens at once. Whom it shows travels with
+// the route; the old history query is stored in the background, and a write
+// that hangs (the shared SQLite connection busy) or fails never holds or
+// swallows the tap.
+describe('看軌跡 and 我的路線 open without waiting for the saved query', () => {
+  const tracking = () => ({
     mode: 'real', point: trackingPoint, route: emptyLiveRoute(), ready: { real: true }, errors: {},
     initialSnapshotReady: true, foreground: true,
     preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES },
     saveTrackingPreferences: jest.fn(),
-  };
-  let finish;
-  const history = { key: 'k', devices: [], preferences: { source: 'ble', slaves: [4], masters: [3], dogAliases: {} },
-    save: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
-  const onOpenHistory = jest.fn();
-  await act(async () => {
-    renderer = Renderer.create(<MapScreen tracking={tracking} phone={{ enabled: true }} bottomInset={80}
-      mapProvider={GOOGLE_MAP_PROVIDER} history={history} onOpenHistory={onOpenHistory} />);
   });
+  const preferences = { source: 'ble', slaves: [4], masters: [3], dogAliases: {} };
+  const open = async history => {
+    const onOpenHistory = jest.fn();
+    await act(async () => {
+      renderer = Renderer.create(<MapScreen tracking={tracking()} phone={{ enabled: true }} bottomInset={80}
+        mapProvider={GOOGLE_MAP_PROVIDER} history={history} onOpenHistory={onOpenHistory} />);
+    });
+    return onOpenHistory;
+  };
   const map = () => renderer.root.findAll(node => typeof node.props.onDogPress === 'function', { deep: false })[0];
-  await act(async () => map().props.onDogPress(7));
-  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
-    .props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
-  const track = () => renderer.root.findAll(node => node.props.testID === 'dog-card-track'
-    && typeof node.props.onPress === 'function')[0];
-  await act(async () => { track().props.onPress(); });
-  expect(history.save).toHaveBeenCalledWith(expect.objectContaining({ slaves: [7], timeMode: 'fixed' }));
-  // The card is closed (tap on the map) before the save is done.
-  await act(async () => map().props.onMapPress());
-  await act(async () => finish(true));
-  expect(onOpenHistory).not.toHaveBeenCalled();
-  // Saved and still open: history opens for that dog.
-  await act(async () => map().props.onDogPress(7));
-  await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
-    .props.onLayout({ nativeEvent: { layout: { height: 410 } } }));
-  await act(async () => { track().props.onPress(); });
-  await act(async () => finish(true));
-  expect(onOpenHistory).toHaveBeenCalledWith(7);
+  const pressTrack = async () => {
+    await act(async () => map().props.onDogPress(7));
+    await act(async () => renderer.root.findAllByProps({ testID: 'dog-card' })[0]
+      .props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
+    const track = renderer.root.findAll(node => node.props.testID === 'dog-card-track'
+      && typeof node.props.onPress === 'function')[0];
+    await act(async () => { track.props.onPress(); });
+  };
+
+  test.each([
+    ['never finishes', () => new Promise(() => {})],
+    ['fails', () => Promise.reject(new Error('database busy'))],
+    ['refuses (another save in flight)', () => Promise.resolve(false)],
+  ])('看軌跡 opens that dog\'s history when the save %s', async (_, save) => {
+    const history = { key: 'k', devices: [{ master: 5, slave: 7 }], preferences, save: jest.fn(save) };
+    const onOpenHistory = await open(history);
+    await pressTrack();
+    expect(onOpenHistory).toHaveBeenCalledWith(7);
+    // The query is still stored, in the background.
+    expect(history.save).toHaveBeenCalledWith(expect.objectContaining({ slaves: [7], timeMode: 'fixed',
+      masters: expect.arrayContaining([5]) }));
+  });
+
+  test('看軌跡 opens without any history store at all', async () => {
+    const onOpenHistory = await open(undefined);
+    await pressTrack();
+    expect(onOpenHistory).toHaveBeenCalledWith(7);
+  });
+
+  test.each([
+    ['never finishes', () => new Promise(() => {})],
+    ['fails', () => Promise.reject(new Error('database busy'))],
+  ])('「今天 x km」 opens my route when the save %s', async (_, save) => {
+    const history = { key: 'k', devices: [], preferences, save: jest.fn(save) };
+    const onOpenHistory = await open(history);
+    const today = renderer.root.findAll(node => typeof node.props.onToday === 'function')[0];
+    await act(async () => { today.props.onToday(); });
+    expect(onOpenHistory).toHaveBeenCalledWith(null);
+    expect(history.save).toHaveBeenCalledWith(expect.objectContaining({ phone: true, client: false }));
+  });
 });
 
 test('history route fit and cursor centering use the half-screen panel coverage', async () => {

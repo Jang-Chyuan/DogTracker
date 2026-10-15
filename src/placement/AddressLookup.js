@@ -263,6 +263,9 @@ export function createAddressLookup({
   const cache = new Map();
   const listeners = new Set();
   const queue = [];
+  // Bumped by clear(): an answer for a place asked before it is dropped, so
+  // nothing asked before a deletion is kept or saved after it.
+  let generation = 0;
   const valid = anchor =>
     anchor &&
     Number.isFinite(anchor.latitude) &&
@@ -316,6 +319,7 @@ export function createAddressLookup({
   };
   const fail = (name, anchor) => put(name, { anchor, value: null, failedAt: now() });
   async function ask(name, anchor) {
+    const asked = generation;
     let timedOut = false;
     try {
       // Offline the geocoder has nothing to say: do not wait on it. The
@@ -328,6 +332,7 @@ export function createAddressLookup({
         })(),
         config.timeoutMs,
       );
+      if (asked !== generation) return;
       const results = JSON.parse(answer);
       // No answer at all is what Android gives offline: ask again later.
       if (!Array.isArray(results) || !results.length) throw new Error('empty');
@@ -335,6 +340,7 @@ export function createAddressLookup({
       if (value) put(name, { anchor, value });
       else fail(name, anchor);
     } catch (error) {
+      if (asked !== generation) return;
       timedOut = error?.message === 'timeout';
       fail(name, anchor);
     }
@@ -394,7 +400,9 @@ export function createAddressLookup({
     const saved = store
       ? timed(Promise.resolve().then(() => store.find(anchor)), config.timeoutMs).catch(() => null)
       : Promise.resolve(null);
+    const asked = generation;
     saved.then(found => {
+      if (asked !== generation) return;
       if (
         found &&
         (found.value ||
@@ -489,6 +497,21 @@ export function createAddressLookup({
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    /**
+     * Forgets every address, in memory and saved on the phone (they name
+     * where the dogs and this phone stayed, home too): 刪除我的路線,
+     * 刪除全部狗資料 and signing out. Places on screen are asked again.
+     */
+    async clear() {
+      generation += 1;
+      cache.clear();
+      queue.splice(0);
+      try {
+        await store?.clear?.();
+      } finally {
+        notify(null);
+      }
+    },
   };
 }
 
@@ -499,6 +522,9 @@ export const addressLookup = createAddressLookup({
 // The live card and the history list ask the same lookup (and so share its
 // cache); a screen fixture gives its own, which never touches this phone's.
 export const AddressLookupContext = React.createContext(addressLookup);
+
+/** The shared lookup's addresses, memory and table (AddressLookup.clear). */
+export const forgetAddresses = () => addressLookup.clear();
 
 const pointKey = point =>
   point ? `${point.latitude},${point.longitude}` : '';

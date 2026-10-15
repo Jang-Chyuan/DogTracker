@@ -32,6 +32,7 @@ import { applyScreenFixture } from './src/dev/ScreenFixtures';
 import {
   AddressLookupContext,
   addressLookup,
+  forgetAddresses,
 } from './src/placement/AddressLookup';
 import CloudDataScreen from './src/cloud/CloudDataScreen';
 import LocationTrackerScreen from './src/locationTracker/LocationTrackerScreen';
@@ -1105,6 +1106,9 @@ function TrackerApp({ resume = null, onRestart }) {
               ? async () => {}
               : async () => {
                   await auth.signOut();
+                  // The saved stay addresses (home too) are not the next
+                  // person's to see; the phone's route itself stays.
+                  await forgetAddresses().catch(() => {});
                   // A6 comes back after signing out (判定表「A6 的 ✕ 什麼時候重來」).
                   tracking
                     .saveTrackingPreferences?.({ noDataCardDismissed: false })

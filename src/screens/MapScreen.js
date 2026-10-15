@@ -1007,25 +1007,34 @@ export default function MapScreen({
       onStep: stepDog,
     };
   }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
-  const [trackBusy, setTrackBusy] = useState(false);
-  // 看軌跡: today's path of this dog. The query is stored first, so the
-  // history page never opens on the previous one.
-  const openTrackHistory = async () => {
-    if (!cardDog || !history?.save || trackBusy) return;
+  // The history page opens at once (2026-10-15 audit): whom it shows travels
+  // with the route (App's openTrackFrom), so it never waits for the old
+  // history query (useMapHistory.save) to be stored. That query is written in
+  // the background, only for what still reads it (a screen fixture's history
+  // page, the receivers 看軌跡 lists); a slow write (the shared SQLite
+  // connection busy, e.g. the sync after a resume) or a failed one never
+  // holds or swallows the tap.
+  const rememberQuery = useCallback(query => {
+    Promise.resolve().then(() => history?.save?.(query)).catch(() => {});
+  }, [history]);
+  // Only while the live map is in front does a tap open the history.
+  const liveInFront = useRef(false);
+  liveInFront.current = active && !historical;
+  // 看軌跡: today's path of this dog.
+  const openTrackHistory = () => {
+    if (!cardDog || !liveInFront.current) return;
     const dog = cardDog;
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
     // Every receiver known to have heard this dog, so a day relayed by several
     // receivers is not cut down to the one heard last.
-    const heard = (history.devices || [])
+    const heard = (history?.devices || [])
       .filter(pair => pair.slave === dog.slaveId)
       .map(pair => pair.master);
     const masters = [
       ...new Set([...heard, ...(dog.masterId != null ? [dog.masterId] : [])]),
     ];
-    setTrackBusy(true);
-    const generation = cardGeneration.current;
-    const saved = await history.save({
+    if (history?.preferences) rememberQuery({
       ...history.preferences,
       timeMode: 'fixed',
       startAt: start.getTime(),
@@ -1035,40 +1044,24 @@ export default function MapScreen({
       source: dog.fixSource === 'cloud' ? 'cloud' : 'ble',
       masters: masters.length ? masters : history.preferences.masters,
     });
-    setTrackBusy(false);
-    // The card was closed or another dog opened meanwhile: stay on the map.
-    if (!saved || generation !== cardGeneration.current) return;
     setSelected(null);
     onOpenHistory?.(dog.slaveId);
   };
   // The route pill reflects recording/permission, not temporary GPS silence.
   const pillKey = JSON.stringify(todayPill({ route: todayRoute, livePhone, phone }));
   const today = useMemo(() => JSON.parse(pillKey), [pillKey]);
-  const [routeBusy, setRouteBusy] = useState(false);
-  // Only while the live map is still in front does a finished save navigate.
-  const liveInFront = useRef(false);
-  liveInFront.current = active && !historical;
   // Tapping it opens my route: today's recorded route of this phone in the
   // history page (the whole day, so it grows while recording and ends at the
-  // last fix when recording stops), no dogs. The query is stored first, like
-  // 看軌跡.
-  const openMyRoute = useCallback(async () => {
-    if (!history?.save || routeBusy) return;
+  // last fix when recording stops), no dogs. At once, like 看軌跡.
+  const openMyRoute = useCallback(() => {
+    if (!liveInFront.current) return;
     const start = startOfToday(now);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-    setRouteBusy(true);
-    const saved = await history.save({
-      ...history.preferences,
-      timeMode: 'fixed',
-      startAt: start,
-      endAt: end.getTime(),
-      phone: true,
-      client: false,
-    });
-    setRouteBusy(false);
-    if (saved && liveInFront.current) onOpenHistory?.(null);
-  }, [history, routeBusy, now, onOpenHistory]);
+    if (history?.preferences) rememberQuery({ ...history.preferences, timeMode: 'fixed', startAt: start,
+      endAt: end.getTime(), phone: true, client: false });
+    onOpenHistory?.(null);
+  }, [history, now, onOpenHistory, rememberQuery]);
   // ---- a notification tapped (058b) ----------------------------------------
   // 判定表「通知本體和「打開地圖」按鈕」: the body opens the most severe
   // problem (a dog: its card); 「打開地圖」 only the live map, everything
@@ -1092,7 +1085,6 @@ export default function MapScreen({
       handledNotification.current = request.key;
       openDog(request.dogId);
     } else if (request.screen === 'my-route') {
-      if (!history?.save) return;
       handledNotification.current = request.key;
       openMyRoute();
     } else handledNotification.current = request.key;
@@ -1397,7 +1389,6 @@ export default function MapScreen({
           onEdit={() => setCardPage('edit')}
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
-          trackBusy={trackBusy}
           switcher={switcher}
           reserve={reserve}
         />

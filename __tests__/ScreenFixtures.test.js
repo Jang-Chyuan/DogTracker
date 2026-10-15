@@ -446,6 +446,64 @@ test('a fixture replaces the map inputs and leaves them untouched when off', asy
   expect(inputs.history.preferences.source).toBe('local');
 });
 
+// Audit L9/T9: nothing of the live cloud reaches a fixture.
+const liveCloud = () => ({
+  tracking: { mode: 'real', foreground: true, ready: { real: true }, errors: {},
+    preferences: { ready: true, value: DEFAULT_TRACKING_PREFERENCES }, saveTrackingPreferences: jest.fn() },
+  phone: { enabled: true },
+  cloudDogs: { rows: [{ slave_id: 99 }] },
+  // A signed-in phone mid-sync: every field set to something only it would say.
+  cloudSync: { ownerId: 'real-user', latestFirst: true, snapshotPending: true, archivePending: true,
+    archiveRevision: 41, archiveError: 'live archive', contextPending: true, busy: true, mode: 'auto',
+    error: 'live error', lastSuccess: 111, lastDownloadAt: 222, failingSince: 333, authFailed: true,
+    offline: true, revision: 44, mapSuccessRevision: 45, mapPending: true, dataRevision: 46,
+    publishedRevision: 47, publishedPending: true, catchUp: { phase: 'catching-up' },
+    getMapPublication: jest.fn(), getHistoryPublication: jest.fn(), retry: jest.fn(), runManual: jest.fn() },
+  history: { key: 'live', preferences: { source: 'local', dogAliases: {} }, save: jest.fn(),
+    readDay: jest.fn(async () => ({ rows: [{ id: 'real' }], seed: [], after: {} })), readDays: jest.fn(async () => ['real']) },
+  historyCloud: { cloud: { download: jest.fn(), newestBefore: jest.fn(), earliest: jest.fn() }, online: true, seed: null },
+});
+
+test('a fixture takes nothing from the live CloudSync: every field is the fixture\'s or idle', () => {
+  const live = liveCloud();
+  for (const name of ['all-good', 'dog-indoor', 'cloud-failing']) {
+    const fixture = buildFixture(name);
+    const sync = applyScreenFixture(fixture, live).cloudSync;
+    for (const [key, value] of Object.entries(live.cloudSync)) {
+      if (Object.prototype.hasOwnProperty.call(fixture.cloudSync, key)) expect(sync[key]).toBe(fixture.cloudSync[key]);
+      else expect(sync[key]).not.toBe(value);
+    }
+    expect(sync).toMatchObject({ latestFirst: false, busy: false, authFailed: false, mode: null,
+      publishedRevision: 0, publishedPending: false, catchUp: { phase: 'idle' } });
+    expect(sync.getMapPublication).toBeUndefined();
+    expect(sync.getHistoryPublication).toBeUndefined();
+    sync.retry();
+    expect(live.cloudSync.retry).not.toHaveBeenCalled();
+  }
+});
+
+test('no fixture hands the map the live history cloud or reads this phone\'s history', async () => {
+  const live = liveCloud();
+  // Every fixture there is: a calendar fixture its stand-in, the others none.
+  for (const name of FIXTURE_NAMES) {
+    const fixture = buildFixture(name);
+    const inputs = applyScreenFixture(fixture, live);
+    expect(inputs.historyCloud).toBe(fixture.historyCloud ?? null);
+    expect(inputs.history.readDay).not.toBe(live.history.readDay);
+  }
+  // One without a history of its own (a hand-made one): no cloud, no rows.
+  const bare = { ...buildFixture('dog-indoor'), history: undefined, historyCloud: undefined };
+  const inputs = applyScreenFixture(bare, live);
+  expect(inputs.historyCloud).toBeNull();
+  expect(await inputs.history.readDay({ subject: 'dog', slaveId: 4, start: 0, end: 1 }))
+    .toEqual({ rows: [], seed: [], after: {} });
+  expect(await inputs.history.readDays({ subject: 'dog', slaveId: 4 })).toEqual([]);
+  expect(inputs.history.key).toBe('fixture:dog-indoor');
+  expect(live.history.readDay).not.toHaveBeenCalled();
+  expect(live.history.readDays).not.toHaveBeenCalled();
+  expect(live.historyCloud.cloud.download).not.toHaveBeenCalled();
+});
+
 test('outside debug builds the hook never listens and never returns a fixture', async () => {
   const listen = jest.spyOn(Linking, 'addEventListener');
   const initial = jest.spyOn(Linking, 'getInitialURL');

@@ -79,7 +79,7 @@ class DogStatusStore private constructor(private val context: Context) {
   }
 
   @Synchronized fun nextSearchRetry(owner: String): Long? =
-    db.rawQuery("SELECT MIN(next_retry_at) FROM ble_upload_queue WHERE owner_user_id=? AND status='pending'", arrayOf(owner)).use {
+    db.rawQuery(BleUploadQueue.NEXT_RETRY_SQL, arrayOf(owner, owner)).use {
       if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
     }
 

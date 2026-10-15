@@ -1,5 +1,11 @@
 import { t } from '../i18n';
 const rows = result => result.results || result.rows?._array || [];
+// Refused rows (blocked) are kept for 重試 this long, at most this many.
+export const BLOCKED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+export const BLOCKED_KEEP_ROWS = 2000;
+// A Master whose cloud route refused this phone (BleUploadQueue.kt): its rows
+// wait, and the receiver service queues nothing more for it.
+const NOT_REFUSED = alias => `${alias}.master_id NOT IN (SELECT master_id FROM ble_upload_refusals WHERE owner_user_id=${alias}.owner_user_id)`;
 export function createUploadDatabase(db) {
   // When this phone last uploaded for each receiver (最後上傳成功…（經手機）,
   // S2/S3). The queue's own sent rows are the freshest answer, but only the
@@ -42,8 +48,11 @@ export function createUploadDatabase(db) {
       if (!owner || !Number.isInteger(master) || master < 1 || master > 65535 || !['wifi', 'phone'].includes(mode)) throw new Error(t("c605"));
       // Nothing waiting is deleted (S3: 不刪任何資料); the page sends it
       // first (UploadService.flush).
-      await db.executeAsync('INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)',
-        [owner, master, mode]);
+      await db.executeBatchAsync([
+        { query: 'INSERT OR REPLACE INTO ble_upload_settings(owner_user_id,master_id,mode) VALUES(?,?,?)', params: [owner, master, mode] },
+        // Choosing the route again is the answer to a refusal: try again.
+        { query: 'DELETE FROM ble_upload_refusals WHERE owner_user_id=? AND master_id=?', params: [owner, master] },
+      ]);
     },
     async isPending(row) {
       return rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue
@@ -53,17 +62,18 @@ export function createUploadDatabase(db) {
     // What waits in this phone, each dog's newest first. The route only
     // decides what the receiver service queues; a row already queued here is
     // this phone's to send even after its receiver went back to Wi-Fi (S3:
-    // nothing is deleted, nothing is left behind).
-    async pending(owner, now) {
+    // nothing is deleted, nothing is left behind). A refused Master's rows
+    // wait for 重試 (refusals).
+    async pending(owner, now, limit = 20) {
       return rows(await db.executeAsync(`WITH latest AS (
-        SELECT MAX(id) id FROM ble_upload_queue WHERE owner_user_id=? AND status='pending'
+        SELECT MAX(id) id FROM ble_upload_queue q WHERE owner_user_id=? AND status='pending' AND ${NOT_REFUSED('q')}
         GROUP BY master_id, slave_id
       ) SELECT q.* FROM ble_upload_queue q
         LEFT JOIN latest l ON l.id=q.id
-        WHERE q.owner_user_id=? AND q.status='pending' AND q.next_retry_at<=?
+        WHERE q.owner_user_id=? AND q.status='pending' AND q.next_retry_at<=? AND ${NOT_REFUSED('q')}
         ORDER BY CASE WHEN l.id IS NOT NULL THEN 0 ELSE 1 END,
           CASE WHEN l.id IS NOT NULL THEN q.received_at END DESC,
-          q.id LIMIT 20`, [owner, owner, now]));
+          q.id LIMIT ?`, [owner, owner, now, limit]));
     },
     // Every row of one Master still waiting, oldest first, whatever its route
     // or retry time (UploadService.flush).
@@ -91,6 +101,25 @@ export function createUploadDatabase(db) {
         { query: "INSERT OR REPLACE INTO ble_upload_meta(key,value) VALUES('last_sent_at:' || ? || ':' || ?, ?)",
           params: [row.owner_user_id, row.master_id, String(now)] },
         { query: "DELETE FROM ble_upload_queue WHERE status='sent' AND id NOT IN (SELECT id FROM ble_upload_queue WHERE status='sent' ORDER BY id DESC LIMIT 1000)", params: [] },
+        // Accepted again: whatever refused this receiver no longer does.
+        { query: 'DELETE FROM ble_upload_refusals WHERE owner_user_id=? AND master_id=?', params: [row.owner_user_id, row.master_id] },
+      ]);
+    },
+    /**
+     * The cloud refused this phone for the row's receiver (403: not this
+     * phone's route, or no access to the Master): stop queueing and sending
+     * for it until 重試, a route change or a successful send.
+     */
+    async refuse(row, message, now) {
+      await db.executeAsync('INSERT OR REPLACE INTO ble_upload_refusals(owner_user_id,master_id,refused_at,message) VALUES(?,?,?,?)',
+        [row.owner_user_id, row.master_id, now, message.slice(0, 300)]);
+    },
+    /** Refused rows (blocked) older than BLOCKED_KEEP_MS, or beyond the newest BLOCKED_KEEP_ROWS, go. */
+    async prune(now) {
+      await db.executeBatchAsync([
+        { query: "DELETE FROM ble_upload_queue WHERE status='blocked' AND received_at<?", params: [now - BLOCKED_KEEP_MS] },
+        { query: `DELETE FROM ble_upload_queue WHERE status='blocked' AND id NOT IN (
+          SELECT id FROM ble_upload_queue WHERE status='blocked' ORDER BY id DESC LIMIT ${BLOCKED_KEEP_ROWS})`, params: [] },
       ]);
     },
     async failed(row, message, blocked, now) {
@@ -99,8 +128,11 @@ export function createUploadDatabase(db) {
         [blocked ? 'blocked' : 'pending', now + delay, message.slice(0, 300), row.event_id, row.owner_user_id]);
     },
     async retry(owner) {
-      // 「重試」: refused rows again, and waiting ones without their backoff.
-      await db.executeAsync("UPDATE ble_upload_queue SET status='pending',next_retry_at=0 WHERE owner_user_id=? AND status IN ('blocked','pending')", [owner]);
+      // 「重試」: refused rows and receivers again, and waiting ones without their backoff.
+      await db.executeBatchAsync([
+        { query: "UPDATE ble_upload_queue SET status='pending',next_retry_at=0 WHERE owner_user_id=? AND status IN ('blocked','pending')", params: [owner] },
+        { query: 'DELETE FROM ble_upload_refusals WHERE owner_user_id=?', params: [owner] },
+      ]);
     },
     async summary(owner) {
       const counts = rows(await db.executeAsync('SELECT status,COUNT(*) count FROM ble_upload_queue WHERE owner_user_id=? GROUP BY status', [owner]));
@@ -112,12 +144,21 @@ export function createUploadDatabase(db) {
       [owner, owner]))[0]?.time) || null;
       const error = rows(await db.executeAsync("SELECT last_error FROM ble_upload_queue WHERE owner_user_id=? AND last_error<>'' ORDER BY id DESC LIMIT 1", [owner]))[0]?.last_error;
       const queueError = rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='queue_error'"))[0]?.value;
+      const thinnedAt = Number(rows(await db.executeAsync("SELECT value FROM ble_upload_meta WHERE key='queue_thinned_at'"))[0]?.value) || null;
+      const refusedMasters = rows(await db.executeAsync(
+        'SELECT master_id FROM ble_upload_refusals WHERE owner_user_id=? ORDER BY master_id', [owner])).map(row => Number(row.master_id));
       const byStatus = status => Object.fromEntries(byMaster.filter(row => row.status === status)
         .map(row => [row.master_id, Number(row.count)]));
       const pendingByMaster = byStatus('pending'), blockedByMaster = byStatus('blocked');
       const lastByMaster = await lastSentByMaster(owner);
+      // The receiver service thinned the oldest waiting rows (the queue was
+      // full): said while rows from before that are still waiting.
+      const backlog = thinnedAt != null && rows(await db.executeAsync(`SELECT 1 FROM ble_upload_queue
+        WHERE owner_user_id=? AND status='pending' AND received_at<? LIMIT 1`, [owner, thinnedAt])).length > 0;
+      const thinned = backlog ? t('c1361') : '';
+      const refused = refusedMasters.length ? t('c1360', { masters: refusedMasters.join('、') }) : '';
       return { counts, pendingByMaster, blockedByMaster, last: Math.max(last || 0, ...Object.values(lastByMaster)) || null,
-        lastByMaster, error: queueError || error || '' };
+        lastByMaster, refusedMasters, thinnedAt, error: refused || queueError || thinned || error || '' };
     },
   };
 }

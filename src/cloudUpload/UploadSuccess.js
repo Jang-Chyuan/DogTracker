@@ -41,9 +41,18 @@ export function phoneUploadProblem(upload = {}, master = null) {
   const blocked = Number(master == null
     ? (upload.counts || []).find(row => row.status === 'blocked')?.count || 0
     : upload.blockedByMaster?.[master] || 0);
+  // A receiver whose cloud route refused this phone: nothing more is queued
+  // for it until 重試 (UploadDatabase.refuse).
+  const refused = (upload.refusedMasters || []).filter(value => master == null || Number(value) === master);
   if (blocked > 0) {
-    return { title: t('c919'), detail: t('c911'), right: t('c216', { count: blocked }),
+    const detail = refused.length ? t('c1360', { masters: refused.join('、') }) : t('c911');
+    return { title: t('c919'), detail, right: t('c216', { count: blocked }),
       problem: true, success: false, retry: true, label: t('c915', { blocked }) };
+  }
+  if (refused.length) {
+    const reason = t('c1360', { masters: refused.join('、') });
+    return { title: t('c919'), detail: reason, right: null, problem: true, success: false,
+      retry: true, label: t('c916', { reason }) };
   }
   if (!upload.error) return null;
   const reason = isNetworkFailure({ message: upload.error }) ? t('c932') : upload.error;
