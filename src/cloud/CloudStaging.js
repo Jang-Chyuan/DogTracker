@@ -10,6 +10,9 @@ const tables = [
   ['history_download_state', 'owner', ['owner', 'slave_id', 'day']],
 ];
 const kinds = ['auto', 'manual'];
+// A publication moves its staged telemetry in chunks of this many rows, and
+// the staged copies go afterwards, this many a transaction (稽核 A F3).
+const CHUNK_ROWS = 1000;
 // Same retention as CloudDatabase.saveBucket.
 const BUCKET_RETENTION_MS = 48 * 60 * 60 * 1000;
 const initialization = new WeakMap();
@@ -167,6 +170,20 @@ export function createStagedCloudDatabase(connection, options, createCore) {
   async function read(kind, table, selection, condition, params) {
     return rows(await connection.executeAsync(`SELECT ${selection} FROM ${overlay(kind, table)} WHERE ${condition}`, params));
   }
+  // Call under the connection lock, once the job row is gone: no reader looks
+  // at a delta without its job, so the staged telemetry can go in transactions
+  // of their own and the BLE and phone-route writers get the lock between
+  // them. A publication used to delete it inside its own transaction, about a
+  // third of its time (稽核 A F3).
+  async function clearStagedTelemetry(kind, owner) {
+    const delta = tableName(kind, 'supabase_dog_status');
+    const any = async () => rows(await connection.executeAsync(
+      `SELECT 1 AS found FROM ${delta} WHERE owner_user_id=? LIMIT 1`, [owner])).length > 0;
+    while (await any()) {
+      await connection.executeAsync(`DELETE FROM ${delta} WHERE id IN (SELECT id FROM ${delta}
+        WHERE +owner_user_id=? ORDER BY id LIMIT ${CHUNK_ROWS})`, [owner]);
+    }
+  }
   const result = { ...published, initialize,
     async beginDownload(owner, kind = 'auto', scope = null) {
       if (!owner || !kinds.includes(kind)) throw new Error(t("c572"));
@@ -176,10 +193,13 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         // an unfinished manual scope; it cannot erase another job's pages.
         if (kind === 'manual') {
           await connection.executeBatchAsync([
-            ...tables.map(([table, ownerColumn]) => ({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] })),
+            ...tables.slice(1).map(([table, ownerColumn]) => ({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] })),
             { query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] },
           ]);
         }
+        // Without a job, staged telemetry is only what a publication (or the
+        // manual reset above) has not finished clearing, e.g. after a crash.
+        if (!await job(owner, kind)) await clearStagedTelemetry(kind, owner);
         await connection.executeAsync('INSERT OR IGNORE INTO cloud_download_jobs(owner,kind,scope) VALUES(?,?,?)', [owner, kind, scope]);
       });
       active.set(owner, kind);
@@ -214,7 +234,17 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         const list = fields.join(',');
         const inserted = fields.map(name => name === 'publication_version' ? 'publication_version+1' : name).join(',');
         const count = Number(rows(await connection.executeAsync(`SELECT COUNT(*) n FROM ${telemetry} WHERE owner_user_id=?`, [owner]))[0].n);
-        const chunk = `SELECT id FROM ${telemetry} WHERE owner_user_id=? ORDER BY id LIMIT 1000`;
+        // Chunks by id, every CHUNK_ROWS-th staged id read before the
+        // transaction (nothing else stages while this holds the connection lock).
+        const chunks = [];
+        for (let after = 0; count > 0;) {
+          const edge = rows(await connection.executeAsync(`SELECT id FROM ${telemetry} WHERE +owner_user_id=? AND id>?
+            ORDER BY id LIMIT 1 OFFSET ${CHUNK_ROWS - 1}`, [owner, after]))[0];
+          if (!edge) { chunks.push({ query: `SELECT id FROM ${telemetry} WHERE +owner_user_id=? AND id>?`, params: [owner, after] }); break; }
+          const through = Number(edge.id);
+          chunks.push({ query: `SELECT id FROM ${telemetry} WHERE +owner_user_id=? AND id>? AND id<=?`, params: [owner, after, through] });
+          after = through;
+        }
         const commands = [];
         // COW repairs apply only if the published metadata still matches the
         // captured base. A later completed manual job must win over stale auto.
@@ -229,14 +259,16 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           WHERE d.owner_user_id=? AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')}
           AND ${oldTime}<>${newTime} AND p.owner_user_id=history_download_state.owner AND p.slave_id=history_download_state.slave_id
           AND (${coverageContainsTime(oldTime, 'history_download_state')} OR ${coverageContainsTime(newTime, 'history_download_state')}))`, params: [owner] });
-        // Move bounded chunks inside one transaction. Clear each delta chunk
-        // before the next insert, rather than duplicate a whole first download.
-        for (let start = 0; start < count; start += 1000) {
-          commands.push({ query: `INSERT OR IGNORE INTO supabase_dog_status (${list}) SELECT ${inserted} FROM ${telemetry} WHERE id IN (${chunk})`, params: [owner] });
+        // Move bounded chunks inside one transaction: readers see all of it or
+        // none. The staged copies stay until it commits (clearStagedTelemetry):
+        // deleting them in here cost about a third of the transaction, and the
+        // BLE and phone-route writers wait for all of it. The file keeps that
+        // much more free space, which the next staging reuses.
+        for (const chunk of chunks) {
+          commands.push({ query: `INSERT OR IGNORE INTO supabase_dog_status (${list}) SELECT ${inserted} FROM ${telemetry} WHERE id IN (${chunk.query})`, params: chunk.params });
           commands.push({ query: `UPDATE supabase_dog_status SET ${metadata.map(name => `${name}=(SELECT d.${name} FROM ${telemetry} d WHERE ${match})`).join(',')},publication_version=publication_version+1
           WHERE id IN (SELECT p.id FROM ${telemetry} d JOIN supabase_dog_status p ON d.owner_user_id=p.owner_user_id AND d.event_id=p.event_id
-            WHERE d.id IN (${chunk}) AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')})`, params: [owner] });
-          commands.push({ query: `DELETE FROM ${telemetry} WHERE id IN (${chunk})`, params: [owner] });
+            WHERE d.id IN (${chunk.query}) AND d.had_base=1 AND ${baseFields.map(name => `d.base_${name} IS p.${name}`).join(' AND ')})`, params: chunk.params });
         }
         for (const [table, ownerColumn] of tables.slice(1)) {
           const namesList = names(table).join(',');
@@ -259,7 +291,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         commands.push({ query: eviction, params: [] });
         commands.push({ query: 'INSERT INTO cloud_stage_quota(used,budget) SELECT COUNT(*),? FROM supabase_dog_status', params: [cap] });
         commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
-        for (const [table, ownerColumn] of tables) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
+        for (const [table, ownerColumn] of tables.slice(1)) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         commands.push({ query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] });
         if (kind === 'auto' && archiveCutoff != null) commands.push({
           query: `INSERT OR REPLACE INTO cloud_archive_publication(owner,cutoff,revision)
@@ -279,6 +311,9 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           throw error;
         }
         if (!material || material.materialChanged) published.invalidatePublished();
+        // Committed with its job row gone: clear the staged copies in
+        // transactions of their own. A failure leaves them to beginDownload.
+        await clearStagedTelemetry(kind, owner).catch(() => {});
         return material;
       });
       if (kind === 'manual') active.delete(owner);

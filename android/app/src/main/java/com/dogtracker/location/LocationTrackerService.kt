@@ -251,6 +251,7 @@ class LocationTrackerService : Service(), LocationListener {
       done.await(2, java.util.concurrent.TimeUnit.SECONDS)
     // Not recording in this process: the history kept from earlier ones.
     writer.println(text ?: "phone recording: not running\n" + persisted())
+    writer.println(com.dogtracker.DogStatusStore.diagnostics())
   }
   private fun diagnostics(): String {
     val now = SystemClock.elapsedRealtimeNanos(); val wall = System.currentTimeMillis()

@@ -245,6 +245,7 @@ class BleForegroundService : Service() {
       "masterIdFromQr=${frames.masterIdFilled}")
     val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
     ServiceStarts.lines(this) { time.format(it) }.forEach { writer.println(it) }
+    writer.println(DogStatusStore.diagnostics())
   }
 
   private fun recordMtu(value: Int, status: Int?) {

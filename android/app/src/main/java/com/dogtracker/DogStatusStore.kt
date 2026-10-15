@@ -2,18 +2,40 @@ package com.dogtracker
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.AbstractWindowedCursor
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** One native owner for both background writes and the history screen. */
+/**
+ * One native owner for both background writes and the history screen.
+ *
+ * Writes (BLE packets, the phone route, every App write and batch) take this
+ * object's monitor, one at a time. Reads do not: the file is in WAL mode, so
+ * a SELECT runs on one of the framework's reader connections and sees the
+ * last committed state while a writer works (稽核 A F3; before, a 20,000-row
+ * read or a cloud download held up the BLE and location writers).
+ */
 class DogStatusStore private constructor(private val context: Context) {
   companion object {
     @Volatile private var instance: DogStatusStore? = null
     fun get(context: Context): DogStatusStore = instance ?: synchronized(this) {
       instance ?: DogStatusStore(context.applicationContext).also { instance = it }
     }
+    /** The writers whose waits are kept apart in [waits]. */
+    const val BLE = "ble"
+    const val LOCATION = "location"
+    /** A route row from the location looper's hand-over to its commit (LocationTrackerStore). */
+    const val LOCATION_DELAY = "location-row-delay"
+    /** Lock waits and holds of this process (dumpsys of the BLE and location services). */
+    val waits = DatabaseWaits()
+    /** For dumpsys: never opens the database or waits for its lock. */
+    fun diagnostics(): String = buildString {
+      appendLine("database: wal=${instance?.wal ?: "not open"}")
+      waits.lines().forEach { appendLine(it) }
+    }.trimEnd()
   }
 
   // Preserve the existing Nitro SQLite location (filesDir + location + name).
@@ -38,7 +60,12 @@ class DogStatusStore private constructor(private val context: Context) {
   init {
     val file = File(context.filesDir, "databases/dogtracker.sqlite")
     file.parentFile?.mkdirs()
-    db = SQLiteDatabase.openOrCreateDatabase(file, null)
+    // WAL (稽核 A F3): readers get their own connections and never wait for
+    // a writer, nor a writer for them. Only this framework SQLite opens the
+    // file on Android (TrackingDatabaseConnection); an older App that opens
+    // it without the flag puts it back to its own journal mode on open.
+    db = SQLiteDatabase.openDatabase(file.path, null,
+      SQLiteDatabase.CREATE_IF_NECESSARY or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING)
     db.rawQuery("PRAGMA busy_timeout=5000", null).use { it.moveToFirst() }
     val textFields = setOf("activity", "gps_time", "activity_time", "packet_type")
     val realFields = setOf("slave_lat", "slave_lon", "master_lat", "master_lon", "distance_meters", "speed_kmh", "hdop", "rssi", "snr")
@@ -78,12 +105,30 @@ class DogStatusStore private constructor(private val context: Context) {
     BleUploadQueue.initialize(db)
   }
 
-  @Synchronized fun nextSearchRetry(owner: String): Long? =
+  private val wal = db.isWriteAheadLoggingEnabled
+
+  /**
+   * Runs [block] holding the write monitor: [work] names it in the hold
+   * times, [writer] (BLE, location) also records how long it waited.
+   * Nested calls (a batch's statements) are part of the outer one.
+   */
+  private inline fun <T> locked(work: String, writer: String? = null, block: () -> T): T {
+    if (Thread.holdsLock(this)) return block()
+    val asked = System.nanoTime()
+    synchronized(this) {
+      val got = System.nanoTime()
+      if (writer != null) waits.waited(writer, (got - asked) / 1_000_000)
+      try { return block() } finally { waits.held(work, (System.nanoTime() - got) / 1_000_000) }
+    }
+  }
+
+  // Lock-free, on a reader connection (SearchRelayService calls it off the main thread).
+  fun nextSearchRetry(owner: String): Long? =
     db.rawQuery(BleUploadQueue.NEXT_RETRY_SQL, arrayOf(owner, owner)).use {
       if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
     }
 
-  @Synchronized fun save(data: JSONObject, payload: String, receivedAt: Long) {
+  fun save(data: JSONObject, payload: String, receivedAt: Long) { locked(BLE, BLE) {
     // Upload retention and identity are independent of the one-second map feed throttle.
     BleUploadQueue.enqueue(db, data, payload, receivedAt)?.let { owner ->
       com.dogtracker.cloud.SearchRelayService.queued(context, owner)
@@ -121,40 +166,62 @@ class DogStatusStore private constructor(private val context: Context) {
       db.setTransactionSuccessful()
     } finally { db.endTransaction() }
     lastSaved[slaveId] = receivedAt
-  }
+  } }
 
   private fun value(data: JSONObject, aliases: List<String>): Any? =
     aliases.firstOrNull { data.has(it) && !data.isNull(it) }?.let { data.get(it) }
 
-  @Synchronized fun history(limit: Int): String {
-    val result = JSONArray()
-    db.rawQuery("SELECT * FROM dog_status ORDER BY received_at DESC, id DESC LIMIT ?", arrayOf(limit.coerceIn(1, 1000).toString())).use { cursor ->
-      while (cursor.moveToNext()) {
-        val row = JSONObject()
-        for (i in 0 until cursor.columnCount) {
-          row.put(cursor.getColumnName(i), when (cursor.getType(i)) {
-            android.database.Cursor.FIELD_TYPE_NULL -> JSONObject.NULL
-            android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(i)
-            android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(i)
-            else -> cursor.getString(i)
-          })
-        }
-        result.put(row)
-      }
+  /**
+   * A whole result read on a reader connection, or null when it did not fit
+   * one cursor window: a cursor fills each further window by running the
+   * query again, and a commit in between could shift the rows. Such a read
+   * runs again holding the monitor instead, where no commit comes between.
+   */
+  private fun readUnlocked(sql: String, arguments: Array<String?>): JSONArray? =
+    db.rawQuery(sql, arguments).use { cursor ->
+      val count = cursor.count
+      val window = (cursor as? AbstractWindowedCursor)?.window
+      if (count > 0 && (window == null || window.startPosition != 0 || window.numRows < count)) {
+        waits.oversizedRead()
+        null
+      } else rows(cursor)
     }
-    return result.toString()
+
+  private fun rows(cursor: Cursor): JSONArray {
+    val rows = JSONArray()
+    while (cursor.moveToNext()) {
+      val row = JSONObject()
+      for (i in 0 until cursor.columnCount) row.put(cursor.getColumnName(i),
+        when (cursor.getType(i)) {
+          Cursor.FIELD_TYPE_NULL -> JSONObject.NULL
+          Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(i)
+          Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(i)
+          else -> cursor.getString(i)
+        })
+      rows.put(row)
+    }
+    return rows
   }
 
-  @Synchronized fun clear() {
+  fun history(limit: Int): String {
+    val sql = "SELECT * FROM dog_status ORDER BY received_at DESC, id DESC LIMIT ?"
+    val arguments = arrayOf<String?>(limit.coerceIn(1, 1000).toString())
+    return (readUnlocked(sql, arguments) ?: locked("read") { db.rawQuery(sql, arguments).use(::rows) }).toString()
+  }
+
+  fun clear() = locked("write") {
     db.delete("dog_status", null, null)
     lastSaved.clear()
   }
 
-  /** One engine/monitor for the App's readers, transactions and BLE writer. */
-  @Synchronized fun executeSql(sql: String, params: JSONArray): JSONObject {
+  /**
+   * One engine for the App's readers, transactions and BLE writer. A SELECT
+   * (or WITH) outside a transaction reads without the monitor; everything
+   * else holds it, as before.
+   */
+  fun executeSql(sql: String, params: JSONArray): JSONObject {
     val query = sql.trimStart()
     val verb = query.takeWhile { !it.isWhitespace() }.uppercase(java.util.Locale.ROOT)
-    val result = JSONObject().put("results", JSONArray()).put("rowsAffected", 0)
     if (verb in setOf("SELECT", "PRAGMA", "WITH", "EXPLAIN")) {
       val arguments = Array<String?>(params.length()) { i ->
         if (params.isNull(i)) null else when (val value = params.get(i)) {
@@ -162,22 +229,21 @@ class DogStatusStore private constructor(private val context: Context) {
           else -> value.toString()
         }
       }
-      db.rawQuery(sql, arguments).use { cursor ->
-        val rows = JSONArray()
-        while (cursor.moveToNext()) {
-          val row = JSONObject()
-          for (i in 0 until cursor.columnCount) row.put(cursor.getColumnName(i),
-            when (cursor.getType(i)) {
-              android.database.Cursor.FIELD_TYPE_NULL -> JSONObject.NULL
-              android.database.Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(i)
-              android.database.Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(i)
-              else -> cursor.getString(i)
-            })
-          rows.put(row)
+      val unlocked = if (verb != "PRAGMA" && !db.inTransaction()) readUnlocked(sql, arguments) else null
+      val rows = unlocked ?: locked(if (verb == "PRAGMA") "pragma" else "read") {
+        // A PRAGMA's setting stays with the connection that ran it (analysis_limit
+        // before optimize): a transaction keeps it on the one writer connection.
+        if (verb != "PRAGMA" || db.inTransaction()) db.rawQuery(sql, arguments).use(::rows)
+        else {
+          db.beginTransactionNonExclusive()
+          try { db.rawQuery(sql, arguments).use(::rows).also { db.setTransactionSuccessful() } }
+          finally { db.endTransaction() }
         }
-        result.put("results", rows)
       }
-    } else {
+      return JSONObject().put("results", rows).put("rowsAffected", 0)
+    }
+    return locked("sql") {
+      val result = JSONObject().put("results", JSONArray()).put("rowsAffected", 0)
       db.compileStatement(sql).use { statement ->
         for (i in 0 until params.length()) {
           val value = params.opt(i)
@@ -195,11 +261,12 @@ class DogStatusStore private constructor(private val context: Context) {
           result.put("insertId", id).put("rowsAffected", if (id < 0) 0 else 1)
         } else result.put("rowsAffected", statement.executeUpdateDelete())
       }
+      result
     }
-    return result
   }
 
-  @Synchronized fun executeBatch(commands: JSONArray) {
+  /** One transaction. [writer] (BLE, location) records its wait apart from the App's batches. */
+  fun executeBatch(commands: JSONArray, writer: String? = null) = locked(writer ?: "batch", writer) {
     db.beginTransaction()
     try {
       for (i in 0 until commands.length()) {

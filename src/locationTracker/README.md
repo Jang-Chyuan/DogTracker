@@ -6,7 +6,7 @@
 
 設定 → 手機位置記錄及通知的「停止記錄」都將原生 `phone_location_recording.enabled` 設為 false；停止狀態跨導航及 App 重啟保留，需手動按「開始記錄」才重新啟用。系統終止或重開機不更改使用者偏好，已啟用者在下次開啟 App 且定位可用時恢復；不會僅因手機開機就自行啟動。地圖重建不重新建立正在執行的定位服務。
 
-`myLocationTracker` 位於既有 `files/databases/dogtracker.sqlite`，透過 `DogStatusStore` 同一原生 SQLite owner 寫入，與 BLE、雲端資料共用序列化交易。建表與寫入由 `android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt` 負責。首次進入頁面或開始取得定位時初始化。
+`myLocationTracker` 位於既有 `files/databases/dogtracker.sqlite`，透過 `DogStatusStore` 同一原生 SQLite owner 寫入，與 BLE、雲端資料共用序列化交易。每一列交給 `LocationTrackerStore` 自己的背景寫入執行緒（`SerialWriter`，同一程序共用一條，依序寫入）：定位 looper 不等資料庫的鎖，雲端下載佔著鎖時，排在後面的定位不會過期被丟掉，列只是晚一點落盤（`dumpsys` 的 `location-row-delay`）。背景寫入失敗時重試三次，仍失敗就在下一次保存時算成寫入錯誤，下一個 tick 再存當時的定位，與原本相同。建表與寫入由 `android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt` 負責。首次進入頁面或開始取得定位時初始化。
 
 - 有可用 Google Play Services 時使用 Google Fused Location Provider；否則 Android 12+ 有 framework fused 時使用它，其餘依可用 GPS／network provider。這是來源選擇，並不保證 Google Maps 相同的室內推論。約每秒要求一次高精度定位；以 monotonic timestamp 排除重複或倒序樣本。SQLite 依原始 GPS 速度調整保存間隔：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒；速度未知則每 5 秒。以最新速度與上次成功寫入時間判斷，不受靜止歸零影響。最多 80,000 筆，高速持續每秒保存約可保留 22.2 小時。
 - 無新定位不補空白筆數、不重複舊定位；定位本身（elapsedRealtimeNanos）超過 15 秒的丟棄，不早於上一筆已接受定位的也丟棄（duplicate）。原本 3 秒是只用 GPS provider、每秒一筆且都很新鮮時訂的；改用 fused 後，手機靜止、Samsung 停掉 GPS 時，Wi-Fi 定位數秒到數分鐘才來一筆，到達時已約 4.5–5 秒，幾乎全被當過期丟掉（實機一晚 1,004 筆 stale，多段 80–133 分鐘沒有保存任何一筆，被拒定位最舊只有 5.1 秒）。已接受但尚未保存的定位在同一個 15 秒內仍可保存。實際頻率受 Android、接收狀況及省電影響。

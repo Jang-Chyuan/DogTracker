@@ -52,14 +52,25 @@ class SearchRelayService : Service() {
         context.stopService(Intent(context, SearchRelayService::class.java))
       }
     }
+    // The relay's database reads: never on the main looper, where a long
+    // database lock (a cloud download) risked an ANR (稽核 A F3).
+    private val database by lazy { Handler(HandlerThread("DogTracker-SearchRelayDb").apply { start() }.looper) }
+    private fun startable(context: Context, owner: String) =
+      !timedOut && BleForegroundService.isRunning && configured(context).getString("owner", "") == owner
     private fun startIfPending(context: Context, owner: String) {
-      if (timedOut || !BleForegroundService.isRunning || configured(context).getString("owner", "") != owner) return
-      if (DogStatusStore.get(context).nextSearchRetry(owner) == null) return
-      instance?.let { it.request(owner); return }
-      // Android can deny a background start; retain every row for foreground or
-      // WorkManager recovery rather than disrupting the BLE writer.
-      runCatching { ContextCompat.startForegroundService(context, Intent(context, SearchRelayService::class.java).putExtra("owner", owner)) }
-        .onFailure { com.dogtracker.AppLog.w("DogTracker", "Search relay start deferred", it) }
+      if (!startable(context, owner)) return
+      database.post {
+        val next = runCatching { DogStatusStore.get(context).nextSearchRetry(owner) }.getOrNull()
+        requests.post {
+          // Checked again: things may have changed while the queue was read.
+          if (next == null || !startable(context, owner)) return@post
+          instance?.let { it.request(owner); return@post }
+          // Android can deny a background start; retain every row for foreground or
+          // WorkManager recovery rather than disrupting the BLE writer.
+          runCatching { ContextCompat.startForegroundService(context, Intent(context, SearchRelayService::class.java).putExtra("owner", owner)) }
+            .onFailure { com.dogtracker.AppLog.w("DogTracker", "Search relay start deferred", it) }
+        }
+      }
     }
   }
   private val handler = Handler(Looper.getMainLooper())
@@ -78,41 +89,52 @@ class SearchRelayService : Service() {
   // JS aborts at 25 s. Only an active pass holds the lock, with one second of
   // timeout/cleanup margin, and completion releases it immediately.
   private val deadline = Runnable { runId?.let { complete(it) } }
+  @Volatile private var destroyed = false
+  // The queue is read on the database thread; the answer comes back here.
+  private val queue = RelayQuery<Long?>({ database.post(it) }, { handler.post(it) })
   private val tick = object : Runnable {
     override fun run() {
       if (!BleForegroundService.isRunning || owner.isEmpty()) { stopSelf(); return }
       if (runId != null) return
-      val now = System.currentTimeMillis()
-      val next = DogStatusStore.get(this@SearchRelayService).nextSearchRetry(owner)
-      val delay = SearchRelayTiming.waitMs(next, now, nextPassElapsed - SystemClock.elapsedRealtime())
-      if (delay == null) { stopSelf(); return }
-      if (delay > 0) {
-        show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1147))
-        handler.postDelayed(this, delay)
-        return
+      val account = owner
+      queue.ask({ DogStatusStore.get(this@SearchRelayService).nextSearchRetry(account) }) { next ->
+        // A newer request asks again itself; a failed read stops like an empty queue.
+        if (destroyed || account != owner || runId != null) return@ask
+        if (!BleForegroundService.isRunning) { stopSelf(); return@ask }
+        pass(next.getOrNull())
       }
-      val online = network.getNetworkCapabilities(network.activeNetwork)
-        ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-      if (!online) { show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1148)); return }
-      val context = (application as ReactApplication).reactHost?.currentReactContext
-      if (context == null) {
-        show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1149))
-        handler.postDelayed(this, SearchRelayTiming.reactWaitMs(reactWaitAttempt))
-        reactWaitAttempt = minOf(reactWaitAttempt + 1, 4)
-        return
-      }
-      reactWaitAttempt = 0
-      val id = UUID.randomUUID().toString()
-      runId = id
-      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1150))
-      lock?.acquire(SearchRelayTiming.ACTIVE_TIMEOUT_MS)
-      try {
-        val data = Arguments.createMap().apply { putString("owner", owner); putString("runId", id) }
-        HeadlessJsTaskContext.getInstance(context).startTask(
-          HeadlessJsTaskConfig("DogTrackerSearchRelay", data, SearchRelayTiming.ACTIVE_TIMEOUT_MS, true))
-        handler.postDelayed(deadline, SearchRelayTiming.ACTIVE_TIMEOUT_MS)
-      } catch (_: Exception) { complete(id) }
     }
+  }
+  private fun pass(next: Long?) {
+    val now = System.currentTimeMillis()
+    val delay = SearchRelayTiming.waitMs(next, now, nextPassElapsed - SystemClock.elapsedRealtime())
+    if (delay == null) { stopSelf(); return }
+    if (delay > 0) {
+      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1147))
+      handler.postDelayed(tick, delay)
+      return
+    }
+    val online = network.getNetworkCapabilities(network.activeNetwork)
+      ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    if (!online) { show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1148)); return }
+    val context = (application as ReactApplication).reactHost?.currentReactContext
+    if (context == null) {
+      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1149))
+      handler.postDelayed(tick, SearchRelayTiming.reactWaitMs(reactWaitAttempt))
+      reactWaitAttempt = minOf(reactWaitAttempt + 1, 4)
+      return
+    }
+    reactWaitAttempt = 0
+    val id = UUID.randomUUID().toString()
+    runId = id
+    show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1150))
+    lock?.acquire(SearchRelayTiming.ACTIVE_TIMEOUT_MS)
+    try {
+      val data = Arguments.createMap().apply { putString("owner", owner); putString("runId", id) }
+      HeadlessJsTaskContext.getInstance(context).startTask(
+        HeadlessJsTaskConfig("DogTrackerSearchRelay", data, SearchRelayTiming.ACTIVE_TIMEOUT_MS, true))
+      handler.postDelayed(deadline, SearchRelayTiming.ACTIVE_TIMEOUT_MS)
+    } catch (_: Exception) { complete(id) }
   }
   override fun onCreate() {
     super.onCreate(); instance = this
@@ -161,6 +183,7 @@ class SearchRelayService : Service() {
   }
   override fun onTimeout(startId: Int, fgsType: Int) { timedOut = true; stopSelf() }
   override fun onDestroy() {
+    destroyed = true
     runId = null; owner = ""; instance = null
     handler.removeCallbacksAndMessages(null)
     if (networkRegistered) network.unregisterNetworkCallback(networkCallback)

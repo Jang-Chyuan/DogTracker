@@ -13,6 +13,7 @@ import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
 import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { optimizeDatabase } from '../database/DatabaseStatistics';
+import { readPages } from '../database/PagedRead';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -88,9 +89,14 @@ export function createCloudDatabase(connection, options = {}) {
         const result = await connection.executeAsync(sql, params);
         return result.results || result.rows?._array || [];
       };
-      const window = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
-        AND CAST(COALESCE(track_at,received_at) AS INTEGER)>=? AND CAST(COALESCE(track_at,received_at) AS INTEGER)<=?
-        ORDER BY CAST(COALESCE(track_at,received_at) AS INTEGER),id LIMIT 20001`, [owner, packet.slave_id, from, packet.track_at]);
+      // In pages (PagedRead); page_time continues the order and is dropped.
+      const clock = 'CAST(COALESCE(track_at,received_at) AS INTEGER)';
+      const window = (await readPages(connection, (last, size) => ({
+        query: `SELECT *, ${clock} AS page_time FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
+        AND ${clock}>=? AND ${clock}<=?${last ? ` AND (${clock}>? OR (${clock}=? AND id>?))` : ''}
+        ORDER BY ${clock},id LIMIT ?`,
+        params: [owner, packet.slave_id, from, packet.track_at, ...(last ? [last.page_time, last.page_time, last.id] : []), size],
+      }), 20001)).map(({ page_time: _pageTime, ...row }) => row);
       // A truncated cache slice is not replayed as a complete hold context.
       if (window.length > 20000) continue;
       const seeds = await query(`SELECT * FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=?
@@ -477,12 +483,16 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         // Unary + keeps SQLite on the rowid seek rather than an owner/time scan.
         const accountFilter = account ? `${cursors ? '+' : ''}owner_user_id = ? AND ` : '';
         const params = account ? [owner] : [];
-        const fresh = rows(await connection.executeAsync(cursors
-          ? `SELECT ${columns}, ${clock} AS time FROM ${table}
-            WHERE ${accountFilter}id > ? ORDER BY id LIMIT 20000`
-          : `SELECT ${columns}, ${clock} AS time FROM ${table}
-            WHERE ${accountFilter}${clock} >= ? ORDER BY id LIMIT 20000`,
-        [...params, cursors ? cursors[table] ?? 0 : sinceMs]));
+        // Up to 20,000 rows, in pages (PagedRead): one call used to return
+        // them all. A cold start's later pages seek on from the last id
+        // (unary +), rather than scan the account by time again.
+        const fresh = await readPages(connection, (last, size) => (cursors
+          ? { query: `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${accountFilter}id > ? ORDER BY id LIMIT ?`,
+          params: [...params, last ? last.id : cursors[table] ?? 0, size] }
+          : { query: `SELECT ${columns}, ${clock} AS time FROM ${table}
+            WHERE ${account && last ? '+' : ''}${accountFilter}${clock} >= ?${last ? ' AND id > ?' : ''} ORDER BY id LIMIT ?`,
+          params: [...params, sinceMs, ...(last ? [last.id] : []), size] }), 20000);
         let seeds = [];
         const older = [];
         if (!cursors) {
@@ -496,9 +506,12 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
           for (const row of silent) {
             const from = Number(row.newest) - HOLD_LOOKBACK_MS;
             windows.set(row.slave_id, from);
-            older.push(...rows(await connection.executeAsync(`SELECT ${columns}, ${clock} AS time FROM ${table}
-              WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ? ORDER BY ${clock}, id LIMIT 20000`,
-            [...params, row.slave_id, from, sinceMs])));
+            older.push(...await readPages(connection, (last, size) => ({
+              query: `SELECT ${columns}, ${clock} AS time FROM ${table}
+              WHERE ${accountFilter}slave_id = ? AND ${clock} >= ? AND ${clock} < ?
+                ${last ? `AND (${clock} > ? OR (${clock} = ? AND id > ?))` : ''} ORDER BY ${clock}, id LIMIT ?`,
+              params: [...params, row.slave_id, from, sinceMs, ...(last ? [last.time, last.time, last.id] : []), size],
+            }), 20000));
           }
           // Indoors for hours or days (charging in a kennel): the anchor is the
           // last good fixes before the replayed window, however long ago.
