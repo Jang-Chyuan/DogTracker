@@ -10,6 +10,7 @@ import { historyMovement } from '../HistoryMovement';
 import { historyStops, historyIndoorNodes } from '../HistoryStops';
 import { phoneReliableSpeed } from '../../locationTracker/PhoneMotion';
 import { phoneDisplayLocations, phoneStayDisplayCoordinate } from '../PhoneStayDisplayAnchors';
+import { sameSnapshot, takeSnapshot, valuePaths } from '../ValueSnapshot';
 
 const MINUTE = 60000;
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
@@ -175,12 +176,12 @@ const rangeDrawings = new WeakMap();
 const drawingFields = ['time', 'latitude', 'longitude', 'accuracy', 'heldReason',
   'heldSince', 'raw_speed_kmh', 'speed_kmh', 'speed_accuracy_mps',
   'phoneMotionState', 'phoneStationary', 'phoneConfirmedMovement', 'raw_latitude', 'raw_longitude'];
+// Packed (ValueSnapshot): a plain array of those 14 values per fix cost
+// about 200 bytes.
+const drawingPaths = valuePaths(drawingFields.map(key => [null, key]));
 function dayDrawing(points, subject) {
   const cached = dayDrawings.get(points);
-  if (cached && cached.subject === subject && cached.snapshot.length === points.length
-    && points.every((p, i) => drawingFields.every((key, j) => p[key] === cached.snapshot[i][j]))) {
-    return cached;
-  }
+  if (cached && cached.subject === subject && sameSnapshot(cached.snapshot, points, drawingPaths)) return cached;
   const config = configFor(subject);
   const movement = historyMovement(points, { subject, config });
   const start = points[0]?.time, end = points[points.length - 1]?.time;
@@ -193,7 +194,7 @@ function dayDrawing(points, subject) {
   const quietRecoveries = stationaryRecoveryEdges(movement.edges, places);
   const result = { subject, places, quietRecoveries,
     edges: clipRouteAtStays(movement.edges, places, config.radiusM, quietRecoveries),
-    snapshot: points.map(p => drawingFields.map(key => p[key])) };
+    snapshot: takeSnapshot(points, drawingPaths) };
   dayDrawings.set(points, result);
   return result;
 }
@@ -300,14 +301,10 @@ export function clipRouteAtStays(edges, locations = [], radiusM = configFor().ra
 // cursor. Value snapshots keep replay/in-place edits from leaving stale lines.
 const recoveryFields = ['accuracy', 'phoneMotionState', 'phoneStationary', 'phoneConfirmedMovement',
   'raw_latitude', 'raw_longitude', 'raw_speed_kmh', 'speed_kmh', 'speed_accuracy_mps'];
-const edgeSnapshot = e => [e.start, e.end, e.mode, e.gap, e.bridged,
-  e.from.latitude, e.from.longitude, e.to.latitude, e.to.longitude, e.durationMs,
-  ...recoveryFields.map(key => e.from[key]), ...recoveryFields.map(key => e.to[key])];
-const edgeMatches = (e, v) => e.start === v[0] && e.end === v[1] && e.mode === v[2]
-  && e.gap === v[3] && e.bridged === v[4] && e.from.latitude === v[5]
-  && e.from.longitude === v[6] && e.to.latitude === v[7] && e.to.longitude === v[8]
-  && e.durationMs === v[9] && recoveryFields.every((key, i) => e.from[key] === v[10 + i]
-    && e.to[key] === v[10 + recoveryFields.length + i]);
+// Packed (ValueSnapshot): 28 values per edge.
+const edgePaths = valuePaths([[null, 'start'], [null, 'end'], [null, 'mode'], [null, 'gap'], [null, 'bridged'],
+  ['from', 'latitude'], ['from', 'longitude'], ['to', 'latitude'], ['to', 'longitude'], [null, 'durationMs'],
+  ...recoveryFields.map(key => ['from', key]), ...recoveryFields.map(key => ['to', key])]);
 const placeSnapshot = p => [p.type, p.start, p.end, p.latitude, p.longitude,
   p.center?.latitude, p.center?.longitude];
 const placeMatches = (p, v) => p.type === v[0] && p.start === v[1] && p.end === v[2]
@@ -319,11 +316,10 @@ export function stayAwareModelEdges(model, { day = null, radiusM = configFor().r
   const places = [...(day?.places || []), ...locations];
   if (cached && cached.day === day && cached.radiusM === radiusM
     && cached.sourceEdges === edges && cached.locations === locations
-    && cached.edgeSnapshot.length === edges.length && cached.placeSnapshot.length === places.length
-    && edges.every((e, i) => edgeMatches(e, cached.edgeSnapshot[i]))
+    && cached.placeSnapshot.length === places.length && sameSnapshot(cached.edgeSnapshot, edges, edgePaths)
     && places.every((p, i) => placeMatches(p, cached.placeSnapshot[i]))) return cached.clipped;
   cached = { day, radiusM, sourceEdges: edges, locations, places,
-    edgeSnapshot: edges.map(edgeSnapshot), placeSnapshot: places.map(placeSnapshot),
+    edgeSnapshot: takeSnapshot(edges, edgePaths), placeSnapshot: places.map(placeSnapshot),
     clipped: clipRouteAtStays(edges, places, radiusM, day?.quietRecoveries ?? stationaryRecoveryEdges(edges, places)) };
   rangeDrawings.set(model, cached);
   return cached.clipped;
