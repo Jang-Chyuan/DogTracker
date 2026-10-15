@@ -448,8 +448,14 @@ function recorderPath(now, fromAgo, legs) {
   let time = now - fromAgo, here = at(-10, -100);
   const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
   const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.3, motion_state: 'moving' };
-  for (const [kind, minutes, bearing = 0] of legs) {
+  for (const [kind, minutes, bearing = 0, metres = 0] of legs) {
     const turn = (bearing * Math.PI) / 180;
+    // 'none': nothing saved for that long; the phone turns up `metres` away.
+    if (kind === 'none') {
+      time += minutes * MINUTE;
+      here = offset(here, Math.cos(turn) * metres, Math.sin(turn) * metres);
+      continue;
+    }
     for (const until = time + minutes * MINUTE; time < until && time <= now - 5 * SECOND; time += 5 * SECOND) {
       if (kind === 'walk') here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
       out.push({ time, fix: { ...here, accuracy: 5, recorder: kind === 'walk' ? walking : still } });
@@ -1751,6 +1757,11 @@ const FIXTURES = {
   'history-recording-no-fix': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
     phone: routePhone(recorderPath(now, 60 * MINUTE, [['still', 10], ['walk', 38, 60]]), now),
     geocoder: { names: HISTORY_NAMES } }),
+  // A walk, 40 minutes with nothing saved, the walk on: one row
+  // 「沒有位置 40 分」 (it was 「沒有資料 08:15–08:55」 or 「GPS 訊號弱」).
+  'history-recording-break': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+    phone: routePhone(recorderPath(now, 90 * MINUTE, [['still', 10], ['walk', 15, 40], ['none', 40, 80, 1200],
+      ['walk', 15, 120]]), now), geocoder: { names: HISTORY_NAMES } }),
   // The recording switch on, but its service not running since 09:05 (the
   // system stopped it): 「記錄中斷・09:05」 and the hint to open the app.
   'history-recording-interrupted': now => {
