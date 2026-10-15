@@ -654,14 +654,14 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   await advance(1000);
   const middle = () => renderer.root.find(node => node.props.testID === 'dog-card-edit'
     && typeof node.props.onPress === 'function');
-  const open = () => middle().props.accessibilityLabel.replace(/^編輯(.*)的名字和頭像$/, '$1');
+  const openDogName = () => middle().props.accessibilityLabel.replace(/^編輯(.*)的名字和頭像$/, '$1');
   const strip = () => renderer.root.findAll(node => node.props.testID === 'dog-card-carousel'
     && typeof node.props.onResponderRelease === 'function')[0];
   const card = () => renderer.root.findAll(node => node.props.testID === 'dog-card' && node.props.onLayout)[0];
   const map = () => renderer.root.findAll(node => node.props.focusDog !== undefined && node.props.presentation, { deep: true })[0];
   await act(async () => card().props.onLayout({ nativeEvent: { layout: { height: 420 } } }));
   await advance(100);
-  expect(open()).toBe('豆豆');
+  expect(openDogName()).toBe('豆豆');
   // The order: by signal-source number only (4, 5, 6, 8, 9, 12), each
   // once; 阿福's problem does not move it forward. The open 豆豆 (4) keeps
   // its own place, the first: TalkBack has 下一隻 only.
@@ -687,7 +687,7 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   const keys = new Set();
   for (const index of [1, 2, 3, 4, 5]) {
     await drag(1);
-    expect(open()).toBe(order[index]);
+    expect(openDogName()).toBe(order[index]);
     const shown = map().props;
     const selected = shown.presentation.dogMarkers.find(marker => marker.selected);
     // On top of the others, and the map always asked to centre it.
@@ -700,14 +700,14 @@ test('the card\'s row of dogs: every dog once, ends without wrap-around; a pick 
   expect(middle().props.accessibilityActions).toEqual([{ name: 'previous', label: '上一隻' }]);
   await act(async () => middle().props.onAccessibilityAction({ nativeEvent: { actionName: 'previous' } }));
   await advance(300);
-  expect(open()).toBe('狗 9');
+  expect(openDogName()).toBe('狗 9');
   expect(map().props.focusDog.always).toBe(true);
   // A long drag back from 狗 9 follows the finger: three dogs, to 狗 5; and
   // past the first, 豆豆 (the row springs back to it).
   await drag(-3);
-  expect(open()).toBe('狗 5');
+  expect(openDogName()).toBe('狗 5');
   await drag(-4);
-  expect(open()).toBe('豆豆');
+  expect(openDogName()).toBe('豆豆');
   await act(async () => emit({ url: 'dogtracker://dev/fixture?name=off' }));
 });
 
@@ -1336,7 +1336,6 @@ test('notification dog body opens its card; 打開地圖 closes it; an unknown l
 
 
 test('the settings header stays above the page-colour map cover', async () => {
-  const { StyleSheet } = require('react-native');
   await mount();
   await advance(100);
   await act(async () => {
@@ -1359,7 +1358,7 @@ test('K02: foreground settings keep polling the alert dog snapshot', async () =>
   await advance(10000);
   const after = renderer.root.findByType(MapScreen).props.cloudDogs;
   expect(after).not.toBe(before);
-  expect(after.packets.some(row => row.slave_id === 19)).toBe(true);
+  expect(after.packets.some(packet => packet.slave_id === 19)).toBe(true);
 });
 
 test('K08: rerenders do not register a newer root back handler', async () => {
@@ -1463,7 +1462,6 @@ test.each(['com.antgo.dogtracker', 'com.antgo.dogtracker.debug'])(
 
 
 test('066: the settings header back is a real icon with room before the title, the whole row a 48dp target', async () => {
-  const { StyleSheet } = require('react-native');
   const Glyph = require('../src/map/Glyph').default;
   await mount();
   await advance(100);

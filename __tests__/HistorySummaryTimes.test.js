@@ -1,4 +1,3 @@
-import { t as i18nT } from '../src/i18n';
 import { historyTimeline } from '../src/history';
 import { clock, nodePill, summaryText } from '../src/history/HistoryText';
 import { buildExportSnapshot } from '../src/mapHistory/ExportSnapshot';

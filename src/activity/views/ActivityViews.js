@@ -128,8 +128,8 @@ function axisLabel(mode, start) {
  */
 export function classify(values, config = ACTIVITY) {
   const n = values.length;
-  const size = config.restMinutes;
-  const needs = Math.ceil(size * config.coverage - 1e-9);
+  const restWindow = config.restMinutes;
+  const needs = Math.ceil(restWindow * config.coverage - 1e-9);
   const pair = config.vigorousMinutes;
   const restMax = config.restMax;
   const vigorousMin = config.vigorousMin;
@@ -152,7 +152,7 @@ export function classify(values, config = ACTIVITY) {
   for (let tick = 0; tick < n; tick += 1) {
     const v = values[tick];
     high = v >= vigorousMin ? high + 1 : 0;
-    const from = tick - size + 1 > 0 ? tick - size + 1 : 0;
+    const from = tick - restWindow + 1 > 0 ? tick - restWindow + 1 : 0;
     if (high >= pair) {
       const since = tick - high + 1 > from ? tick - high + 1 : from;
       vigorousDiff[since] += 1;
