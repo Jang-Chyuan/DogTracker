@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createLatestSnapshotDatabase } from '../src/cloud/CloudLatestSnapshot';
 import { createCloudSecureStorage } from '../src/cloud/CloudSecureStorage';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 
 // Resume after the 1 h access token expired in the background (device log:
 // attempt 24 `failure { phase: 'masters', failureKind: 'auth', status: 401 }`,
@@ -88,7 +88,7 @@ beforeEach(async () => {
   database = createLatestSnapshotDatabase(connection, async () => {});
   cloud = server(); states = []; events = [];
   await cloud.client.auth.initialize(); cloud.client.auth.stopAutoRefresh();
-  engine = createCloudSync({ client: cloud.client, database: { ...database, latestStorageIsolated: true },
+  engine = createIndependentCloudSync({ client: cloud.client, database: { ...database, latestStorageIsolated: true },
     onChange: value => states.push(value) });
   // As useCloudSync: auth events drive the engine's owner.
   subscription = cloud.client.auth.onAuthStateChange((event, session) => {
