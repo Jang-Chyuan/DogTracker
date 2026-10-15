@@ -2,7 +2,7 @@
 
 Android 的掃描使用 BLE PLX；選定裝置後，由 `BleForegroundService` 獨占 GATT，負責 MTU、Notify、Wi-Fi 指令、斷線重連及 SQLite 存檔。JS 不再建立第二條 GATT，也不重複寫入收到的資料。
 
-服務只在 CCCD 訂閱成功後回報 connected。接收完整 JSON 後先寫入 `files/databases/dogtracker.sqlite`，再通知畫面。即使 React runtime 不存在，仍執行原生存檔；歷史頁也經原生模組讀取相同資料庫，保留升級前紀錄。每隻 Slave 每秒最多一筆，最多保留 10,000 筆。存檔錯誤另行顯示，不假裝存檔成功。
+服務只在 CCCD 訂閱成功後回報 connected。接收完整 JSON 後先寫入 `files/databases/dogtracker.sqlite`，再通知畫面。即使 React runtime 不存在，仍執行原生存檔；歷史頁也經原生模組讀取相同資料庫，保留升級前紀錄。每隻 Slave 每秒最多一筆，保留 7 天（見 PROJECT_GUIDE.md「本機資料保留」）。存檔錯誤另行顯示，不假裝存檔成功。
 
 每筆 Notify 在 GATT callback 收到的當下就記下時間（`Arrival`），之後才排進 HandlerThread 和資料庫：資料庫忙著時排隊的封包仍保留各自的接收時間，每秒一筆的節流不會把它們當成同一秒丟掉。
 

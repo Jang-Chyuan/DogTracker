@@ -310,7 +310,7 @@ test('no bottom tabs: the gear opens the grouped settings home; each row opens i
   await act(async () => expect(onBack()).toBe(true));
   await tap('diagnostics-locationRecords');
   expect(title()).toBe('返回，記錄清單');
-  expect(text()).toContain('80,000 筆');
+  expect(text()).toMatch(/保留到 \d+\/\d+・第 1 頁/);
   await act(async () => expect(onBack()).toBe(true));
   await act(async () => expect(onBack()).toBe(true));
   // 進階 (S7): 接收器 Wi-Fi (its own light page) and 刪除全部狗資料.
