@@ -7,6 +7,7 @@ import { createLatestSnapshotLifecycle } from './LatestSnapshotLifecycle';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
 import { cloudTrackTime } from './CloudTrackTime';
+import { FUTURE_TOLERANCE_MS } from './ServerClock';
 import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
 import { readDogCardRows } from '../activity/DogCardReadings';
 import { predictEnvironment, ENVIRONMENT_WINDOW_MS } from '../ml/Environment';
@@ -165,6 +166,25 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       await connection.executeAsync('INSERT OR REPLACE INTO receiver_range_state(scope,value) VALUES(?,?)', [owner ?? 'local', JSON.stringify(ranges)]);
     },
     initialize() {
+      // Once per install (2026-10-15): relayed rows downloaded before
+      // cloudTrackTime stopped believing an uploading phone whose clock runs
+      // ahead keep that phone's time as track_at. Put them on the server's
+      // time, as new downloads are, and withdraw the proofs of the days the
+      // row leaves or joins (as the metadata repair does).
+      async function fixRelayedFutureTimes() {
+        await connection.executeAsync('CREATE TABLE IF NOT EXISTS cloud_migrations (name TEXT PRIMARY KEY)');
+        const name = 'relayed-future-track-at';
+        if (rows(await connection.executeAsync('SELECT name FROM cloud_migrations WHERE name=?', [name])).length) return;
+        const ahead = rows(await connection.executeAsync(`SELECT owner_user_id, event_id, received_at
+          FROM supabase_dog_status WHERE upload_source='phone' AND event_id IS NOT NULL
+          AND track_at > received_at + ${FUTURE_TOLERANCE_MS}`));
+        await executeBatch([
+          ...ahead.flatMap(row => [invalidateRepairedCoverage(row.owner_user_id, row.event_id, row.received_at), {
+            query: 'UPDATE supabase_dog_status SET track_at=received_at WHERE owner_user_id=? AND event_id=?',
+            params: [row.owner_user_id, row.event_id] }]),
+          { query: 'INSERT OR IGNORE INTO cloud_migrations(name) VALUES(?)', params: [name] },
+        ]);
+      }
       // UI/headless wrappers of one native owner share migration work.
       // A new owner/standalone handle migrates again; failed opens remain retryable.
       const key = connection.lockKey || connection;
@@ -245,6 +265,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       )`);
       // Also apply retention to databases downloaded by older app versions.
       await initializeHistoryCoverage(connection);
+      await fixRelayedFutureTimes();
       await executeBatch([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.

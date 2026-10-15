@@ -1,6 +1,9 @@
 import { t } from '../i18n';
 import { useEffect, useState } from 'react';
 import { shortDate } from '../history/screen/HistoryCalendar';
+
+/** 「YYYY-MM-DD」 → 「YYYY/MM/DD」. */
+export const longDate = day => day.replace(/-/g, '/');
 import {
   DOG_RETENTION_DAYS,
   ROUTE_RETENTION_DAYS,
@@ -16,7 +19,9 @@ export function retentionLabels(read, now) {
   const route = read?.route?.from ?? retentionStartDay(now, ROUTE_RETENTION_DAYS);
   const dogs = read?.dogs?.from ?? retentionStartDay(now, DOG_RETENTION_DAYS);
   return {
-    route: t('c1398', { date: shortDate(route), days: ROUTE_RETENTION_DAYS }),
+    // A year back: the date with its year (「2025/10/16」), M/D alone would
+    // read as the coming days.
+    route: t('c1403', { date: longDate(route) }),
     dogs: t('c1399', { date: shortDate(dogs), days: DOG_RETENTION_DAYS }),
   };
 }

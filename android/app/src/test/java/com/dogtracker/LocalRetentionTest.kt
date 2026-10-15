@@ -33,8 +33,19 @@ class LocalRetentionTest {
     }
     override fun change(sql: String, vararg args: Any): Int {
       statements += sql
+      if (sql.startsWith(LocalRetention.DOG_CAP_HEAD)) {
+        assertEquals(LocalRetention.dogCapSql((args.size - 2) / 3), sql)
+        val from = args[0] as Long
+        val terms = args.drop(1).dropLast(1).chunked(3)
+        val gone = dogs!!.filter { r -> r.id >= from && terms.any { (slave, through, before) ->
+          r.slave == slave as Long && r.id <= through as Long && r.time < before as Long } }
+          .sortedBy { it.id }.take((args.last() as Long).toInt())
+        dogs.removeAll(gone.toSet())
+        return gone.size
+      }
       val (table, match) = when (sql) {
         LocalRetention.ROUTE_DELETE_SQL -> route!! to { r: Row -> r.id <= args[0] as Long && r.time < args[1] as Long }
+        LocalRetention.ROUTE_CAP_DELETE_SQL -> route!! to { r: Row -> r.id <= args[0] as Long }
         LocalRetention.DOG_DELETE_SQL -> dogs!! to { r: Row -> r.slave == args[0] as Long && r.id <= args[1] as Long && r.time < args[2] as Long }
         else -> error("unexpected $sql")
       }
@@ -46,8 +57,11 @@ class LocalRetentionTest {
   }
 
   @Test fun theCutoffIsLocalMidnightOfTheFirstDayKept() {
-    // 30 days kept, today included: from 9/16 00:00 in Taipei.
+    // 30 days kept, today included: from 9/16 00:00 in Taipei; a year from 2025/10/16.
     assertEquals(1_789_516_800_000L - 8 * 3_600_000L, LocalRetention.cutoff(now, 30, taipei))
+    assertEquals(1_792_022_400_000L - 8 * 3_600_000L - 364 * day, LocalRetention.cutoff(now, 365, taipei))
+    assertEquals(365, LocalRetention.ROUTE_DAYS)
+    assertEquals(30, LocalRetention.DOG_DAYS)
     assertEquals(1_792_022_400_000L - 8 * 3_600_000L - 6 * day, LocalRetention.cutoff(now, 7, taipei))
     // Just after midnight the day just begun counts as one.
     val midnight = 1_792_022_400_000L - 8 * 3_600_000L
@@ -55,7 +69,7 @@ class LocalRetentionTest {
     assertEquals(midnight - day, LocalRetention.cutoff(midnight - 1, 1, taipei))
   }
 
-  @Test fun routeRowsOlderThanThirtyDaysGoInBatchesAndNothingInsideTheWindow() {
+  @Test fun routeRowsOlderThanAYearGoInBatchesAndNothingInsideTheWindow() {
     val cutoff = LocalRetention.cutoff(now, LocalRetention.ROUTE_DAYS, taipei)
     val sql = FakeSql(dogs = null)
     var id = 0L
@@ -79,7 +93,7 @@ class LocalRetentionTest {
     assertEquals(2L, sql.route!!.first().id)
   }
 
-  @Test fun dogsKeepSevenDaysAndAQuietDogKeepsItsNewestRows() {
+  @Test fun dogsKeepThirtyDaysAndAQuietDogKeepsItsNewestRows() {
     val cutoff = LocalRetention.cutoff(now, LocalRetention.DOG_DAYS, taipei)
     val sql = FakeSql(route = null)
     var id = 0L
@@ -122,6 +136,21 @@ class LocalRetentionTest {
     assertEquals(1L, LocalRetention.sweep(sql, now, taipei).dogs)
     assertEquals(dog7 + 5_701, sql.dogs!!.filter { it.slave == 7L }.minOf { it.id })
     assertEquals(30_001, sql.dogs!!.count { it.slave == 10L })
+  }
+
+  @Test fun dogsHeardTogetherGoAWholeBatchAStatement() {
+    val sql = FakeSql(route = null)
+    val today = LocalRetention.cutoff(now, 1, taipei)
+    var id = 0L
+    // Two dogs heard at the same time for 25 days: their ids alternate.
+    val each = (LocalRetention.DOG_TOTAL_CAP / 2 + 600).toInt()
+    for (i in 0 until each) for (slave in listOf(12L, 13L)) sql.dogs!! += Row(++id, slave, today - 25 * day + i * 4_000L)
+    val swept = LocalRetention.sweep(sql, now, taipei)
+    assertEquals(1_200L, swept.dogs)
+    // The 1,200 oldest ids of both dogs, three statements (500, 500, 200).
+    assertEquals(1_201L, sql.dogs!!.minOf { it.id })
+    assertEquals(3, sql.statements.count { it.startsWith(LocalRetention.DOG_CAP_HEAD) })
+    assertEquals(each - 600, sql.dogs!!.count { it.slave == 12L })
   }
 
   @Test fun missingTablesAreSkipped() {
