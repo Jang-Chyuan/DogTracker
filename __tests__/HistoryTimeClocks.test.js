@@ -7,7 +7,7 @@ import { buildFixture, FIXTURE_NAMES } from '../src/dev/ScreenFixtures';
 import { historyTargetOf } from '../src/mapHistory/useHistoryScreen';
 import { historyTimeline } from '../src/history/HistoryTimeline';
 import { timelinePresentation, presentationDurationMs } from '../src/history/HistoryTimelinePresentation';
-import { departureClocks, timelineClockMismatches } from '../test-support/TimelineClocks';
+import { departureClocks, timelineClockMismatches, timelineMismatches } from '../test-support/TimelineClocks';
 
 const MINUTE = 60000;
 const startOfDay = time => { const d = new Date(time); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -27,7 +27,7 @@ test.each(historyFixtures)('%s: every row\'s clock + minutes is the next row\'s 
     const inDay = rows.filter(r => r.time >= today && r.time < today + 86400000);
     const model = historyTimeline(rows, { subject: target.subject, dayStart: today, dayEnd: today + 86400000,
       today: true, now: fixture.now, ...(manual && inDay.length ? { manualRange: { start: inDay[0].time, end: inDay.at(-1).time } } : {}) });
-    expect(timelineClockMismatches(model.nodes)).toEqual([]);
+    expect(timelineMismatches(model)).toEqual([]);
     for (const clocks of departureClocks(model.nodes)) expect(clocks.stay).toBe(clocks.next);
   }
 });
@@ -85,8 +85,30 @@ test.each([
     for (const manual of [true, false]) {
       const model = historyTimeline(rows, { subject: 'phone', dayStart, dayEnd: dayStart + 86400000,
         ...(manual ? { manualRange: { start: rows[0].time, end: rows.at(-1).time } } : {}) });
-      expect(timelineClockMismatches(model.nodes)).toEqual([]);
+      expect(timelineMismatches(model)).toEqual([]);
       for (const clocks of departureClocks(model.nodes)) expect(clocks.stay).toBe(clocks.next);
     }
   }
+});
+
+// 2026-10-15: the checker itself — a moment row tiles too, spans no time,
+// and the rows cover the range from its first fix to its last.
+describe('timelineMismatches', () => {
+  const at = { latitude: 24.9892, longitude: 121.3138 };
+  const stay = (start, end) => ({ type: 'stop', number: 1, ...at, start, end, durationMs: end - start, interruptionMs: 0, gaps: [] });
+  test('a hole after a moment row is not tiled', () => {
+    const nodes = [{ type: 'gap', mode: 'gap', start: 0, end: 40 * MINUTE }, { type: 'resume', ...at, start: 40 * MINUTE, end: 40 * MINUTE },
+      { type: 'movement', mode: 'driving', start: 45 * MINUTE, end: 50 * MINUTE, durationMs: 5 * MINUTE, distanceM: 4000, countedDistanceM: 0 }];
+    expect(timelineClockMismatches(nodes)).toEqual([expect.objectContaining({ kind: 'not-tiled', type: 'resume' })]);
+  });
+  test('a 出發 spanning minutes is a moment-span', () => {
+    const nodes = [{ type: 'departure', ...at, start: 0, end: 5 * MINUTE },
+      { type: 'gap', mode: 'gap', start: 5 * MINUTE, end: 40 * MINUTE }];
+    expect(timelineClockMismatches(nodes)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'moment-span' })]));
+  });
+  test('rows that stop short of the last fix are not-covered', () => {
+    const model = { nodes: [stay(0, 10 * MINUTE)], points: [{ time: 0 }, { time: 12 * MINUTE }] };
+    expect(timelineMismatches(model)).toEqual([expect.objectContaining({ kind: 'not-covered' })]);
+    expect(timelineMismatches({ ...model, points: [{ time: 0 }, { time: 10 * MINUTE }] })).toEqual([]);
+  });
 });
