@@ -234,7 +234,15 @@ describe('the card times a hold from where the history\'s 室內 node starts', (
   const { dogCard } = require('../src/map/DogCardModel');
   const T = 1_800_000_000_000;
   const shift = row => ({ ...row, time: T + row.time, source: 'ble' });
+  // The dog walks up from 450 m north first: the live rows see it arrive, so
+  // the hold is its own (not `fromClipped`, which the card would check in the
+  // history first).
+  const walkUp = [];
+  for (let time = -10 * 60000; time < 0; time += 30000) {
+    walkUp.push(shift(good(time, { latitude: HOME.latitude - time / 600000 * 0.004, longitude: HOME.longitude })));
+  }
   const compare = rows => {
+    rows = [...walkUp, ...rows];
     const store = createHoldStore(HOLD_CONFIG, { classify: silent });
     store.ingest({ rows: rows.map(row => ({ ...row })) });
     const last = rows[rows.length - 1];

@@ -254,6 +254,19 @@ const indoorBle = (now, slave, spot, { inside = 12 * MINUTE, until = 8 * SECOND,
 
 
 
+// Ten minutes of clear fixes at `spot`, then indoors from `inside` ago: a weak
+// fix (5 satellites, HDOP 3–5) a few metres around it every minute and a packet
+// without a fix in between (card-indoor-cold-drift).
+const coldDrift = (now, slave, spot, inside) => [
+  ...series(bleRow, now, { slave, from: inside + 10 * MINUTE, to: inside + 10 * SECOND, every: 30 * SECOND,
+    start: spot, battery: 62, activity: 0.02 }),
+  ...series(bleRow, now, { slave, from: inside - 30 * SECOND, to: 8 * SECOND, every: 30 * SECOND, start: spot,
+    rssi: -96, snr: -4, battery: 62, activity: 0.02 }).map((row, index) => (index % 2
+    ? { ...row, slave_lat: 0, slave_lon: 0, satellites: 0, hdop: 655.35, speed_kmh: 0, distance_meters: null }
+    : { ...row, slave_lat: row.slave_lat + ((index * 37) % 11 - 5) * 0.00001,
+      slave_lon: row.slave_lon - ((index * 37) % 11 - 5) * 0.00001, satellites: 5, hdop: 3 + (index % 3) })),
+];
+
 // A long, fictional address (the card's address line wraps to two lines).
 const LONG_PLACE = { names: [{ line: '330台灣桃園市桃園區虛構里示範路一段一百二十八巷六十四弄三十二號' }] };
 // 小黑 walking out of range to 1.6 km, then held indoors there (packets
@@ -904,6 +917,22 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 2026-10-15: card-ok, but 豆豆 has rested for seven hours (one packet a
+  // minute before the last half hour), longer than the card's six-hour
+  // lookback: 「休息中・超過 6 小時」, not 「已 5 小時 59 分」 or 「已 6 小時」 by
+  // turns as the lookback slides.
+  'card-rest-long': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 4, from: 7 * 60 * MINUTE, to: 31 * MINUTE, every: MINUTE, battery: 62,
+        activity: 0.02, dog: (progress, where) => northEastOf(where, 420, 0) }),
+      ...track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 62, activity: 0.02,
+        dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) }),
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
   // 豆豆 at 43% whose newest packet says 0% with no voltage (a bad packet,
   // BatteryPlausibility): the card keeps 「43%」, no red 「!」, no alert.
   'card-battery-blip': now => {
@@ -1031,6 +1060,20 @@ const FIXTURES = {
       ...dog4Ble(now),
       ...indoorBle(now, 6, [-18, 24], { inside: 12 * 60 * MINUTE + 21 * MINUTE, every: 30 * SECOND,
         battery: 62, activity: 0.02 }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 2026-10-15: 小黑 indoors since 07:01, its drift keeping five
+  // satellites at a poor HDOP every minute, a packet without a fix between.
+  // A cold start's seeds are then all weak: the live hold anchors on the half
+  // hour's own weak fixes and never saw the dog arrive, so the card asks the
+  // history where the stay began: 「室內・2 時 28 分」, not 「室內・29 分」.
+  'card-indoor-cold-drift': now => ({
+    geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
+    ble: inTimeOrder([
+      ...dog4Ble(now),
+      ...coldDrift(now, 6, [-18, 24], 149 * MINUTE),
     ]),
     cloudRows: dog8Cloud(now),
   }),
@@ -2060,7 +2103,7 @@ function cardRows(ble, cloud, slaveId, since) {
   const local = mine(ble, row => row.received_at);
   const remote = mine(cloud, timeOf);
   return { local: activity(local), cloud: activity(remote),
-    battery: [...newestBattery(local, 'ble'), ...newestBattery(remote, 'cloud')] };
+    battery: [...newestBattery(local, 'ble'), ...newestBattery(remote, 'cloud')], since };
 }
 
 // The map's own preferences are the user's; a fixture shows every dog, none

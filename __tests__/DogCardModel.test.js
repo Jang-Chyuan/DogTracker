@@ -213,3 +213,28 @@ test('the card falls back to the map blue dot when the recording service has no 
   expect(nativePhoneReading({ latitude: 24.99, longitude: 121.31, receivedAt: now - 11 * 60 * 1000 }, now)).toBeNull();
   expect(nativePhoneReading(null, now)).toBeNull();
 });
+
+// 2026-10-15: a rest as long as the card's six-hour lookback read 「已 5 小時
+// 58 分」「已 6 小時」 by turns as the window slid; now 「休息中・超過 6 小時」.
+test('活動量: a rest reaching back to where the readings begin is 「超過 6 小時」, steady as the clock moves', () => {
+  const { dogCardReadings, CARD_ACTIVITY_LOOKBACK_MS } = require('../src/activity/DogCardReadings');
+  const details = [];
+  for (let step = 0; step < 4; step += 1) {
+    const now = NOW + step * 40000;
+    const since = now - CARD_ACTIVITY_LOOKBACK_MS;
+    const local = [];
+    for (let time = since + 7000; time < now; time += 30000) {
+      local.push({ time, activity: 0.02, activity_valid: 1, slave_id: 6, master_id: 7 });
+    }
+    const { activity } = dogCardReadings({ local, cloud: [], battery: [], since }, now);
+    const words = activityRow(activity, { reference: now, positionAt: now - 5000, stale: false });
+    details.push([words.word, words.detail, words.speechDetail]);
+  }
+  expect(new Set(details.map(item => item.join('|'))).size).toBe(1);
+  expect(details[0]).toEqual([i18nT('c069'), '超過 6 小時', '活動量低超過 6 小時']);
+  // A reader that does not say where its rows begin: the minutes as before.
+  const rows = [];
+  for (let time = NOW - 40 * MINUTE; time < NOW; time += 10000) rows.push({ time, activity: 0.02, slave_id: 6 });
+  const activity = { minutes: activityMinutes(activityReadings(rows, 'ble'), { now: NOW }), newestAt: NOW - 10000 };
+  expect(activityRow(activity, { reference: NOW, positionAt: NOW - 5000, stale: false }).detail).toBe('已 40 分鐘');
+});

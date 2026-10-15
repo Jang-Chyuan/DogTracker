@@ -788,6 +788,13 @@ test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows
   expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
 });
 
+// 2026-10-15: a rest longer than the card's six-hour lookback.
+test('card-rest-long: 「休息中・超過 6 小時」', async () => {
+  const { rows } = await card('card-rest-long');
+  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '超過 6 小時', activityTone: 'rest',
+    speechDetail: '活動量低超過 6 小時', at: null });
+});
+
 test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {
   const { rows, keys, state } = await card('card-near-edge');
   expect(keys).toEqual(['range', 'battery', 'activity']);
@@ -812,8 +819,12 @@ test('card-problems (A3b): every problem red, 活動量 「—」, the distance 
 
 // 2026-10-13: 室內・11 分 is the hold (GPS, as the history's node); 休息中・已
 // 40 分鐘 is the collar's motion (it rested outside before going in).
+// 2026-10-15: its clear fixes at the door begin inside the cold start's half
+// hour, so the live rows never saw it arrive (`heldFromClipped`): the card asks
+// the history, which begins the stay at the same packet.
 test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
-  const { model, rows, keys, state } = await card('card-indoor');
+  const { model, rows, keys, state, dog } = await card('card-indoor', { indoorStay: askHistory });
+  expect(dog.heldFromClipped).toBe(true);
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
   expect(rows.position).toMatchObject({ value: '室內・11 分', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
@@ -834,6 +845,17 @@ test('card-indoor-overnight: 「室內・12 時 20 分」, not the live half hou
   // Without the history's answer it says only what it knows.
   const live = await card('card-indoor-overnight');
   expect(live.rows.position.value).toBe('室內・超過 29 分');
+});
+
+// 2026-10-15 (emulator): 「室內・25 分」 at 10:26 for a stay the history began
+// at 07:57. The weak drift left the cold start no good seeds; the live hold
+// starts on the window's own fixes, but it never saw the dog arrive.
+test('card-indoor-cold-drift: the whole stay from the history, not the live half hour', async () => {
+  const { rows, dog } = await card('card-indoor-cold-drift', { indoorStay: askHistory });
+  expect(dog.heldFromClipped).toBe(true);
+  expect(rows.position).toMatchObject({ value: '室內・2 時 28 分', detail: '桃園區中正路 1 號附近' });
+  const live = await card('card-indoor-cold-drift');
+  expect(live.rows.position.value).toMatch(/^室內・超過 \d+ 分$/);
 });
 
 // 2026-10-14 (tried on a phone): the first row's harder cases.
@@ -864,7 +886,7 @@ test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!�
 const held = dog => `${dog.coordinate.latitude.toFixed(4)}, ${dog.coordinate.longitude.toFixed(4)}`;
 
 test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內・11 分」 over the coordinates', async () => {
-  const { rows, state, dog } = await card('dog-indoor-no-address');
+  const { rows, state, dog } = await card('dog-indoor-no-address', { indoorStay: askHistory });
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(held(dog)).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
   expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog), twoLine: true,
@@ -872,8 +894,12 @@ test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內・11
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: the coordinates)', async () => {
-  const { rows, dog } = await card('card-indoor-geocoder');
+  const { rows, dog } = await card('card-indoor-geocoder', { indoorStay: askHistory });
   expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog) });
+  // Before the history answers: no minutes; without its answer, a lower bound.
+  expect((await card('card-indoor-geocoder', { indoorStay: async () => ({ state: 'pending' }) }))
+    .rows.position.value).toBe('室內');
+  expect((await card('card-indoor-geocoder')).rows.position.value).toBe('室內・超過 11 分');
 });
 
 test('card-cloud-dog: a cloud dog has no 接收範圍 row, 位置 says when its position is from; running hard', async () => {

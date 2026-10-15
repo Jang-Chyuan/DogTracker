@@ -1,4 +1,4 @@
-import { createHoldTracker, fixQuality, holdFillStart, HOLD_CONFIG } from './IndoorHold';
+import { createHoldTracker, distanceMeters, fixQuality, hasFix, holdFillStart, HOLD_CONFIG } from './IndoorHold';
 import { advanceRange, emptyRange } from '../tracking/ReceiverRange';
 import { advanceBattery, batteryReading } from '../tracking/BatteryPlausibility';
 import { configFor, samePlaceGap } from '../history/HistoryConfig';
@@ -38,7 +38,8 @@ const HISTORY_DOG = configFor('dog');
 function step(state, rows, index) {
   const row = rows[index];
   const { tracker, heldRows } = state;
-  if (state.firstAt == null) state.firstAt = row.time;
+  if (state.firstAt == null) { state.firstAt = row.time; state.early = []; }
+  noteEarly(state, row);
   const event = tracker.push(row);
   if (event?.type === 'end' && event.departureSince != null) {
     // As createHistoryHolds: the walk out is not part of the hold.
@@ -50,14 +51,16 @@ function step(state, rows, index) {
     // `clipped`: the hold's last good fix (`since`) is older than any row
     // this tracker was fed (a cold start's seeds), so the hold may well have
     // begun before the rows it can see: `from` is only where they begin.
-    state.timing = { since: event.since, from: rows[from].time, last: null, clipped: event.since < state.firstAt };
+    state.timing = { since: event.since, from: rows[from].time, last: null,
+      clipped: mayBeginEarlier(state, event.since, rows[from].time, event.anchor) };
   }
   const current = tracker.current(row.time);
   if (current) {
     heldRows.add(row);
     const place = { time: row.time, latitude: current.coordinate.latitude, longitude: current.coordinate.longitude };
     if (!state.timing || state.timing.since !== current.since) {
-      state.timing = { since: current.since, from: row.time, last: null, clipped: current.since < state.firstAt };
+      state.timing = { since: current.since, from: row.time, last: null,
+        clipped: mayBeginEarlier(state, current.since, row.time, current.coordinate) };
     } else if (state.timing.last && row.time - state.timing.last.time > HISTORY_DOG.gapMs
       && !samePlaceGap(state.timing.last, place, HISTORY_DOG)) {
       state.timing.from = row.time;
@@ -69,6 +72,36 @@ function step(state, rows, index) {
   }
   state.range = advanceRange(state.range, rangeRow(row, !!current));
   state.battery = advanceBattery(state.battery, batteryReading(row, row.time));
+}
+
+// The fixes of the first HOLD_LOOKBACK_MS of rows a tracker is fed (a cold
+// start's whole replay), for mayBeginEarlier; let go once no hold can start
+// in them any more (a start reaches back at most retroMaxMs).
+function noteEarly(state, row) {
+  if (!state.early) return;
+  if (row.time - state.firstAt > HOLD_LOOKBACK_MS + state.config.retroMaxMs) { state.early = null; return; }
+  if (row.time - state.firstAt <= HOLD_LOOKBACK_MS && hasFix(row)) {
+    state.early.push({ time: row.time, latitude: Number(row.latitude), longitude: Number(row.longitude) });
+  }
+}
+
+/**
+ * Whether a hold first held at `from` may have begun before the rows this
+ * tracker was fed (HoldStore `fromClipped`). Its last good fix (`since`) is
+ * older than all of them (a cold start's seeds); or it starts in the first
+ * HOLD_LOOKBACK_MS of them and none of the fixes before it was anywhere else
+ * (farther than farRadiusM from its anchor): a tracker that never saw the dog
+ * arrive cannot tell that the history, replaying the whole day, has not held
+ * it there since long before (2026-10-15: indoor drift with five satellites
+ * and a poor HDOP leaves a cold start no good seeds, and its hold anchored on
+ * the window's own weak fixes read 「室內・25 分」 for a stay of two and a
+ * half hours). The card then asks the history (CardIndoorStay), which says
+ * the same start when the dog did arrive at `from`.
+ */
+function mayBeginEarlier(state, since, from, anchor) {
+  if (since < state.firstAt) return true;
+  if (!state.early || !anchor || from - state.firstAt > HOLD_LOOKBACK_MS) return false;
+  return state.early.every(fix => fix.time >= from || distanceMeters(fix, anchor) <= state.config.farRadiusM);
 }
 
 // Keeps the newest MAX_SEEDS seeds, and their keys with them.
@@ -112,7 +145,7 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
       // the row leaves the window, so a replayed one is known (forget);
       // `seedKeys`: the keys of `seeds`.
       dogs.set(slaveId, { tracker: createHoldTracker(config, options), rows: [], seeds: [], touched: 0,
-        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null,
+        range: emptyRange(), config, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null, early: null,
         seen: new Map(), seedKeys: new Set() });
     }
     return dogs.get(slaveId);
@@ -184,7 +217,8 @@ export function createHoldStore(config = HOLD_CONFIG, options) {
           const tracker = createHoldTracker(config, options);
           tracker.seed([...state.seeds, ...state.tracker.goodFixes()].filter(row => row.time < from));
           const before = state.timing;
-          Object.assign(state, { tracker, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null });
+          Object.assign(state, { tracker, heldRows: new WeakSet(), timing: null, battery: null, firstAt: null,
+            early: null });
           for (let index = 0; index < state.rows.length; index += 1) step(state, state.rows, index);
           // The window may have let go of where a long hold began (it keeps at
           // most HELD_LOOKBACK_MS): a hold that now begins with the window is
