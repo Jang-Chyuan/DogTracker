@@ -22,15 +22,23 @@ object ReceiverMasterId {
     data class Other(val masterId: Int) : Check()
   }
 
-  fun of(data: JSONObject): Int? {
-    val raw = if (data.has("master_id") && !data.isNull("master_id")) data.opt("master_id")
-      else if (data.has("mid") && !data.isNull("mid")) data.opt("mid") else null
+  fun of(data: JSONObject): Int? = whole(data, "master_id", "mid", 65535)
+
+  /**
+   * A packet's dog (slave) ID the way DogStatusStore stores it: `slave_id`,
+   * else `sid`; a number or a numeric string (`"sid":"4"`), whole, 1 or more.
+   */
+  fun slaveOf(data: JSONObject): Int? = whole(data, "slave_id", "sid", Int.MAX_VALUE)
+
+  private fun whole(data: JSONObject, long: String, short: String, max: Int): Int? {
+    val raw = if (data.has(long) && !data.isNull(long)) data.opt(long)
+      else if (data.has(short) && !data.isNull(short)) data.opt(short) else null
     val number = when (raw) {
       is Number -> raw.toDouble()
       is String -> raw.trim().toDoubleOrNull()
       else -> null
     } ?: return null
-    if (!number.isFinite() || number < 1 || number > 65535 || number % 1.0 != 0.0) return null
+    if (!number.isFinite() || number < 1 || number > max || number % 1.0 != 0.0) return null
     return number.toInt()
   }
 
@@ -50,8 +58,7 @@ object ReceiverMasterId {
   fun filled(data: JSONObject, expected: Int): JSONObject? {
     if (expected !in 1..65535 || of(data) != null) return null
     if ((data.opt("type") as? Number)?.toDouble() != 3.0) return null
-    val slave = (data.opt("sid") as? Number)?.toDouble() ?: return null
-    if (slave < 1 || slave % 1.0 != 0.0) return null
+    slaveOf(data) ?: return null
     return JSONObject(data.toString()).apply {
       // An unusable master_id would otherwise shadow mid (DogStatusStore reads master_id first).
       remove("master_id")
@@ -60,21 +67,27 @@ object ReceiverMasterId {
   }
 
   /**
-   * A packet whose own Master ID passed [check] but not as a whole JSON
-   * number in `mid` (`"mid":"5"`, or only `master_id`): a copy with `mid`
-   * (and `master_id`, when it has one) set to that number, or null when it
-   * already is. The upload queue routes by `mid` and the JS encoder
-   * (BleUploadPayload) reads it as a number, so without this the packet
-   * passed the check but was never queued (2026-10-15).
+   * A packet whose Master ID ([of]) or dog ID ([slaveOf]) is usable but not
+   * a whole JSON number in `mid`／`sid` (`"mid":"5"`, `"sid":"4"`, or only
+   * `master_id`／`slave_id`): a copy with `mid` and `sid` (and `master_id`,
+   * `slave_id` when it has them) set to those numbers, or null when they
+   * already are. The upload queue routes by `mid`, DogStatusStore only
+   * stores a numeric dog ID and the JS encoder (BleUploadPayload) reads
+   * both as numbers, so without this the packet passed the check but was
+   * never queued (`mid`, 2026-10-15) or never stored (`sid`). The BLE
+   * protocol does not change: only how the phone reads what came.
    */
   fun normalized(data: JSONObject): JSONObject? {
-    val id = of(data) ?: return null
+    val ids = listOf(Triple(of(data), "mid", "master_id"), Triple(slaveOf(data), "sid", "slave_id"))
+      .filter { it.first != null }
     // Already the whole number itself (an Int as JSONObject parses `5`).
-    fun same(key: String) = (data.opt(key) as? Number)?.toString() == id.toString()
-    if (same("mid") && (!data.has("master_id") || same("master_id"))) return null
+    fun same(key: String, id: Int) = (data.opt(key) as? Number)?.toString() == id.toString()
+    if (ids.all { (id, short, long) -> same(short, id!!) && (!data.has(long) || same(long, id)) }) return null
     return JSONObject(data.toString()).apply {
-      put("mid", id)
-      if (has("master_id")) put("master_id", id)
+      for ((id, short, long) in ids) {
+        put(short, id)
+        if (has(long)) put(long, id)
+      }
     }
   }
 
