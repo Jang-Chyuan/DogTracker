@@ -10,6 +10,7 @@ import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
 import { t } from '../src/i18n';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { listedMetres } from '../test-support/TimelineClocks';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 
 // 2026-10-13 (user): stays of my route the list cut into pieces. Invented
@@ -62,7 +63,8 @@ const listed = model => timelinePresentation(model.nodes);
 const stays = model => model.nodes.filter(n => n.type === 'stop' && !n.presentationOnly);
 const shownTypes = model => listed(model).map(n => n.departureStay ? 'departure+stay'
   : n.terminalStay ? 'end+stay' : n.type);
-const rowSum = model => model.sections.reduce((sum, n) => sum + n.countedDistanceM, 0);
+// The rows' metres (#200: a stay's own moves are on its row).
+const rowSum = model => listedMetres(model.nodes);
 
 // Rows with a length tile [from, to]: no hole, no overlap (the #132 rule).
 function expectTiled(model, from, to) {
@@ -155,6 +157,10 @@ describe('2. drift inside a stay is no walk', () => {
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     // The walk in keeps only its own metres (about 300 s at 4 km/h).
     expect(walks[0].countedDistanceM).toBeLessThan(340);
+    // 2026-10-15 (user, #200): so does the walk out, an hour later; the
+    // moves are the stay's own row (「停 N 分・M m」).
+    expect(walks.at(-1).countedDistanceM).toBeLessThan(340);
+    expect(listed(model).some(n => n.type === 'stop' && n.countedDistanceM > 0)).toBe(true);
   });
 
   test('the drift across a same-place break never counts once the walk goes on', () => {
@@ -334,6 +340,11 @@ describe('5. a short real walk between two stays at one place', () => {
     expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
+    // 2026-10-15 (user, #200): the excursion's metres are the stay's row
+    // (「停 N 分・M m」), not the walk's after it.
+    const [stay] = listed(model);
+    expect(stay.countedDistanceM).toBeGreaterThan(30);
+    expect(nodePill(stay).text).toMatch(/^停 .+・\d+\u00A0m$/u);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
 

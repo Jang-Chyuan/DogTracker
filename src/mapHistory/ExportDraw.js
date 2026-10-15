@@ -58,14 +58,17 @@ function trackOps(kind, color, from, to, clears = []) {
  * dotted line its centre is a dot of the grid, so the dots above and below it
  * keep the dots' spacing. Returns its centre and drawn height.
  */
-export function leaveChevron(nodeBottom, kind) {
+export function leaveChevron(nodeBottom, kind, contentBottom = -Infinity) {
   const { leaveGap: gap, leaveLine } = tokenSize.export;
   const height = (tokenSize.export.leaveGlyph * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
   const lineTop = nodeBottom + gap;
-  if (kind !== 'dots') return { lineTop, center: lineTop + leaveLine + gap + height / 2, height };
+  // 2026-10-15 (user, layout A): the chevron and its time come after the
+  // place's last line (address lines and the pill), never beside them.
+  const lowest = contentBottom + gap + height / 2;
+  if (kind !== 'dots') return { lineTop, center: Math.max(lineTop + leaveLine + gap + height / 2, lowest), height };
   // Two whole dots between lineTop and the chevron, then the chevron on the next grid dot.
   const r = S.dottedLine.diameter / 2;
-  return { lineTop, center: firstDot(lineTop + r) + 2 * DOT_STEP, height };
+  return { lineTop, center: Math.max(firstDot(lineTop + r) + 2 * DOT_STEP, Number.isFinite(lowest) ? firstDot(lowest) : -Infinity), height };
 }
 
 // The list's nodes three times the screen's size (判定表「時間軸清單（匯出 PNG）」:
@@ -130,7 +133,7 @@ function rowOps(block) {
   // node): the chevron on the line leaving it, line above and below, the line
   // cleared around it as around the movement icons.
   const leave = tokenSize.export.leaveGlyph, gap = tokenSize.export.leaveGap;
-  const chevron = leaveChevron(nodeY + nodeRadius, row.line);
+  const chevron = leaveChevron(nodeY + nodeRadius, row.line, y + tokenSize.export.rowInset + (block.contentHeight ?? 0));
   const clears = [{ top: nodeY, bottom: chevron.lineTop }];
   if (row.leave) clears.push({ top: chevron.center - chevron.height / 2 - gap, bottom: chevron.center + chevron.height / 2 + gap });
   ops.push(...trackOps(row.line, color, nodeY, y + block.height, clears));

@@ -67,3 +67,15 @@ export function departureClocks(nodes) {
   return rows.map((row, i) => (['stop', 'indoor'].includes(row.type) && rows[i + 1]?.type === 'movement'
     ? { stay: clockMinute(row.end), next: clockMinute(rows[i + 1].start) } : null)).filter(Boolean);
 }
+
+/**
+ * The metres the list's rows show, added up (the summary must be this):
+ * walking / moving rows and, on my route since 2026-10-15 (#200), a stay's
+ * own moves — 「停 25 分・45 m」, 「在附近走動 …」 — also when the list
+ * shows that stay inside the start or end row.
+ */
+export function listedMetres(nodes) {
+  const foot = row => row.type === 'movement' && (row.mode === 'walking' || row.mode === 'moving');
+  return timelinePresentation(nodes).reduce((sum, row) => sum + (foot(row) || row.type === 'stop' ? row.countedDistanceM || 0 : 0)
+    + (row.terminalStay?.countedDistanceM || 0) + (row.departureStay?.countedDistanceM || 0), 0);
+}
