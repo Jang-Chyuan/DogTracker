@@ -200,8 +200,11 @@ function dayDrawing(points, subject) {
 }
 
 // A short zero-speed fix after a recording gap can jump within its accuracy
-// footprint before the detector confirms a stay. It supplies no drawn arrival
-// route. Keep the raw observations, timeline/gap and counted distance intact.
+// footprint before the detector confirms a stay (2026-10-15, #200: also
+// after a break at the same place — a fix before it whose speed was too
+// uncertain to say anything is quiet, and the break is bridged). It
+// supplies no drawn arrival route. Keep the raw observations, timeline/gap
+// and counted distance intact.
 function stationaryRecoveryEdges(edges, places) {
   const quiet = new Set(), config = configFor('phone');
   const raw = p => ({ latitude: p.raw_latitude, longitude: p.raw_longitude });
@@ -216,7 +219,7 @@ function stationaryRecoveryEdges(edges, places) {
   for (let i = 1; i < edges.length; i += 1) {
     const edge = edges[i], prior = edges[i - 1];
     if (edge.mode !== 'walking' || edge.gap || edge.bridged || edge.durationMs <= 0 || edge.durationMs > 10000
-      || !prior.gap || prior.durationMs <= config.gapMs || !arrivals.has(edge.end)
+      || !(prior.gap || prior.bridged) || prior.durationMs <= config.gapMs || !arrivals.has(edge.end)
       || edge.from.phoneMotionState == null || edge.to.phoneMotionState == null
       || edge.from.phoneConfirmedMovement || edge.to.phoneConfirmedMovement
       || !valid(edge.from) || !valid(edge.to)

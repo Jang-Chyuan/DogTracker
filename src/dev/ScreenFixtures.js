@@ -329,7 +329,7 @@ function legsPath(now, fromAgo, from, legs, every = 10 * SECOND) {
 // The phone's inputs for a route of myLocationTracker rows (a fix every 10 s):
 // recording, the newest fix `age` old; today = the whole path.
 function routePhone(path, now) {
-  const today = path.filter(row => row.fix).map(row => ({ ...row.fix, time: row.time, accuracy: 6 }));
+  const today = path.filter(row => row.fix).map(row => ({ ...row.fix, time: row.time, accuracy: row.fix.accuracy ?? 6 }));
   const route = today.slice(-60).map(point => ({ latitude: point.latitude, longitude: point.longitude,
     timestamp: point.time, accuracy: 6, speedKmh: 3, rawSpeedKmh: 3, motionState: 'moving' }));
   return { route, position: route[route.length - 1] ?? null, today };
@@ -1518,6 +1518,28 @@ const FIXTURES = {
       stand(rhythm[i % rhythm.length][1]);
     }
     walk(6 * 60, 200);
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now) };
+  },
+  // 2026-10-15 (#200 速度不確定性): at home since 08:00; the recording
+  // pauses 08:40–08:50 (battery saving) and comes back on Wi-Fi fixes 45 m
+  // off reading 0 km/h ± 2 m/s (no speed at all), then still: the same
+  // place, one stay — not two stays.
+  'history-uncertain-speed': now => {
+    const path = [];
+    const home = at(-40, -60);
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    let k = 0, time = now - 90 * MINUTE;
+    const stay = (place, minutes, recorder = still, accuracy = 6) => {
+      for (const until = time + minutes * MINUTE; time < until && time <= now - 5 * SECOND; time += 5 * SECOND, k += 1) {
+        const wobble = ((k % 3) - 1) * 0.3;
+        path.push({ time, fix: { ...offset(place, wobble, -wobble), accuracy, recorder } });
+      }
+    };
+    stay(home, 40);
+    time += 10 * MINUTE;
+    stay(offset(home, 45, 0), 1, { raw_speed_kmh: 0, speed_kmh: 0, speed_accuracy_mps: 2, motion_state: 'unknown' }, 14);
+    stay(offset(home, 45, 0), 40);
     return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
       history: historyPage(now) };
   },
