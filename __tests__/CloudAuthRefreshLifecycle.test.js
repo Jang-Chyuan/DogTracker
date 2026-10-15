@@ -2,10 +2,10 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, NativeModules } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudSync } from '../src/cloud/useCloudSync';
 
-jest.mock('../src/cloud/CloudSync', () => ({ createCloudSync: jest.fn() }));
+jest.mock('../src/cloud/IndependentCloudSync', () => ({ createIndependentCloudSync: jest.fn() }));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 let tree, client, listeners, engine, oldAppState, oldNative, intervals;
@@ -14,7 +14,7 @@ beforeEach(() => {
   oldAppState = AppState.currentState; oldNative = NativeModules.CloudBackgroundSync;
   AppState.currentState = 'active'; NativeModules.CloudBackgroundSync = { setOwner: jest.fn(async () => {}) };
   engine = { setSession: jest.fn(), setForeground: jest.fn(), dispose: jest.fn() };
-  createCloudSync.mockReturnValue(engine);
+  createIndependentCloudSync.mockReturnValue(engine);
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_, callback) => {
     listeners.push(callback); return { remove: () => { listeners = listeners.filter(fn => fn !== callback); } };
   });

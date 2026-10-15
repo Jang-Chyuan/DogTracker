@@ -7,9 +7,14 @@ import { ScrollView } from 'react-native';
 import ConfirmDialog from './ConfirmDialog';
 import { GroupCard, ListRow, getSettingsStyles } from './SettingsUI';
 
-/** Phone recording, one location row, battery recommendation and route deletion. */
+/**
+ * Phone recording, one location row, battery recommendation and route
+ * deletion; `retention` (「只存在這支手機，保留到 9/16（最近 30 天）」,
+ * useLocalRetention) under 刪除我的路線.
+ */
 export default function PhoneSettings({
   page,
+  retention = null,
   fromUnrecorded = false,
   onRecording,
   onPermissions,
@@ -97,6 +102,8 @@ export default function PhoneSettings({
           }
         />
         <ListRow testID="phone-delete-routes" title={t("c990")} titleTone="danger"
+          detail={retention}
+          label={[t("c990"), retention].filter(Boolean).join('，')}
           onPress={() => { setDeleteError(null); setDeleteOpen(true); }} />
       </GroupCard>
       <ConfirmDialog testID="delete-phone-routes" visible={deleteOpen}

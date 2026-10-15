@@ -6,10 +6,9 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { SERVER_BACKOFF_FIRST_MS, SERVER_BACKOFF_MAX_MS } from '../src/cloud/IndependentCloudSync';
 
-const { createCloudSync } = jest.requireActual('../src/cloud/CloudSync');
-jest.mock('../src/cloud/CloudSync', () => ({ createCloudSync: jest.fn() }));
+const { createIndependentCloudSync, SERVER_BACKOFF_FIRST_MS, SERVER_BACKOFF_MAX_MS } = jest.requireActual('../src/cloud/IndependentCloudSync');
+jest.mock('../src/cloud/IndependentCloudSync', () => ({ createIndependentCloudSync: jest.fn() }));
 
 const NOW = Date.parse('2026-10-15T02:00:00Z');
 const OWNER = 'invented-report-owner';
@@ -38,7 +37,7 @@ async function start(network) {
   await createDogDatabase(archive).initialize();
   database = createCloudDatabase(archive, { latestConnection: latest });
   states = [];
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => states.push(value) });
   engine.setSession({ user: { id: OWNER } }); engine.setForeground(true);
@@ -123,7 +122,7 @@ test('重試, a return to the app and a success all start the backoff over', asy
 });
 
 describe('useCloudSync reports a refusal to AuthProvider', () => {
-  const { createCloudSync: mocked } = jest.requireMock('../src/cloud/CloudSync');
+  const { createIndependentCloudSync: mocked } = jest.requireMock('../src/cloud/IndependentCloudSync');
   let onChange, reports, renderer;
   beforeEach(async () => {
     reports = jest.fn();

@@ -2,7 +2,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 
 const NOW = Date.parse('2026-10-10T12:00:00Z');
 const deferred = () => {
@@ -11,21 +11,21 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const flush = () => jest.advanceTimersByTimeAsync(1);
-let engine, db, info;
+let engine, db, latest, info;
 beforeEach(() => {
   jest.useFakeTimers(); jest.setSystemTime(NOW);
   info = jest.spyOn(console, 'info').mockImplementation(() => {});
 });
 afterEach(async () => {
-  await engine?.dispose(); db?.close(); engine = db = null;
+  await engine?.dispose(); db?.close(); latest?.close(); engine = db = null;
   info.mockRestore(); jest.useRealTimers();
 });
 async function fixture({ beforeRead, downloadLatest, events = [cloudEvent(1, NOW - 1000)], members, now } = {}) {
-  db = createMemoryConnection(); await createDogDatabase(db).initialize();
-  const database = createCloudDatabase(db);
+  db = createMemoryConnection(); latest = createMemoryConnection(); await createDogDatabase(db).initialize();
+  const database = createCloudDatabase(db, { latestConnection: latest });
   const network = latestArchiveRest({ events, beforeRead, ...(members ? { members } : {}) });
   const states = [];
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     ...(downloadLatest ? { downloadLatest } : {}),
     ...(now ? { now } : {}),
     downloadContext: async () => { throw new Error('optional context unavailable'); },
@@ -42,10 +42,10 @@ async function fixture({ beforeRead, downloadLatest, events = [cloudEvent(1, NOW
   };
   return { database, network, start, current: () => states.at(-1) };
 }
-function holdSql(predicate) {
+function holdSql(predicate, target = latest) {
   const gate = deferred(), entered = deferred();
-  const execute = db.executeAsync.getMockImplementation(); let first = true;
-  db.executeAsync.mockImplementation(async (query, params) => {
+  const execute = target.executeAsync.getMockImplementation(); let first = true;
+  target.executeAsync.mockImplementation(async (query, params) => {
     if (first && predicate(query)) { first = false; entered.resolve(); await gate.promise; }
     return execute(query, params);
   });
@@ -59,29 +59,13 @@ test('real SDK latest requests overlap real SQLite initialization but do not pub
     await f.start(); await held.entered.promise;
     expect(f.network.calls.some(call => call.phase === 'masters')).toBe(true);
     expect(f.network.calls.some(call => call.phase === 'packet')).toBe(true);
-    expect(f.current()).toMatchObject({ snapshotPending: true, mapSuccessRevision: 0, archiveCutoff: null });
-    expect(db.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_snapshot_state'").all()).toEqual([]);
+    expect(f.current()).toMatchObject({ snapshotPending: false, mapSuccessRevision: 0, archiveCutoff: null });
+    expect(latest.sqlite.prepare("SELECT name FROM sqlite_master WHERE name='cloud_snapshot_state'").all()).toEqual([]);
     expect(acceptedEvents()).toEqual([]);
     held.gate.resolve(); await flush();
     expect((await f.database.readLatestSnapshot('invented-owner')).packets[0].event_id).toBe(cloudEvent(1, NOW - 1000).event_id);
     expect(f.current().mapSuccessRevision).toBe(1);
     expect(acceptedEvents()).toHaveLength(1);
-  } finally { held.gate.resolve(); await flush(); }
-});
-
-test('legacy archive sync still waits for real SQLite initialization before requesting masters', async () => {
-  const f = await fixture(); delete f.database.publishLatestSnapshot;
-  // Capability is fixed when the scheduler is created, as in an older adapter.
-  await engine.dispose();
-  engine = createCloudSync({ client: f.network.client, database: f.database });
-  const held = holdSql(query => query === 'PRAGMA table_info(supabase_dog_status)');
-  try {
-    await f.start(); await held.entered.promise;
-    expect(f.network.calls).toEqual([]);
-    held.gate.resolve(); await flush();
-    expect(f.network.calls.some(call => call.phase === 'masters')).toBe(true);
-    expect(acceptedEvents()).toEqual([]);
-    expect(engine.mapPublication().mapSuccessRevision).toBe(1);
   } finally { held.gate.resolve(); await flush(); }
 });
 
@@ -183,7 +167,7 @@ test('phase diagnostics include both request groups while overlapping native dur
     expect(acceptedEvents()).toEqual([['[CloudSync] latest-published', {
       attempt: 1, elapsedMs: 35024, revision: 1,
       slotWaitMs: 0, initializeMs: 35000, archiveProofMs: 0, latestCacheReadMs: 0,
-      mastersMs: 16, latestHTTPMs: 20, snapshotCommitMs: 0,
+      mastersMs: 16, latestHTTPMs: 20, snapshotCommitMs: 0, sessionMs: 0,
     }]]);
   } finally {
     held.gate.resolve(); masters1.resolve(); masters2.resolve(); latest1.resolve(); latest2.resolve(); await flush();
@@ -213,7 +197,7 @@ test.each(['archive proof', 'snapshot metadata'])('real %s retains its own readi
   const f = await fixture(); await f.database.initialize();
   const held = holdSql(query => stage === 'archive proof'
     ? query.includes('SELECT cutoff,revision FROM cloud_archive_publication')
-    : query.includes('SELECT revision FROM cloud_snapshot_state'));
+    : query.includes('SELECT revision FROM cloud_snapshot_state'), stage === 'archive proof' ? db : latest);
   try {
     await f.start(); await held.entered.promise;
     expect(f.network.calls.some(call => call.phase === 'packet')).toBe(true);
@@ -231,8 +215,8 @@ test('a real initialization failure aborts a held network sibling and retries st
   const f = await fixture({ beforeRead: async call => {
     if (call.phase === 'packet') { signal = call.signal; await transport.promise; }
   } });
-  const execute = db.executeAsync.getMockImplementation(), held = deferred(); let first = true;
-  db.executeAsync.mockImplementation(async (query, params) => {
+  const execute = latest.executeAsync.getMockImplementation(), held = deferred(); let first = true;
+  latest.executeAsync.mockImplementation(async (query, params) => {
     if (first && query.startsWith('CREATE TABLE IF NOT EXISTS cloud_latest_snapshot')) {
       first = false; await held.promise; throw new Error('synthetic storage failure');
     }

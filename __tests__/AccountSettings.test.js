@@ -9,7 +9,7 @@ import { accountPage, signOutDialog, switchDialog } from '../src/settings/Accoun
 import { receiverUploadSuccess } from '../src/cloudUpload/UploadSuccess';
 import AccountSettings from '../src/settings/AccountSettings';
 import { cloudError, isAuthFailure, isNetworkFailure } from '../src/cloud/CloudErrors';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { AuthProvider, refreshRefused, useAuth } from '../src/auth/AuthProvider';
 import { formatClock } from '../src/map/MapFormat';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
@@ -280,8 +280,8 @@ test('a download refused for the sign-in marks authFailed; 重試 runs a pass no
   const query = { select: () => query, eq: () => query, order: () => query, range: () => query,
     abortSignal: async () => result };
   const client = { from: jest.fn(() => query) };
-  const database = { initialize: async () => {} };
-  const sync = createCloudSync({ client, database, onChange: value => changes.push(value) });
+  const database = { latestStorageIsolated: true, initializeLatest: async () => {}, readLatestSnapshot: async () => null };
+  const sync = createIndependentCloudSync({ client, database, onChange: value => changes.push(value) });
   try {
     sync.setSession({ user: { id: 'alice' } });
     sync.setForeground(true);

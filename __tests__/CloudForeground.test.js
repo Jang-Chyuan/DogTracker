@@ -1,14 +1,14 @@
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { AppState, NativeModules, Text } from 'react-native';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudSync } from '../src/cloud/useCloudSync';
 
-jest.mock('../src/cloud/CloudSync', () => ({ createCloudSync: jest.fn() }));
+jest.mock('../src/cloud/IndependentCloudSync', () => ({ createIndependentCloudSync: jest.fn() }));
 
 test('the scheduler and the token refresh follow the App being on screen', async () => {
   const engine = { setSession: jest.fn(), setForeground: jest.fn(), dispose: jest.fn() };
-  createCloudSync.mockReturnValue(engine);
+  createIndependentCloudSync.mockReturnValue(engine);
   const auth = {
     startAutoRefresh: jest.fn(),
     stopAutoRefresh: jest.fn(),
@@ -44,7 +44,7 @@ test('the scheduler and the token refresh follow the App being on screen', async
 
 test('login schedules durable work; logout cancels it; unmount does not cancel it', async () => {
   const engine = { setSession: jest.fn(), setForeground: jest.fn(), dispose: jest.fn() };
-  createCloudSync.mockReturnValue(engine);
+  createIndependentCloudSync.mockReturnValue(engine);
   const native = { setOwner: jest.fn(async () => {}) };
   NativeModules.CloudBackgroundSync = native;
   let notify;
@@ -77,7 +77,7 @@ describe('a sign-in still stored while its refresh waits for the network', () =>
     user: { id: 'account-a', email: 'a@example.test' } });
   async function start({ value = stored, session = null, error = null } = {}) {
     const engine = { setSession: jest.fn(), setForeground: jest.fn(), dispose: jest.fn() };
-    createCloudSync.mockReturnValue(engine);
+    createIndependentCloudSync.mockReturnValue(engine);
     let notify;
     const auth = {
       storageKey: 'sb-test-auth-token',
@@ -114,7 +114,7 @@ describe('a sign-in still stored while its refresh waits for the network', () =>
 
   test('the stored account is followed at once, before the SDK finishes its offline refresh retries', async () => {
     const engine = { setSession: jest.fn(), setForeground: jest.fn(), dispose: jest.fn() };
-    createCloudSync.mockReturnValue(engine);
+    createIndependentCloudSync.mockReturnValue(engine);
     let notify;
     const auth = {
       storageKey: 'sb-test-auth-token',

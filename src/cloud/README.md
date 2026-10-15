@@ -90,7 +90,7 @@ WorkManager 不保存 JWT，執行時從既有安全儲存恢復並更新 Sessio
 
 `slave_id` 全隊唯一，所以首頁每隻狗只有一個 marker，取 BLE 與各台 Master 的雲端資料中**最新的一筆**，並標示來源（`BLE` 或 `經 Master N・雲端`）。合併規則在 `src/map/DogMerge.js`，不依賴地圖 SDK。
 
-- 地圖只讀本機 `supabase_dog_status`（`latestBySlave`，每 10 秒一次），不直接查 Supabase；離線仍可顯示已下載的位置。
+- 地圖每 10 秒讀取本機獨立 latest 儲存的 snapshot（`readLatestSnapshot`），不直接查 Supabase；離線仍可顯示已下載的位置。完整歷史另存於 `supabase_dog_status`。
 - 雲端名單只列最近 14 天（`CloudLatest.ROSTER_WINDOW_MS`，以伺服器的 `received_at` 判斷）有資料的狗：下載最新位置時，找狗的那一步多一個 `received_at >= cutoff − 14 天` 條件；名單上的狗照樣拿最後一筆有效定位，不管多久以前（沒有 GPS 好幾天的項圈仍留在最後位置）。以前名單是這些 Master 下存過的每一個 `slave_id`，只會變多，每隻都要每 30 秒 2–5 個請求外加停住脈絡。更久沒消息的狗留在本機 archive，歷史的「＋ 加入」在牠有資料的日子仍列出來（`HistoryDatabase.historyDogs`、`useOlderHistoryDogs`）。
 - `mergeDogMarkers` 不再照編號只留前 20 隻（`MAX_DOGS`）：超過 20 隻時用 `keepDogs` 排序，這支手機收到的狗、24 小時內有消息的狗一律保留，只有剩下的名額給其他狗（最近有消息的先）。輸出仍依編號排序。
 - 每隻狗分別比較有效定位時間，雲端優先使用修正後的 `track_at`，否則使用 `received_at`；有效的 cloud-only 狗也加入集合，不受其他狗的 BLE 新鮮度限制。來源與新鮮度逐隻判斷。
@@ -109,7 +109,7 @@ BLE 是這支手機的時鐘；Wi-Fi 上傳的 `received_at` 是伺服器的時�
 
 ## 最新位置先發布，完整歷史另外發布（`IndependentCloudSync.js`）
 
-正式版只走 `IndependentCloudSync.js`（`createLocalDatabases.latestStorageIsolated` 一律是 `true`，最新位置有自己的 SQLite 檔和鎖）。`CloudSync.js` 裡 `createCloudSync` 後面那段「最新位置和完整歷史共用一個連線」的舊引擎已停用：正式版不會走到，只剩測試（用單一連線建 `createCloudDatabase` 的 16 個測試檔、141 個測試，2026-10-15 量）。不要再修它；修同步行為時只改 `IndependentCloudSync.js`，並用獨立 latest 連線的測試（例如 `IndependentCloudSync.test.js`、`CloudManualAcrossResume.test.js`）驗。等那些測試改成獨立連線後再整段刪掉。
+前景同步直接使用 `IndependentCloudSync.js` 的 `createIndependentCloudSync`（`createLocalDatabases.latestStorageIsolated` 一律是 `true`，最新位置有自己的 SQLite 檔和鎖）。舊的共用連線合併引擎已移除；同步測試使用獨立 latest 連線，涵蓋最新位置、脈絡、完整歷史與手動下載各自的發布行為。
 
 每輪自動同步分成三個獨立階段，各自有版本：
 
@@ -143,7 +143,7 @@ Logger 只重建這些數值欄位：attempt／revision 是正的安全整數，
 ## 驗證
 
 ```powershell
-npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.test.js __tests__/CloudSync.test.js __tests__/CloudForeground.test.js __tests__/CloudReconcile.test.js
+npm.cmd test -- --runInBand __tests__/Cloud.test.js __tests__/CloudDataScreen.test.js __tests__/IndependentCloudLifecycle.test.js __tests__/CloudForeground.test.js __tests__/CloudReconcile.test.js
 ```
 
 實機驗收：已授權帳號讀取對應 Master 全部 Slave；無授權帳號下載為空；重複同步筆數不增加；斷網後重新讀取本機資料；登出與換帳號不顯示前一帳號資料；確認頁面沒有手動下載、日期或 Master 篩選欄位。

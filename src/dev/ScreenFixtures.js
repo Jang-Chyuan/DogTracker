@@ -1489,6 +1489,38 @@ const FIXTURES = {
       { stay: 60 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
+  // 2026-10-15 (#200): at home from 08:30, then from 09:00 a dog walk that
+  // keeps stopping to sniff (walk 25–55 s, stand 1–2.5 min); the range starts
+  // where the walk left home (09:00), not minutes into it.
+  'history-stop-and-go': now => {
+    const path = [];
+    const home = at(-40, -60);
+    let time = now - 60 * MINUTE, here = home, k = 0;
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.4, motion_state: 'moving' };
+    const stand = seconds => {
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND, k += 1) {
+        const wobble = ((k % 3) - 1) * 0.3;
+        path.push({ time, fix: { ...offset(here, wobble, -wobble), recorder: still } });
+      }
+    };
+    const walk = (seconds, bearing) => {
+      const turn = (bearing * Math.PI) / 180;
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND) {
+        here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
+        path.push({ time, fix: { ...here, recorder: walking } });
+      }
+    };
+    stand(30 * 60);
+    const rhythm = [[25, 135], [30, 60], [25, 100], [45, 95], [55, 145]];
+    for (let i = 0; time < now - 6 * MINUTE; i += 1) {
+      walk(rhythm[i % rhythm.length][0], 20 + i * 25);
+      stand(rhythm[i % rhythm.length][1]);
+    }
+    walk(6 * 60, 200);
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now) };
+  },
   // A candidate after staying home: show its tentative start, without status copy.
   'history-confirming': now => ({ ...FIXTURES['all-good'](now),
     phone: routePhone(legsPath(now, 20 * MINUTE, at(-40, -60),
@@ -1961,7 +1993,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       // The same made-up recorder columns as the history's rows (phoneRouteSince
       // reads them too): one route, one distance.
       const { count, metres, status } = todayRouteDistance((phone?.today || [])
-        .map(row => ({ ...FIXTURE_RECORDER, ...row })), { now,
+        .map(({ recorder, ...row }) => ({ ...FIXTURE_RECORDER, ...row, ...(recorder || {}) })), { now,
         recording: phone?.recording !== false });
       return { count, metres, status };
     })(),
@@ -2025,7 +2057,9 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     longitude: point.longitude, accuracy: point.accuracy ?? 6, location_at: point.time - 400,
     accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
     raw_latitude: point.latitude, raw_longitude: point.longitude, ...FIXTURE_RECORDER,
-    motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
+    motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400,
+    // A fixture may give a fix its own recorder readings (history-stop-and-go).
+    ...(point.recorder || {}) }));
   const readDay = async ({ subject, slaveId, start, end, owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
@@ -2138,8 +2172,8 @@ const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMar
 
 const ignoreWrite = () => Promise.resolve();
 
-// What a fixture's CloudSync is before the fixture's own fields: idle, as
-// the engine starts (CloudSync's initial state), with nothing of the live
+// What a fixture's cloud sync is before the fixture's own fields: idle, as
+// the engine starts (IndependentCloudSync's initial state), with nothing of the live
 // one. Spreading the live state let its latest-first publication, revisions,
 // mode, offline and auth flags reach the fixture's map, cards, S3 and
 // 本機／雲端資料 (audit L9).
@@ -2212,7 +2246,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    // On a signed-in phone nothing of the live CloudSync may leak into a
+    // On a signed-in phone nothing of the live cloud sync may leak into a
     // fixture: its latest-first state kept the fixture's dogs off the map,
     // its changing revision restarted the card's readings so 活動量 stayed
     // 「—」, and its offline/mode/failure fields changed S3 and the alerts.

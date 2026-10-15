@@ -12,7 +12,8 @@ import {
 } from '../map/MapFormat';
 import { LoadState, PillButton, getDataStyles } from '../settings/DataTable';
 import { getSettingsStyles } from '../settings/SettingsUI';
-import { LOCATION_RECORD_LIMIT } from './LocationTrackerDatabase';
+import { ROUTE_RETENTION_DAYS, retentionStartDay } from '../database/LocalRetention';
+import { shortDate } from '../history/screen/HistoryCalendar';
 import { useLocationTracker } from './useLocationTracker';
 
 const motionLabel = state =>
@@ -50,9 +51,8 @@ export default function LocationTrackerScreen({ foreground, readPage }) {
       contentContainerStyle={settingsStyles.content}
     >
       <Text style={dataStyles.hint}>
-        {t("c700", { value: formatCount(tracker.total), value2: formatCount(
-          LOCATION_RECORD_LIMIT,
-        ), page: tracker.page })}
+        {t("c1400", { value: formatCount(tracker.total),
+          date: shortDate(retentionStartDay(Date.now(), ROUTE_RETENTION_DAYS)), page: tracker.page })}
       </Text>
       <View style={dataStyles.buttons}>
         <PillButton title={t("c703")} onPress={tracker.refresh} />

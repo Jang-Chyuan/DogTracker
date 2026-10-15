@@ -4,7 +4,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
 const NOW = Date.parse('2026-10-10T12:00:00Z');
@@ -24,7 +24,7 @@ beforeEach(async () => {
   database = createCloudDatabase(archive, { latestConnection: latest }); events = [cloudEvent(1, NOW - 1000)];
   members = [{ gateway_id: 'master_7', slave_id: 6 }]; info = jest.spyOn(console, 'info').mockImplementation(() => {});
   network = latestArchiveRest({ events, members });
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
 });
@@ -57,7 +57,7 @@ const applied = () => info.mock.calls.filter(([tag]) => tag === '[CloudSync] lat
 
 test('30s unchanged real context pass still downloads and consumer ACKs while avoiding repeated latest dog row writes', async () => {
   await engine.dispose();
-  engine = createCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
+  engine = createIndependentCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
   await start();
   const before = await database.readLatestSnapshot('invented-owner');
   expect(before.context.length).toBeGreaterThan(0); expect(applied()).toHaveLength(1);
@@ -173,7 +173,7 @@ test('a routine 30s latest attempt keeps archive priority open for this foregrou
   await engine.dispose();
   let gate = null;
   const gated = { ...database, installLatestReadinessGate: value => { gate = value; return () => {}; } };
-  engine = createCloudSync({ client: network.client, database: gated,
+  engine = createIndependentCloudSync({ client: network.client, database: gated,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { current = value; update?.(value); } });
   await start();
@@ -199,7 +199,7 @@ const contextEvents = name => info.mock.calls.filter(([tag]) => tag === `[CloudS
 
 test('real context success logs one fixed context-published per accepted pass', async () => {
   await engine.dispose();
-  engine = createCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
+  engine = createIndependentCloudSync({ client: network.client, database, onChange: value => { current = value; update?.(value); } });
   await start();
   expect(contextEvents('context-published')).toEqual([['[CloudSync] context-published', { attempt: 1, elapsedMs: expect.any(Number), dogs: 1 }]]);
   expect(contextEvents('context-failed')).toEqual([]);
@@ -214,7 +214,7 @@ test('production context timeout logs exactly one context-failed without disturb
   const stalled = latestArchiveRest({ events, members, beforeRead: async call => {
     if (['context', 'seeds'].includes(call.phase) && ++contextReads === 5) await new Promise(() => {});
   } });
-  engine = createCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
+  engine = createIndependentCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
   await start();
   expect(current).toMatchObject({ contextPending: true, mapSuccessRevision: 1 });
   expect(applied()).toHaveLength(1);
@@ -234,7 +234,7 @@ test('a context canceled by leaving the foreground is not reported as context-fa
   const stalled = latestArchiveRest({ events, members, beforeRead: async call => {
     if (call.phase === 'context') await new Promise(() => {});
   } });
-  engine = createCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
+  engine = createIndependentCloudSync({ client: stalled.client, database, onChange: value => { current = value; update?.(value); } });
   await start();
   expect(current.contextPending).toBe(true);
   await act(async () => { engine.setForeground(false); await jest.advanceTimersByTimeAsync(10000); });
