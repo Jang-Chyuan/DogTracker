@@ -15,6 +15,7 @@ import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useHistoryDayRows, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
 import { HISTORY_KEPT_DAYS } from '../src/mapHistory/HistoryDayCache';
+import { exportView } from '../src/mapHistory/useHistoryExport';
 import * as models from '../src/history/screen/HistoryMultiModel';
 import * as exact from '../src/mapHistory/HistoryExactSnapshot';
 import { historyCoverage } from '../src/cloud/HistoryCoverage';
@@ -124,6 +125,7 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
       expect(today).not.toBeNull();
       const a = await s.step('previousDay');
       const modelA = s.screen.model;
+      const dayA = s.screen.dayModel;
       expect(modelA).not.toBeNull();
       // The first visit: a skeleton, then the day, built once.
       expect(a.shown.some(f => !f.model)).toBe(true);
@@ -138,6 +140,15 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
       expect(back.shown.every(f => f.model && !f.loading && !f.download)).toBe(true);
       expect(s.screen.model).toBe(modelA);
       expect(s.counts.builds).toBe(0);
+      // The day kept is the very day model, its whole day (#196: the export
+      // when no range was dragged) still there, 00:00 to the day's end.
+      expect(s.screen.dayModel).toBe(dayA);
+      expect(typeof s.screen.dayModel.wholeDay).toBe('function');
+      const whole = exportView({ ...s.screen, manual: false });
+      expect(whole.day).not.toBe(dayA);
+      expect(whole.range.start).toBe(dayBounds(a.day).dayStart);
+      expect(whole.range.end).toBe(dayBounds(a.day).dayEnd - 1);
+      expect(s.screen.dayModel.wholeDay()).toBe(whole.day);
       expect(s.cloud.download).not.toHaveBeenCalled();
       // Back to today: shown at once too (its rows are read again and, the
       // clock having moved on, it is built once for now).
