@@ -213,8 +213,9 @@ export const groupsAtZoom = metresPerDp =>
  * drawn under the lowest of their faces; the others in the group draw no tag.
  * The group tag itself is checked again (it is wider than one name and sits
  * lower), so it never covers a dog left outside it. The selected dog keeps
- * its own tag and is left out of groups (DESIGN.md §9.5); a group of one is
- * just that dog's own tag.
+ * its own tag and is left out of groups (DESIGN.md §9.5); a group tag it
+ * would cover goes under the next lowest dog of the group clear of it, or is
+ * not drawn. A group of one is just that dog's own tag.
  *
  * @param markers dogMarkers() output
  * @param points screen positions by dog, in dp: { [slaveId]: { x, y } }
@@ -271,10 +272,26 @@ export function nameTags(markers, points = {}, fontScale = 1, { group = true } =
       }
     }
   }
+  // The open dog's own face and tag: drawn over everything, never part of a
+  // group. A group tag they would cover moves under another dog of its group
+  // (the next lowest whose tag is clear of them); with no such dog it is not
+  // drawn (2026-10-15: 「2 隻」 half under the open dog's 「豆豆」, neither
+  // readable).
+  const open = markers.filter(marker => marker.selected && Number.isFinite(points[marker.slaveId]?.x)
+    && Number.isFinite(points[marker.slaveId]?.y)).map(marker => {
+    const point = points[marker.slaveId];
+    return { faces: [{ x: point.x, y: point.y, r: marker.size / 2 }],
+      tags: [tagBox(point, marker.size, nameTagSize(marker.tag, fontScale))] };
+  });
   for (const { members } of sets) {
     if (members.length < 2) continue;
-    const lead = lowest(members);
+    const size = groupTagSize(groupText(members), members.some(item => item.marker.problem), fontScale);
+    const clear = item => !open.some(other => collide({ tags: [tagBox(item.point, item.marker.size, size)], faces: [] }, other));
+    const first = lowest(members);
+    const lead = clear(first) ? first : [...members].sort((left, right) => right.point.y - left.point.y
+      || left.marker.slaveId - right.marker.slaveId).find(clear);
     for (const item of members) result[item.marker.slaveId] = null;
+    if (!lead) continue;
     result[lead.marker.slaveId] = {
       text: groupText(members),
       group: members.length,

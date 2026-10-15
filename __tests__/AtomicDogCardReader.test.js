@@ -13,13 +13,14 @@ test('card cloud readings freeze through pages/failure, local rows stay live, th
   rows = cloud(20);
   // While the cloud side is held this phone's rows are still read (owner-less).
   expect(await reader.read(7, 0)).toEqual({ local: local.local, cloud: before.cloud,
-    battery: [...local.battery, ...before.battery] });
+    battery: [...local.battery, ...before.battery], since: 0 });
   expect(database.dogCardRows).toHaveBeenLastCalledWith(null, 7, 0);
   // A dog first opened meanwhile has its local rows, no cloud rows yet.
-  expect(await reader.read(8, 0)).toEqual({ local: local.local, cloud: [], battery: local.battery });
+  expect(await reader.read(8, 0)).toEqual({ local: local.local, cloud: [], battery: local.battery, since: 0 });
   expect(database.dogCardRows.mock.calls.filter(([owner]) => owner === 'a')).toHaveLength(1);
   reader.update(false, 0); // failed
-  expect(await reader.read(7, 0)).toEqual({ local: local.local, cloud: before.cloud, battery: [...local.battery, ...before.battery] });
+  expect(await reader.read(7, 0)).toEqual({ local: local.local, cloud: before.cloud, battery: [...local.battery, ...before.battery],
+    since: 0 });
   expect(database.dogCardRows).toHaveBeenLastCalledWith(null, 7, 0);
   reader.update(true, 1); // success published while download slot still owns busy
   expect((await reader.read(7, 0)).cloud).toEqual(before.cloud);
@@ -34,12 +35,12 @@ test('late reads spanning a download cannot replace cloud readings; a new owner 
   const pending = reader.read(7, 0);
   reader.update(true, 0);
   finish(cloud(10));
-  expect(await pending).toEqual({ local: [], cloud: [], battery: [] });
+  expect(await pending).toEqual({ local: [], cloud: [], battery: [], since: 0 });
   const replacement = createAtomicDogCardReader(database, 'b');
   replacement.update(true, 0);
   const fresh = replacement.read(7, 0);
   finish(cloud(10));
-  expect(await fresh).toEqual({ local: [], cloud: [], battery: [] });
+  expect(await fresh).toEqual({ local: [], cloud: [], battery: [], since: 0 });
   expect(database.dogCardRows).toHaveBeenLastCalledWith(null, 7, 0);
 });
 
@@ -61,4 +62,15 @@ test('card fence rejects failed pages without any rendered busy transition and r
   publication = { ...publication, scope: {} }; // same owner/counters, different scheduler instance
   finish(rows);
   expect((await late).cloud).toEqual(before.cloud);
+});
+
+// 2026-10-15: where the activity rows begin goes through to the card (the
+// 活動量 row's lookback edge), whichever side of the rows is held.
+test('the read says where its activity rows begin', async () => {
+  const database = { dogCardRows: jest.fn(async () => ({ local: [], cloud: [], battery: [], since: 123 })) };
+  const reader = createAtomicDogCardReader(database, 'a');
+  expect((await reader.read(7, 123)).since).toBe(123);
+  reader.update(true, 0);
+  database.dogCardRows.mockImplementationOnce(async () => ({ local: [], cloud: [], battery: [] }));
+  expect((await reader.read(7, 456)).since).toBe(456);
 });

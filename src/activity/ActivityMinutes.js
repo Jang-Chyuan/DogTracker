@@ -151,12 +151,18 @@ function runStart(values, end, length, extendNeeds, test, earliest, maxMissing =
  * the caller judges at).
  * @param minutes activityMinutes()
  * @param options.end start of the minute to judge at
+ * @param options.from where the readings were read from (the card's
+ *   lookback edge), if known
  * @returns {{ state: 'rest'|'vigorous'|'normal'|null, since: number|null,
- *   durationMinutes: number|null }}
+ *   durationMinutes: number|null, over?: true }}
  *   `since` is when a rest or vigorous run started, `durationMinutes` how long
  *   it has lasted at the end of `end`. null state: not enough data (「—」).
+ *   `over`: a rest that runs back to the first reading, which is within one
+ *   rest window (restMinutes) of `from`: nothing read ends it, so it began
+ *   before the readings do and lasts longer than they reach back (the card's
+ *   「休息中・超過 6 小時」, not a count that slides with the lookback).
  */
-export function activityState(minutes = [], { end, config = ACTIVITY } = {}) {
+export function activityState(minutes = [], { end, from = null, config = ACTIVITY } = {}) {
   const none = { state: null, since: null, durationMinutes: null };
   if (!Number.isFinite(end) || !minutes.length) return none;
   const values = new Map(minutes.map(item => [item.minute, item.value]));
@@ -175,8 +181,11 @@ export function activityState(minutes = [], { end, config = ACTIVITY } = {}) {
   }
   if (windowHolds(values, end, config.restMinutes, restNeeds, rest)) {
     // Now needs 8 of 10 minutes; going back, only an active minute ends it.
-    return run(config.restMinutes, 0, rest, ACTIVITY_STATE.REST,
+    const result = run(config.restMinutes, 0, rest, ACTIVITY_STATE.REST,
       config.restMaxMissingMinutes ?? REST_MAX_MISSING_MINUTES);
+    const edge = Number.isFinite(from) && result.since === earliest
+      && earliest - minuteOf(from) < config.restMinutes * MINUTE;
+    return edge ? { ...result, over: true } : result;
   }
   if (windowHolds(values, end, config.restMinutes, restNeeds, () => true)) {
     return { state: ACTIVITY_STATE.NORMAL, since: null, durationMinutes: null };
@@ -196,15 +205,21 @@ export function durationText(minutes) {
 
 /**
  * The card's 活動量 row: { word, detail, speechDetail, tone } —
- * 「休息中」+「已 18 分鐘」 (tone 'rest'), 「劇烈活動」+「已 3 分鐘」
+ * 「休息中」+「已 18 分鐘」 (tone 'rest'; a rest `over` the lookback
+ * 「超過 6 小時」, `lookbackMinutes`), 「劇烈活動」+「已 3 分鐘」
  * ('vigorous'), 「一般」 ('normal'), 「—」 (null) when there is not enough data
  * or the dog has no new position. `speechDetail` is what TalkBack says for the
  * minutes (「活動量低已 18 分鐘」): they are the collar's motion, not the
  * 室內 minutes of the 位置 row.
  */
-export function activityWords(result) {
+export function activityWords(result, { lookbackMinutes = null } = {}) {
   switch (result?.state) {
     case ACTIVITY_STATE.REST: {
+      if (result.over && Number.isFinite(lookbackMinutes)) {
+        const duration = durationText(lookbackMinutes);
+        return { word: t('c069'), detail: t('c1282', { duration }), speechDetail: t('c1370', { duration }),
+          tone: 'rest' };
+      }
       const duration = durationText(result.durationMinutes);
       return { word: t('c069'), detail: t('c070', { duration }), speechDetail: t('c1280', { duration }), tone: 'rest' };
     }

@@ -32,7 +32,9 @@ export function createAtomicDogCardReader(database, owner, getMapPublication = n
         ? rows.battery?.filter(row => row.source === 'cloud') ?? []
         : previous?.battery?.filter(row => row.source === 'cloud') ?? [];
       const value = { local: rows.local, cloud,
-        battery: [...(rows.battery?.filter(row => row.source !== 'cloud') ?? []), ...cloudBattery] };
+        battery: [...(rows.battery?.filter(row => row.source !== 'cloud') ?? []), ...cloudBattery],
+        // Where the activity rows begin (the 活動量 row's lookback edge).
+        since: rows.since ?? since };
       accepted.set(slaveId, value);
       return value;
     },
