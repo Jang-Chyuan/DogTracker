@@ -38,6 +38,11 @@ export const HISTORY_CONFIG = Object.freeze({
   phone: Object.freeze({ ...common, stayRatio: null, maxSpeed: 50, vehicleSpeed: 5,
     enterMs: 30000, exitMs: 30000, departureMaxSpeed: 3, backtrackSpeed: 4,
     stillMps: 0.3, stillSpeedAccuracyMps: 1.5, speedBudget: true,
+    // 2026-10-15 (#200, 出發偵測, HistoryDeparture): the minute-three move
+    // must be over 40 m beyond the accuracy of both fixes (a lift at home);
+    // the departure goes back to where the walk left the last stay, at most
+    // this far before the candidate (a stop-and-go dog walk).
+    departureBeyondAccuracy: true, departureWalkBackMs: 10 * 60000,
     // samePlaceGap between two still fixes (IndoorHold's anchorCheckM).
     stillPlaceM: 100,
     // 2026-10-13 (user): two stays at one place with a short real walk

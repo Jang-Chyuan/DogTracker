@@ -172,6 +172,17 @@ describe('fixtures', () => {
     expect(kinds).toEqual(['departure', 'stop', 'walking', 'stop', 'end']);
     expect(model.nodes.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, null]);
   });
+  // 2026-10-15 (#200): the walk stops to sniff again and again; the range
+  // starts where it left home (09:00), and 「今天 x km」 is the list's total.
+  test('history-stop-and-go: the range starts where the walk left home', async () => {
+    const { fixture, model, kinds } = await fixtureList('history-stop-and-go');
+    const left = fixture.now - 30 * MINUTE;
+    expect(model.departure.status).toBe('confirmed');
+    expect(model.range.start).toBeGreaterThanOrEqual(left - MINUTE);
+    expect(model.range.start).toBeLessThanOrEqual(left);
+    expect(kinds[0]).toBe('departure');
+    expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
+  });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');
     expect(kinds).toEqual(['departure', 'walking', 'switch', 'driving', 'switch', 'walking', 'stop', 'end']);
