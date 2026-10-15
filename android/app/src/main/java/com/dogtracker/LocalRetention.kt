@@ -47,7 +47,9 @@ object LocalRetention {
   const val NEXT_DOG_SQL = "SELECT MIN(slave_id) FROM dog_status WHERE slave_id > ?"
   /** The dog's (OFFSET+1)th newest row: it and every older row are beyond the newest OFFSET. */
   const val DOG_NTH_NEWEST_SQL = "SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?"
-  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT ?)"
+  // `+id`: the (slave_id, received_at) index finds the old rows; on the id
+  // index an hourly sweep with nothing to take walked every row of the dog.
+  const val DOG_DELETE_SQL = "DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND +id <= ? AND received_at < ? LIMIT ?)"
   const val DOG_COUNT_SQL = "SELECT COUNT(*) FROM dog_status"
   const val DOG_NEWEST_TIME_SQL = "SELECT MAX(received_at) FROM dog_status WHERE slave_id = ?"
   /** The dog's oldest row the cap may take (below its floor and before its newest day). */
@@ -64,6 +66,8 @@ object LocalRetention {
   // The cap counts rows as written (id, #194): a row dated ahead by a clock
   // later set back cannot outlive the newer ones.
   const val ROUTE_DELETE_SQL = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? AND recorded_at < ? LIMIT ?)"
+  // The cap by rowid alone: with a time bound SQLite walks the whole time index.
+  const val ROUTE_CAP_DELETE_SQL = "DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? LIMIT ?)"
 
   /** What [sweep] needs from SQLite, so its decisions run in JVM unit tests. */
   interface Sql {
@@ -92,7 +96,7 @@ object LocalRetention {
     var dogs = 0L
     if (sql.first(TABLE_SQL, "myLocationTracker") != null) {
       sql.first(ROUTE_NEWEST_ID_SQL)?.let { newest ->
-        if (newest > ROUTE_CAP) route += drain(sql, ROUTE_DELETE_SQL, newest - ROUTE_CAP, Long.MAX_VALUE)
+        if (newest > ROUTE_CAP) route += drain(sql, ROUTE_CAP_DELETE_SQL, newest - ROUTE_CAP)
         route += drain(sql, ROUTE_DELETE_SQL, Long.MAX_VALUE, cutoff(now, ROUTE_DAYS, zone))
       }
     }

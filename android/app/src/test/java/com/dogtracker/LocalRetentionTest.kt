@@ -45,6 +45,7 @@ class LocalRetentionTest {
       }
       val (table, match) = when (sql) {
         LocalRetention.ROUTE_DELETE_SQL -> route!! to { r: Row -> r.id <= args[0] as Long && r.time < args[1] as Long }
+        LocalRetention.ROUTE_CAP_DELETE_SQL -> route!! to { r: Row -> r.id <= args[0] as Long }
         LocalRetention.DOG_DELETE_SQL -> dogs!! to { r: Row -> r.slave == args[0] as Long && r.id <= args[1] as Long && r.time < args[2] as Long }
         else -> error("unexpected $sql")
       }

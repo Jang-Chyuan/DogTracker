@@ -30,7 +30,9 @@ export const RETENTION_SQL = {
   table: "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
   nextDog: 'SELECT MIN(slave_id) FROM dog_status WHERE slave_id > ?',
   dogNthNewest: 'SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?',
-  dogDelete: 'DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT ?)',
+  // `+id`: the (slave_id, received_at) index finds the old rows; on the id
+  // index an hourly sweep with nothing to take walked every row of the dog.
+  dogDelete: 'DELETE FROM dog_status WHERE id IN (SELECT id FROM dog_status WHERE slave_id = ? AND +id <= ? AND received_at < ? LIMIT ?)',
   dogCount: 'SELECT COUNT(*) FROM dog_status',
   dogNewestTime: 'SELECT MAX(received_at) FROM dog_status WHERE slave_id = ?',
   dogOldest: 'SELECT id FROM dog_status WHERE slave_id = ? AND id <= ? AND received_at < ? ORDER BY id LIMIT 1',
@@ -44,6 +46,8 @@ export const RETENTION_SQL = {
   routeEnds: 'SELECT (SELECT MIN(id) FROM myLocationTracker) AS low, (SELECT MAX(id) FROM myLocationTracker) AS high',
   routeNewestId: 'SELECT MAX(id) FROM myLocationTracker',
   routeDelete: 'DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? AND recorded_at < ? LIMIT ?)',
+  // The cap by rowid alone: with a time bound SQLite walks the whole time index.
+  routeCapDelete: 'DELETE FROM myLocationTracker WHERE id IN (SELECT id FROM myLocationTracker WHERE id <= ? LIMIT ?)',
 };
 
 /** The first instant kept: local midnight `days` − 1 days before `now`'s day. */

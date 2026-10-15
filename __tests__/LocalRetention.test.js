@@ -40,6 +40,7 @@ test('the phone and the JS fallback use the same numbers and statements', () => 
     dogCapHead: kotlinString('DOG_CAP_HEAD'), dogCapTerm: kotlinString('DOG_CAP_TERM'),
     dogCapTail: kotlinString('DOG_CAP_TAIL'),
     routeNewestId: kotlinString('ROUTE_NEWEST_ID_SQL'), routeDelete: kotlinString('ROUTE_DELETE_SQL'),
+    routeCapDelete: kotlinString('ROUTE_CAP_DELETE_SQL'),
     // 記錄清單's 「已存約 N 筆」 reads the same two ends.
     routeEnds: JSON.parse(trackerSource.match(/const val SPAN_SQL = ("[^\n]+")/)[1]),
   }).toEqual(RETENTION_SQL);
@@ -70,14 +71,14 @@ test('a window is whole local days, today included', () => {
 /** The phone's route sweep (LocalRetention.sweep), with the shared statements. */
 async function sweepRoute(db, now) {
   const all = Number.MAX_SAFE_INTEGER;
-  const drain = async params => {
+  const drain = async (params, sql = RETENTION_SQL.routeDelete) => {
     for (;;) {
-      const { rowsAffected } = await db.executeAsync(RETENTION_SQL.routeDelete, [...params, RETENTION_BATCH]);
+      const { rowsAffected } = await db.executeAsync(sql, [...params, RETENTION_BATCH]);
       if (rowsAffected < RETENTION_BATCH) return;
     }
   };
   const newest = Object.values((await db.executeAsync(RETENTION_SQL.routeNewestId)).results[0])[0];
-  if (newest > ROUTE_RECORD_CAP) await drain([newest - ROUTE_RECORD_CAP, all]);
+  if (newest > ROUTE_RECORD_CAP) await drain([newest - ROUTE_RECORD_CAP], RETENTION_SQL.routeCapDelete);
   await drain([all, retentionCutoff(now, ROUTE_RETENTION_DAYS)]);
 }
 
@@ -249,6 +250,13 @@ test('the cap and a day of my route walk the rowid, not every takeable row or th
     // HistoryDatabase's phone pages: the time index finds the ids, the pages walk between them.
     expect(plan(route.sqlite, 'SELECT id FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ? AND id > ? AND id <= ? ORDER BY id LIMIT 2000'))
       .toMatch(/rowid>\? AND rowid<\?/);
+    // The sweep's statements: the route cap on the rowid, the time rule on the
+    // time index, a dog's window on (slave_id, received_at) — never a walk of
+    // every row when there is nothing to take.
+    const inner = sql => sql.match(/\((SELECT .*)\)$/)[1];
+    expect(plan(route.sqlite, inner(RETENTION_SQL.routeCapDelete))).toMatch(/INTEGER PRIMARY KEY \(rowid<\?\)/);
+    expect(plan(route.sqlite, inner(RETENTION_SQL.routeDelete))).toMatch(/idx_myLocationTracker_time \(recorded_at<\?\)/);
+    expect(plan(db.sqlite, inner(RETENTION_SQL.dogDelete))).toMatch(/\(slave_id=\? AND received_at<\?\)/);
   } finally { db.close(); route.close(); }
 });
 
