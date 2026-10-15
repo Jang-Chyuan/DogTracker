@@ -219,9 +219,14 @@ export function createHistoryDatabase(db) {
      * time, so a download of older rows is seen), and polling re-reads a few
      * rows, not the day. The dog's hold model also gets
      * the last good fixes before the window (`seed`), like the history map.
-     * @returns {{ rows, seed, after }}
+     * `verify` (my route): a reader that kept its rows while the screen was
+     * closed or the app was away first checks that the rows it already read
+     * are all still there (a cheap count on the time index); when they are
+     * not (刪除我的路線, an edit), the day is read again from the start and
+     * the answer says `replaced`: its rows stand for the whole day.
+     * @returns {{ rows, seed, after, replaced? }}
      */
-    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {}, signal = null }) {
+    async historyDayRows({ subject = 'dog', slaveId = null, start, end, owner = null, after = {}, signal = null, verify = false }) {
       // A read the screen no longer wants (‹ › moved on) stops before its
       // next query instead of reading the rest of the day.
       const stopped = () => {
@@ -234,7 +239,7 @@ export function createHistoryDatabase(db) {
       // A few minutes past midnight tell whether the last stay or hold goes on
       // the next day (`continuesNextDay`); they are not part of this day.
       const until = Number(end) + HISTORY_DAY_AFTER_MS;
-      const cursors = { ...after };
+      let cursors = { ...after };
       // By id, not time: a cloud download can add rows older than the newest
       // one read (判定表「補下載完成」), and those must be read too.
       async function pages(key, sql, params) {
@@ -263,7 +268,17 @@ export function createHistoryDatabase(db) {
           .filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const select = `SELECT id, recorded_at AS time, latitude, longitude,
           accuracy_meters AS accuracy${phoneExtra} FROM myLocationTracker`;
+        let replaced = false;
+        if (verify && cursors.phone) {
+          stopped();
+          const held = rows(await db.executeAsync(`SELECT COUNT(*) AS n FROM myLocationTracker
+            WHERE recorded_at >= ? AND recorded_at < ? AND id <= ?`, [since, until, cursors.phone.id]))[0];
+          if (Number(held?.n) !== (cursors.phoneCount ?? 0)) { cursors = {}; replaced = true; }
+        }
         const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);
+        // The window's rows read so far (by id, up to the cursor): what
+        // `verify` compares the table with.
+        cursors.phoneCount = (cursors.phoneCount ?? 0) + found.length;
         // 2026-10-13: the fixes on the other side of the day, however far —
         // the last one before the context window (once) and, until one is
         // found, the first one after it — so the list can show the time
@@ -283,7 +298,8 @@ export function createHistoryDatabase(db) {
             if (next.length) cursors.phoneAfter = true;
           }
         }
-        return { rows: [...before, ...found, ...next].map(phoneHistoryRow), seed: [], after: cursors };
+        return { rows: [...before, ...found, ...next].map(phoneHistoryRow), seed: [], after: cursors,
+          ...(replaced ? { replaced: true } : {}) };
       }
       const out = [], seed = [];
       const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));
@@ -326,8 +342,17 @@ export function createHistoryDatabase(db) {
       const found = new Set();
       const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
       if (subject === 'phone') {
+        // Not a DISTINCT over every row (80 000 at the recorder's cap, each
+        // converted to local time, on the connection the day's own read
+        // waits for): from each day's first fix, the time index jumps
+        // straight to the next local day's first one.
+        const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
         if (await table('myLocationTracker')) {
-          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('recorded_at')} AS day FROM myLocationTracker`)));
+          add(rows(await db.executeAsync(`WITH RECURSIVE first(t) AS (
+              SELECT MIN(recorded_at) FROM myLocationTracker
+              UNION ALL SELECT (SELECT MIN(recorded_at) FROM myLocationTracker
+                WHERE recorded_at >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
+            SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`)));
         }
       } else {
         if (await table('dog_status')) {
