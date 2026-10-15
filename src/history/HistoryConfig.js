@@ -183,8 +183,9 @@ export function samePlaceGap(a, b, config, { acrossSessions = false } = {}) {
  * from the detector, and measured standing still (stillFix) or without any
  * measured speed. Indoors many fixes come without a speed while the position
  * drifts tens of metres: within stillPlaceM of a place they are still that
- * place. A measured speed that is not stillFix (even an uncertain one) is
- * not this: it may be a walk.
+ * place. A usable measured speed that is not stillFix is not this: it may be
+ * a walk. 2026-10-15 (#200): a speed lost in its uncertainty is no usable
+ * speed (measuredSpeedMps), so such a fix is quiet.
  */
 export function quietFix(p, config) {
   if (!config?.stillMps || !p || p.phoneConfirmedMovement) return false;
@@ -199,12 +200,23 @@ export function quietFix(p, config) {
 /**
  * The fix's own measured speed in m/s (raw_speed_kmh, else speed_kmh), or
  * null when the phone did not measure one.
+ *
+ * 2026-10-15 (user, #200): or when its uncertainty swallows it — a speed
+ * accuracy over UNCERTAIN_SPEED_MPS (1.5 m/s, stillSpeedAccuracyMps) whose
+ * lower bound (speed minus accuracy) is not over 0.5 m/s, e.g. 0 km/h ± 2 m/s
+ * indoors: that says nothing about standing or walking, so it is no speed,
+ * the same rule as phoneReliableSpeed (PhoneMotion). A fast speed whose
+ * lower bound still clears 0.5 m/s stays a speed.
  */
+const UNCERTAIN_SPEED_MPS = 1.5, CLEAR_SPEED_MPS = 0.5;
 export function measuredSpeedMps(p) {
   const number = value => (value == null || value === '' ? null
     : Number.isFinite(Number(value)) ? Number(value) : null);
   const kmh = number(p?.raw_speed_kmh) ?? number(p?.speed_kmh);
-  return kmh == null || kmh < 0 ? null : kmh / 3.6;
+  if (kmh == null || kmh < 0) return null;
+  const spread = number(p?.speed_accuracy_mps);
+  if (spread != null && spread > UNCERTAIN_SPEED_MPS && !(kmh / 3.6 - spread > CLEAR_SPEED_MPS + 1e-6)) return null;
+  return kmh / 3.6;
 }
 
 /** 判定表「缺誤差值的位置」: a fix without an accuracy counts as 10 m. */

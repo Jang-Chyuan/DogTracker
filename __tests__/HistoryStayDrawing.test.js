@@ -64,7 +64,9 @@ test.each(['no confirmation', 'late confirmation', 'outside accuracy', 'vehicle'
     if (failure === 'late confirmation') edges[4].to.time = 36000;
     if (failure === 'outside accuracy') edges[1].from.accuracy = 5;
     if (failure === 'vehicle') edges[1].mode = 'driving';
-    if (failure === 'no recording gap') edges[0].gap = false;
+    // No break before it at all: neither a gap nor a same-place break (since
+    // 2026-10-15 its 0 ± 6.26 m/s fix is no speed, quiet: bridged).
+    if (failure === 'no recording gap') { edges[0].gap = false; edges[0].bridged = false; }
     if (failure === 'credible following walk') edges[2].to.raw_speed_kmh = 2.88;
     if (failure === 'subsequent raw departure') edges[2].to.phoneConfirmedMovement = true;
     if (failure === 'missing raw coordinate') edges[1].to.raw_latitude = null;
