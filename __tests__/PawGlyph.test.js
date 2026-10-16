@@ -35,3 +35,20 @@ test('框住全部 icon keeps the four corner brackets and holds the paw instead
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   act(() => renderer.unmount());
 });
+
+test('框住全部 paw keeps at least 3dp from every bracket', () => {
+  const { FRAME_PAW } = require('../src/map/Glyph');
+  const { scale, strokeWidth, cy } = FRAME_PAW;
+  const half = (strokeWidth * scale) / 2;
+  // PAW_STROKE spans x 3.3-20.7, y 4-19.9 (toe circles and pad), centred at (12, cy).
+  const box = {
+    x0: 12 + (3.3 - 12) * scale - half, x1: 12 + (20.7 - 12) * scale + half,
+    y0: 12 + (4 - cy) * scale - half, y1: 12 + (19.9 - cy) * scale + half,
+  };
+  // Brackets M4 9V4h5 (and mirrors), stroke 2: inner edges at 5 / 19, arms to 9 / 15.
+  const inner = { lo: 5, hi: 19 };
+  expect(box.x0 - inner.lo).toBeGreaterThanOrEqual(3);
+  expect(inner.hi - box.x1).toBeGreaterThanOrEqual(3);
+  expect(box.y0 - inner.lo).toBeGreaterThanOrEqual(3);
+  expect(inner.hi - box.y1).toBeGreaterThanOrEqual(3);
+});
