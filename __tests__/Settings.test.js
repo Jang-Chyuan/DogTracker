@@ -157,7 +157,7 @@ test('S2 all-good: receiver 7 connected, its battery, last packet, position and 
   const page = receiverPage(input('all-good').data);
   expect(page).toMatchObject({
     setUp: true, number: 7, title: '接收器 7', subtitle: 'DogGPS-Master7・已連線', subtitleProblem: false,
-    battery: '電量 64%', lastHeard: '最後收訊 09:29', connectAction: 'disconnect',
+    battery: '電量 64%', lastHeard: '09:29 收到訊號', connectAction: 'disconnect',
   });
   expect(page.position).toMatch(/^24\.98\d\d, 121\.31\d\d$/);
   expect(page.sources).toEqual([
@@ -182,7 +182,7 @@ test('receiver-quiet: 「已連線・6 分鐘沒有新資料」', () => {
   const page = receiverPage(data);
   expect(page.phase).toBe('silent');
   expect(page.subtitle).toBe('DogGPS-Master7・已連線・6 分鐘沒有新資料');
-  expect(page.lastHeard).toBe('最後收訊 09:24');
+  expect(page.lastHeard).toBe('09:24 收到訊號');
 });
 
 test('receiver-sources-unfixed: located sources by name, a never-located one only as 訊號源 9 還沒定位', () => {
@@ -200,7 +200,7 @@ test('receiver-disconnected-by-user: 已中斷連線, the action becomes 重新�
   expect(fixture.openRoute).toBe('receiver');
   const page = receiverPage(data);
   expect(page).toMatchObject({ phase: 'off', subtitle: 'DogGPS-Master7・已中斷連線', subtitleProblem: false,
-    connectAction: 'reconnect', battery: null, lastHeard: '最後收訊 09:10' });
+    connectAction: 'reconnect', battery: null, lastHeard: '09:10 收到訊號' });
   // What it heard before stays listed, and its last position.
   expect(page.sources).toEqual([{ slaveId: 4, name: '豆豆', detail: '訊號源 4', right: '09:10', fixed: true }]);
   expect(page.position).toMatch(/^24\.98\d\d, 121\.31\d\d$/);
@@ -266,7 +266,7 @@ test('S2 draws 中斷連線 in red under the receiver, or 重新連線 after it;
   const press = async id => act(async () => renderer.root.findAll(node => node.props.testID === id
     && typeof node.props.onPress === 'function')[0].props.onPress());
   const out = text(renderer);
-  for (const words of ['目前的接收器', '接收器 7', 'DogGPS-Master7・已連線', '電量 64%', '最後收訊 09:29', '位置',
+  for (const words of ['目前的接收器', '接收器 7', 'DogGPS-Master7・已連線', '電量 64%', '09:29 收到訊號', '位置',
     '中斷連線', '換接收器', '收到的訊號源', '訊號源 9', '還沒定位']) {
     expect(out).toContain(words);
   }

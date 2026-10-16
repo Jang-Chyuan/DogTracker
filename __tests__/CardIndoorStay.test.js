@@ -96,7 +96,8 @@ describe('a stay begun before the live rows', () => {
         dayStart: MIDNIGHT, dayEnd: MIDNIGHT + 24 * 60 * MINUTE, today: true, now: NOW })).nodes);
       expect(today[0].type).toBe('indoor');
       expect(nodeTimes(today[0])[0]).toBe('00:00');
-      expect(nodePill(today[0]).text).toBe('接續前一天');
+      // 2026-10-15 (user): no 「接續前一天」 pill; the minutes from 00:00.
+      expect(nodePill(today[0]).text).toMatch(/^室內・/u);
     } finally { db.close(); }
   });
 

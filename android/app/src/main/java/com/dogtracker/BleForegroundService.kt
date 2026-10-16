@@ -443,7 +443,7 @@ class BleForegroundService : Service() {
         stale = false
         val value = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         prefs.edit().putString("lastPayload", value).putLong("lastReceivedAt", now).apply()
-        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1100, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
+        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1418, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
         emit(EVENT_DATA, JSONObject().put("value", value).put("receivedAt", now)
           .put("sessionId", prefs.getString("sessionId", "")).toString())
     }

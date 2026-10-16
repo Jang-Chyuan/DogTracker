@@ -492,6 +492,9 @@ function dayBoundaryGaps({ context, dayPoints, first, last, dayStart, dayEnd, fo
 export function historyTimeline(rows = [], options = {}) {
   const { subject = 'dog', dayStart = -Infinity, dayEnd = Infinity,
     today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null, closedAt = null,
+    // 'closed' (the user switched recording off: 記錄已關閉) or 'interrupted'
+    // (on, but the recording service is not running: 記錄中斷), with closedAt.
+    closedReason = 'closed',
     following = today && manualRange?.end == null, state = null, timezone = '',
     replayHolds, config = configFor(subject), measure } = options;
   const measured = (stage, count, operation) => measure ? measure(stage, count, operation) : operation();
@@ -575,13 +578,27 @@ export function historyTimeline(rows = [], options = {}) {
     continuesPreviousDay: context.some(p => p.time < dayStart)
       && first.time - context.filter(p => p.time < dayStart).pop().time <= config.gapMs });
   const displayedEnd = subject === 'phone' && last ? phoneStayDisplayCoordinate(displayLocations, last.time) : null;
+  // 2026-10-15 (user, #200 follow-up): no 「最後 HH:MM」. Following now, the
+  // end is 「現在」 while the last fix is at most two minutes old. Older: my
+  // route still at a stay (no confirmed movement after it; the recorder runs,
+  // the phone keeps still and Samsung stops GPS) is that stay going on to now (`ongoing`, below,
+  // still 「現在」); otherwise there is no position after the last fix
+  // (`no-fix`: 「20:49 之後沒有位置」 — a dog, or my route on the move with
+  // no fix, a tunnel). A fixed end: 記錄已關閉 / 記錄中斷 (closedAt), or none.
+  const stale = following && last && now - last.time > 120000;
+  // Standing still: the detector holds a stop, or at least confirms no
+  // movement, at a stay that holds the last fix (checked below).
+  const stillAtEnd = stale && subject === 'phone' && !last.phoneConfirmedMovement;
+  const endState = following ? (!stale || stillAtEnd ? 'now' : 'no-fix')
+    : closedAt != null ? (closedReason === 'interrupted' ? 'interrupted' : 'closed') : 'fixed';
   if (last && last !== first && !locations.some(n => n.end === last.time && n.type === 'indoor')) locations.push({ type: 'end',
     start: last.time, end: last.time, latitude: last.latitude, longitude: last.longitude,
     ...(displayedEnd ? { ...displayedEnd,
       originalRepresentative: { latitude: last.latitude, longitude: last.longitude } } : {}),
-    // 判定表「「現在」和「最後 12:05」」; a recording that was switched off
-    // ends with 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
-    label: following ? now - last.time <= 120000 ? t('c130') : t("c660") : closedAt != null ? t("c656") : t('c330'),
+    // 判定表「「現在」」; a recording that was switched off ends with
+    // 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
+    endState,
+    label: endState === 'now' ? t('c130') : endState === 'closed' ? t("c656") : endState === 'fixed' ? t('c330') : null,
     closedAt: following ? null : closedAt,
     continuesNextDay: context.some(p => p.time >= dayEnd && p.time - last.time <= config.gapMs) });
   const sections = [];
@@ -873,6 +890,27 @@ export function historyTimeline(rows = [], options = {}) {
   // only still-here, the carried-over day boundary and the list's own
   // between-breaks time (timelinePresentation) stay unnumbered, and those are
   // the range's ends or shorter than a stay.
+  // The stay my route stands still at goes on to now (`stillAtEnd`): its
+  // minutes grow, and the end (現在) is now. Without a stay holding the last
+  // fix (standing less than a stay's minutes before the fixes stopped) there
+  // is no place to go on at: no position after the last fix.
+  if (stillAtEnd) {
+    const end = nodes.find(n => n.type === 'end');
+    const stay = [...nodes].reverse().find(n => n.type === 'stop' && (n.displayRange?.end ?? n.end) === last.time);
+    const after = stay && nodes.slice(nodes.indexOf(stay) + 1).every(n => n.type === 'end'
+      || (n.type === 'gap' && n.dayBoundary === 'end'));
+    if (stay && after && end) {
+      const grow = now - last.time;
+      stay.end = now;
+      stay.durationMs = (stay.durationMs ?? 0) + grow;
+      if (stay.displayRange) stay.displayRange = { ...stay.displayRange, end: now };
+      stay.ongoing = true;
+      end.start = now; end.end = now;
+    } else if (end) {
+      end.endState = 'no-fix';
+      end.label = null;
+    }
+  }
   const numbered = node => (node.type === 'stop' || node.type === 'switch')
     && (!node.presentationOnly || node.presentationOnly === 'phone-stationary');
   let number = 0;

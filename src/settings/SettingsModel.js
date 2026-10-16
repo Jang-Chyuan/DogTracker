@@ -269,7 +269,7 @@ export function receiverPage(input) {
     subtitleProblem: phase === 'missing' || phase === 'disconnected',
     battery,
     batteryProblem: reasons.includes('receiver-battery'),
-    lastHeard: last ? t('c201', { time: formatClock(last) }) : null,
+    lastHeard: last ? t('c1419', { time: formatClock(last) }) : null,
     position: (own && coordinate(point.masterLat, point.masterLon)) || t('c203'),
     uploadLast: receiverUploadSuccess(input.upload, number),
     uploadProblem: uploadRouteMode(input.upload, number) === 'phone'

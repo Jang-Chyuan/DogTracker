@@ -335,7 +335,7 @@ function FrameButton({ onPress }) {
  * should leave the history. { mapPressed() } closes the range bar.
  */
 const HistoryScreen = forwardRef(function HistoryScreen({ screen, name = '', top, bottomInset,
-  onBack, onFrame, closedAt = null, initialRangeOpen = false, initialCalendar = null,
+  onBack, onFrame, closedAt = null, closedReason = 'closed', initialRangeOpen = false, initialCalendar = null,
   candidates = [], initialSheet = null, exportNative = null, initialExport = null,
   onSheetOpen, onPanelHeight, onControlRects },
 ref) {
@@ -591,6 +591,7 @@ ref) {
           compact={wideHeader}
           externalControls={wideHeader}
           closedAt={closedAt}
+          closedReason={closedReason}
           who={screen.multi ? leadName : null}
         />
       )}

@@ -59,22 +59,22 @@ test('快離開: amber, without a distance; out of range: red', () => {
   // newest position's time, still three rows.
   const cloud = card(dog({ fixAt: new Date(2026, 9, 7, 9, 29).getTime() }), { range: null });
   expect(cloud.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
-  expect(row(cloud, 'position')).toMatchObject({ value: '最後 09:29', tone: null, detail: null, alert: null });
-  expect(row(cloud, 'position').speech).toBe('位置，最後 09:29，東北方 850 公尺，離手機');
+  expect(row(cloud, 'position')).toMatchObject({ value: '09:29 更新', tone: null, detail: null, alert: null });
+  expect(row(cloud, 'position').speech).toBe('位置，09:29 更新，東北方 850 公尺，離手機');
 });
 
 test('A3b: stale — 位置 row in red, distance to the last position; out of range too: its own line in the row', () => {
   const model = card(dog({ batteryPercentage: 15 }), { freshness: stale, range: range(RANGE_STATUS.OUT) });
   expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
-  expect(row(model, 'position')).toMatchObject({ value: '沒有新位置・最後 09:05', tone: 'crit',
+  expect(row(model, 'position')).toMatchObject({ value: '09:05 之後沒有新位置', tone: 'crit',
     alert: i18nT('c078'), twoLine: true });
   expect(row(model, 'battery')).toMatchObject({ value: '15%・偏低', tone: 'crit' });
   expect(model.headline.distance).toBe('850 m');
   expect(model.rows.map(item => item.speech))
-    .toEqual(['位置，沒有新位置，最後 09:05，不在接收範圍，東北方 850 公尺，離手機', '電量 15%，偏低', '活動量，沒有資料']);
+    .toEqual(['位置，09:05 之後沒有新位置，不在接收範圍，東北方 850 公尺，離手機', '電量 15%，偏低', '活動量，沒有資料']);
   // In range or 快離開 while stale: the row says only 沒有新位置 (one line).
   expect(row(card(dog(), { freshness: stale, range: range(RANGE_STATUS.NEAR) }), 'position'))
-    .toMatchObject({ value: '沒有新位置・最後 09:05', alert: null, twoLine: false });
+    .toMatchObject({ value: '09:05 之後沒有新位置', alert: null, twoLine: false });
 });
 
 test('battery: 20% is low, 21% is not, charging never is; unknown is 「—」', () => {
@@ -120,7 +120,7 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), no �
     alert: '不在接收範圍・最後確認 09:05' });
   // Held and stale: 沒有新資料 in red over the same address.
   const silent = card(held, { freshness: { ...stale, basis: 'packet' }, address: '桃園區中正路 1 號附近' });
-  expect(row(silent, 'position')).toMatchObject({ value: '沒有新資料・最後 09:05', tone: 'crit',
+  expect(row(silent, 'position')).toMatchObject({ value: '09:05 之後沒有新資料', tone: 'crit',
     detail: '桃園區中正路 1 號附近', twoLine: true });
 });
 
@@ -153,7 +153,7 @@ test('A7b: 室內・N 分 counts as the history does, apart from the 活動量 r
   // No times at all: 「室內」 alone, as before.
   expect(row(card({ ...older, heldSince: undefined }, { freshness }), 'position').value).toBe(i18nT('c114'));
   // Stale indoors: the row still says 沒有新資料, no minutes.
-  expect(row(card(held, { freshness: { ...stale, basis: 'packet' } }), 'position').value).toBe('沒有新資料・最後 09:05');
+  expect(row(card(held, { freshness: { ...stale, basis: 'packet' } }), 'position').value).toBe('09:05 之後沒有新資料');
 });
 
 test('battery: a reading kept from an earlier packet (DogMerge batteryAt) carries its time when old', () => {
@@ -169,7 +169,7 @@ test('the phone: none or over 10 minutes old is 手機沒有定位; 30 s to 10 m
   expect(phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 11 * MINUTE } }, NOW)).toBeNull();
   const model = card(dog(), { phone: null });
   expect(model.headline).toEqual({ kind: 'no-phone', text: i18nT("c726") });
-  expect(model.rows[0].speech).toBe('位置，最後 09:29，手機沒有定位');
+  expect(model.rows[0].speech).toBe('位置，09:29 更新，手機沒有定位');
   const threeMinutes = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * MINUTE - 5000 } }, NOW);
   expect(cardHeadline({ dog: dog(), phone: threeMinutes }).phoneAge).toBe('手機位置 3 分鐘前');
   expect(card(dog(), { phone: threeMinutes, range: range(RANGE_STATUS.IN) }).rows[0].speech)

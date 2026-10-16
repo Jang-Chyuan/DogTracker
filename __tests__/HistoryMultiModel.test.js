@@ -98,7 +98,7 @@ describe('the shared cursor', () => {
     expect(cursors[4]).toMatchObject({ stale: false, hidden: false });
     expect(cursors[6]).toMatchObject({ stale: true });
     expect(cursors[6].point.time).toBe(at(90));
-    expect(cursors[6].label[1]).toBe('這段沒資料（最後 09:30）');
+    expect(cursors[6].label[1]).toBe('09:30 之後沒有位置');
     expect(multiCursors(day, at(40))[8].hidden).toBe(true);
   });
 

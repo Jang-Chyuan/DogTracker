@@ -192,9 +192,9 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
     place = { key: 'range', label: t('c066'), value: rangeLabel(view, clock),
       tone: view.problem ? 'crit' : view.warning ? 'warn' : null, alert: null };
   } else {
-    // Not judged here: 「最後 09:30」, the time of its newest position.
+    // Not judged here: 「09:30 更新」, the time of its newest position.
     place = { key: 'position', label: t('c073'),
-      value: Number.isFinite(dog.fixAt) ? t('c1351', { time: lastTimeText(dog.fixAt, now) }) : '—',
+      value: Number.isFinite(dog.fixAt) ? t('c1416', { time: lastTimeText(dog.fixAt, now) }) : '—',
       tone: null, detail: null, alert: null };
   }
   const rows = [place, batteryRow(dog, battery, positionAt, now)];

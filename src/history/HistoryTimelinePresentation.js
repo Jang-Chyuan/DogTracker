@@ -330,7 +330,9 @@ function startingStay(shown) {
  */
 function endingStay(shown) {
   const end = shown[shown.length - 1], stay = shown[shown.length - 2];
-  if (end?.type === 'end' && pointRow(end) && end.closedAt == null
+  // An end that says something of its own stays a row: 記錄已關閉／中斷, or
+  // 「20:49 之後沒有位置」 (2026-10-15).
+  if (end?.type === 'end' && pointRow(end) && end.closedAt == null && end.endState !== 'no-fix'
     && ['stop', 'indoor'].includes(stay?.type) && stay.end === end.start) shown.pop();
 }
 

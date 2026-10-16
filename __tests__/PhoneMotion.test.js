@@ -121,7 +121,8 @@ test('uncertain speeds and missing speeds create interruption, not imaginary wal
   expect(model.distanceM).toBe(0);
   expect(model.edges.some(e => e.uncertain && e.mode === 'gap')).toBe(true);
   expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain')).toBe(true);
-  expect(sectionText({ type: 'gap', reason: 'uncertain', start: 1000, end: 2000 }).lead).toBe(translate('c883'));
+  // 2026-10-15 (user): weak GPS reads like any break of my route.
+  expect(sectionText({ type: 'gap', reason: 'uncertain', start: 1000, end: 2000 }).lead).toBe(translate('c1414'));
   expect(model.points.filter(p => p.time > 1200000).every(p => !p.phoneStationary)).toBe(true);
   expect(model.departure.status).toBe('undetermined');
   expect(model.range.start).toBe(rows[0].time);

@@ -15,8 +15,8 @@ test('a dog from this phone\'s receiver is stale after more than 10 minutes with
   expect(dogFreshness(ble(10), { now: NOW }).stale).toBe(false);
   const old = dogFreshness(ble(10.5), { now: NOW });
   expect(old).toMatchObject({ drawn: true, stale: true, basis: 'position', source: 'ble' });
-  expect(staleText(old, NOW)).toBe('沒有新位置・最後 09:19');
-  expect(staleSpeech(old, NOW)).toBe('沒有新位置，最後 09:19');
+  expect(staleText(old, NOW)).toBe('09:19 之後沒有新位置');
+  expect(staleSpeech(old, NOW)).toBe('09:19 之後沒有新位置');
 });
 
 test('a packet without a fix does not make an old position current', () => {
@@ -69,7 +69,7 @@ test('a dog held indoors is timed by its packets, with the source of its newest 
   const silent = { ...held, packetAt: NOW - 25 * MINUTE };
   const result = dogFreshness(silent, { now: NOW });
   expect(result).toMatchObject({ stale: true, basis: 'packet', lastAt: NOW - 25 * MINUTE });
-  expect(staleText(result, NOW)).toBe('沒有新資料・最後 09:05');
+  expect(staleText(result, NOW)).toBe('09:05 之後沒有新資料');
   // Its newest packet came from the cloud: the cloud formula.
   const viaCloud = { ...silent, packetSource: 'cloud' };
   expect(dogFreshness(viaCloud, { now: NOW, cloud: { lastDownloadAt: NOW - 20 * MINUTE } }).stale).toBe(false);
@@ -119,7 +119,7 @@ test('pauses chain: a dog still within the grace of one pause is fine when the n
 test('older than 24 hours is still drawn; a dog that never had a position is not', () => {
   const day = dogFreshness(ble(26 * 60), { now: NOW });
   expect(day).toMatchObject({ drawn: true, stale: true });
-  expect(staleText(day, NOW)).toBe('沒有新位置・最後 10/6 07:30');
+  expect(staleText(day, NOW)).toBe('10/6 07:30 之後沒有新位置');
   expect(dogFreshness({ slaveId: 9, coordinate: null, fixAt: null, packetAt: NOW }, { now: NOW }))
     .toMatchObject({ drawn: false, stale: false });
   expect(STALE_AFTER_MS).toBe(10 * MINUTE);

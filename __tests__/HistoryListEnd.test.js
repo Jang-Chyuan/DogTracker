@@ -1,12 +1,15 @@
 import { t as i18nT } from '../src/i18n';
-// 057a: how each day's time-line list ends (判定表「清單節點的內容」「「現在」和
-// 「最後 12:05」」「記錄被迫中止的終點膠囊」, past midnight), through useHistoryScreen
-// as MapScreen drives it (recording from the phone's live state).
+// 057a: how each day's time-line list ends (判定表「清單節點的內容」「「現在」」
+// 「記錄被迫中止的終點膠囊」, past midnight), through useHistoryScreen as
+// MapScreen drives it (recording from the phone's live state). 2026-10-15
+// (user): never 「最後 HH:MM」.
 import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { buildFixture } from '../src/dev/ScreenFixtures';
 import { historyTargetOf, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
-import { nodePill } from '../src/history/HistoryText';
+import { nodePill, summaryText } from '../src/history/HistoryText';
+import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
+import { timelineClockMismatches } from '../test-support/TimelineClocks';
 
 function Harness({ fixture, onScreen }) {
   const target = historyTargetOf(fixture.history.preferences);
@@ -14,6 +17,8 @@ function Harness({ fixture, onScreen }) {
     owner: fixture.cloudSync.ownerId, clock: () => fixture.now, memoryScope: `end:${fixture.name}:`,
     recordingStoppedAt: fixture.livePhone?.stoppedAt ?? null,
     recording: fixture.livePhone ? !!fixture.livePhone.running : null,
+    recordingEnabled: typeof fixture.livePhone?.enabled === 'boolean' ? fixture.livePhone.enabled : null,
+    interruptGraceMs: 0,
     preset: fixture.historyView ?? null });
   onScreen(screen);
   return null;
@@ -44,10 +49,40 @@ test.each([
   expect(last).toMatchObject({ type: 'end', label });
 });
 
-test('a dog without a fix for 17 minutes, following now: 「最後 09:13」', async () => {
-  const { last } = await open('history-dog-stale');
-  expect(last).toMatchObject({ type: 'end', label: i18nT("c660") });
-  expect(nodePill(last)).toEqual({ text: '最後 09:13', tone: 'plain' });
+test('a dog without a fix for 17 minutes, following now: 「09:13 之後沒有位置」', async () => {
+  const { last, screen } = await open('history-dog-stale');
+  expect(last).toMatchObject({ type: 'end', endState: 'no-fix' });
+  expect(nodePill(last)).toEqual({ text: '09:13 之後沒有位置', tone: 'plain' });
+  expect(summaryText(screen.model, { subject: 'dog' }).title).toMatch(/ – 現在$/u);
+});
+
+// 2026-10-15 (user): my route following now, the fixes stopped.
+test('standing still since 08:25, nothing saved since 08:50, recording on: the stay goes on to now, 「現在」', async () => {
+  const { screen, fixture } = await open('history-recording-still');
+  const shown = timelinePresentation(screen.model.nodes);
+  const lastRow = shown.at(-1);
+  // The stay is the last row (no end row after it) and runs to now.
+  expect(lastRow.type).toBe('stop');
+  expect(lastRow.end).toBe(fixture.now);
+  expect(nodePill(lastRow).text).toBe('停 1 時 5 分');
+  expect(screen.model.nodes.find(n => n.type === 'end')).toMatchObject({ endState: 'now', start: fixture.now });
+  expect(summaryText(screen.model, { subject: 'phone' }).title).toMatch(/ – 現在$/u);
+  expect(timelineClockMismatches(screen.model.nodes)).toEqual([]);
+});
+
+test('walking until 09:17, nothing since (a tunnel), recording on: 「09:17 之後沒有位置」', async () => {
+  const { last, screen } = await open('history-recording-no-fix');
+  expect(last).toMatchObject({ type: 'end', endState: 'no-fix' });
+  expect(nodePill(last)).toEqual({ text: '09:17 之後沒有位置', tone: 'plain' });
+  expect(summaryText(screen.model, { subject: 'phone' }).title).toMatch(/ – 現在$/u);
+});
+
+test('recording on but its service stopped (09:05): 「記錄中斷・09:05」 and the hint, not 「記錄已關閉」', async () => {
+  const { last, screen } = await open('history-recording-interrupted');
+  expect(last).toMatchObject({ type: 'end', endState: 'interrupted' });
+  expect(nodePill(last)).toEqual({ text: '記錄中斷・09:05', tone: 'closed' });
+  expect(screen.recordingEnd).toMatchObject({ reason: 'interrupted' });
+  expect(i18nT('c1412', { time: '09:05' })).toBe('記錄在 09:05 中斷，重新打開 App 會繼續記錄');
 });
 
 test('only the end dragged back to 08:50: 「結束」 at that time, the start still 「出發」', async () => {

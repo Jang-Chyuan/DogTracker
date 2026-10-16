@@ -136,14 +136,14 @@ export function lastTimeText(at, now) {
   return sameDay ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
 }
 
-/** The card's words for a stale dog: 「沒有新位置・最後 10:12」, or null. */
+/** The card's words for a stale dog: 「10:12 之後沒有新位置」, or null (2026-10-15: no 「最後」). */
 export function staleText(freshness, now) {
   if (!freshness?.stale || !Number.isFinite(freshness.lastAt)) return null;
   const what = freshness.basis === 'packet' ? t("c1040") : t("c475");
-  return t("c1039", { what: what, value: lastTimeText(freshness.lastAt, now) });
+  return t("c1415", { what: what, value: lastTimeText(freshness.lastAt, now) });
 }
 
-/** The same for TalkBack: 「沒有新位置，最後 10:12」, or null. */
+/** The same for TalkBack: 「10:12 之後沒有新位置」, or null. */
 export function staleSpeech(freshness, now) {
   return staleText(freshness, now)?.replace('・', '，') ?? null;
 }
