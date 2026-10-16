@@ -11,7 +11,7 @@ import MapView, {
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import TrackingMap from '../src/map/TrackingMap';
-import { savedCamera } from '../src/map/GoogleTrackingMap';
+import { savedCamera, compassTurned } from '../src/map/GoogleTrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -184,6 +184,54 @@ test('rotation is on; our compass replaces the native one (top left on Android) 
   expect(placed.length).toBeGreaterThan(0);
   await act(async () => compass()[0].props.onPress());
   expect(mockCamera.animateCamera).toHaveBeenCalledWith({ heading: 0 }, { duration: 300 });
+});
+// The needle's turn on screen, in degrees, as last drawn.
+const needleTurn = () => {
+  const needle = renderer.root.findAll(node => typeof node.type === 'string'
+    && node.props.testID === 'map-compass-needle')[0];
+  const rotate = StyleSheet.flatten(needle.props.style).transform.find(item => item.rotate).rotate;
+  return parseFloat(rotate);
+};
+test('the compass appears and turns with the map during a rotate gesture, not only after it ends', async () => {
+  await render({ compassTop: 120 });
+  await readyMap();
+  const map = () => renderer.root.findByType(MapView);
+  const compass = () => renderer.root.findAll(node => node.props.testID === 'map-compass'
+    && typeof node.props.onPress === 'function');
+  // Every camera frame of the gesture brings the bearing (patched
+  // react-native-maps, DOGTRACKER_CAMERA_HEADING); no getCamera round trip.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 20 }));
+  expect(compass().length).toBeGreaterThan(0);
+  expect(needleTurn()).toBeCloseTo(-20);
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 75 }));
+  expect(needleTurn()).toBeCloseTo(-75);
+  // Back to north mid-gesture: the compass goes away again.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 0.2 }));
+  expect(compass()).toHaveLength(0);
+});
+test('a camera read from before the latest frame does not turn the needle back', async () => {
+  await render({ compassTop: 120 });
+  await readyMap();
+  const map = () => renderer.root.findByType(MapView);
+  let answer;
+  mockCamera.getCamera.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+  await act(async () => map().props.onRegionChangeComplete({}, { isGesture: true, heading: 30 }));
+  expect(needleTurn()).toBeCloseTo(-30);
+  // The next gesture starts before the idle read answers.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 90 }));
+  await act(async () => answer({ center: master.coordinate, zoom: 15, pitch: 0, heading: 30 }));
+  expect(needleTurn()).toBeCloseTo(-90);
+});
+test('compass threshold: shows past 1° either side of north, hides within 0.5°', () => {
+  expect(compassTurned(0)).toBe(false);
+  expect(compassTurned(0.8)).toBe(false);
+  expect(compassTurned(1.5)).toBe(true);
+  expect(compassTurned(358.5)).toBe(true);
+  expect(compassTurned(359.5)).toBe(false);
+  expect(compassTurned(-2)).toBe(true);
+  // Once shown, it stays until within 0.5°.
+  expect(compassTurned(0.8, true)).toBe(true);
+  expect(compassTurned(359.7, true)).toBe(false);
 });
 test('provider draws the prepared visible segments; empty presentation removes every overlay', async () => {
   await render({

@@ -555,6 +555,16 @@ const dottedPattern = width => [1, PixelRatio.getPixelSizeForLayoutSize(Math.rou
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
+/**
+ * Whether the compass shows for a camera bearing: once the map is more than
+ * 1° off north, and until it is back within 0.5° (so a bearing hovering at
+ * the threshold does not make it blink during a gesture).
+ */
+export function compassTurned(bearing, shown = false) {
+  const off = Math.abs((((bearing % 360) + 540) % 360) - 180);
+  return off > (shown ? 0.5 : 1);
+}
+
 const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics, labelBox = null, heading = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
@@ -1222,8 +1232,22 @@ function GoogleTrackingMapRenderer({
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   // The compass is a separate root overlay, not part of HistoryScreen's row.
+  // `heading` is the settled camera's (idle): the history's label maths and
+  // MapScreen read it. The compass needle follows every camera frame instead
+  // (`compassTurn`, set without a render), and whether the compass shows at
+  // all (`turned`) changes only when the map crosses north.
   const [heading, setHeading] = useState(0);
-  const turned = Math.abs((((heading % 360) + 540) % 360) - 180) > 1;
+  const compassTurn = useRef(new Animated.Value(0)).current;
+  const [turned, setTurned] = useState(false);
+  const turnedNow = useRef(false);
+  const followHeading = useCallback(value => {
+    if (!Number.isFinite(value)) return;
+    compassTurn.setValue(value);
+    const next = compassTurned(value, turnedNow.current);
+    if (next === turnedNow.current) return;
+    turnedNow.current = next;
+    setTurned(next);
+  }, [compassTurn]);
   const compassVisible = usable && foreground && compassTop != null && turned;
   const compassKey = `${source}:${instance}:${cursorLayout.width}:${cursorLayout.height}:${compassTop}:${compassVisible}`;
   const compassGeneration = useRef({ key: compassKey, value: 0 });
@@ -1970,10 +1994,17 @@ function GoogleTrackingMapRenderer({
             startMoving();
           }}
           onRegionChangeStart={historyMode ? () => setHistoryCameraMoving(true) : undefined}
+          onRegionChange={(_, details) => {
+            if (activeInstance.current !== instance || !foreground) return;
+            // A camera read still on its way is from before this frame.
+            cameraRead.current += 1;
+            followHeading(details?.heading);
+          }}
           onRegionChangeComplete={(_, details) => {
             setHistoryCameraMoving(false);
             if (framed.current) releaseSplash();
             if (activeInstance.current !== instance || !foreground) return;
+            followHeading(details?.heading);
             setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
             const request = ++cameraRead.current;
@@ -2004,6 +2035,7 @@ function GoogleTrackingMapRenderer({
                   if (Number.isFinite(camera.heading)) {
                     onHeading?.(camera.heading);
                     setHeading(camera.heading);
+                    followHeading(camera.heading);
                   }
                 }
               })
@@ -2274,7 +2306,7 @@ function GoogleTrackingMapRenderer({
           key={compassScope}
           onLayout={!live ? measureCompass : undefined}
           top={compassTop}
-          heading={heading}
+          turn={compassTurn}
           onPress={() =>
             mapRef.current?.animateCamera(
               { heading: 0 },

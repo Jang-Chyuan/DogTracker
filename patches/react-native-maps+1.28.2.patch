@@ -81,7 +81,7 @@ index 3e0250f..95cc196 100644
          return options;
      }
 diff --git a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
-index def61f5..16e6c52 100644
+index def61f5..f988aa4 100644
 --- a/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
 +++ b/node_modules/react-native-maps/android/src/main/java/com/rnmaps/maps/MapView.java
 @@ -107,6 +107,18 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
@@ -190,7 +190,22 @@ index def61f5..16e6c52 100644
          super.onDetachedFromWindow();
          detachLifecycleObserver();
      }
-@@ -698,11 +688,23 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -687,6 +677,10 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             boolean isGesture = GoogleMap.OnCameraMoveStartedListener.REASON_GESTURE == cameraMoveReason;
+             LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
+             WritableMap payload = OnRegionChangeEvent.payLoadFor(bounds, isGesture);
++            // DOGTRACKER_CAMERA_HEADING (DogTracker patch): the bearing of
++            // every camera frame, so the app's compass turns with the map
++            // during the gesture instead of after it.
++            payload.putDouble("heading", map.getCameraPosition().bearing);
+             dispatchEvent(payload, OnRegionChangeEvent::new);
+         });
+ 
+@@ -695,14 +689,27 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             cameraMoveReason = -1;
+             LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
+             WritableMap payload = OnRegionChangeEvent.payLoadFor(bounds, isGesture);
++            payload.putDouble("heading", map.getCameraPosition().bearing); // DOGTRACKER_CAMERA_HEADING
              dispatchEvent(payload, OnRegionChangeCompleteEvent::new);
          });
  
@@ -216,7 +231,7 @@ index def61f5..16e6c52 100644
  
  
          map.setTrafficEnabled(showsTraffic);
-@@ -796,6 +798,8 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -796,6 +803,8 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
              return;
          }
          destroyed = true;
@@ -225,7 +240,7 @@ index def61f5..16e6c52 100644
          savedMapState = null;
          savedFeatures = null;
          try {
-@@ -1326,18 +1330,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+@@ -1326,18 +1335,36 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
          if (feature instanceof MapMarker) {
              markerMap.remove(feature.getFeature());
              feature.removeFromMap(markerCollection);
@@ -263,3 +278,47 @@ index def61f5..16e6c52 100644
          } else if (feature != null) {
              feature.removeFromMap(map);
          }
+diff --git a/node_modules/react-native-maps/src/MapView.tsx b/node_modules/react-native-maps/src/MapView.tsx
+index 6fd5565..493f911 100644
+--- a/node_modules/react-native-maps/src/MapView.tsx
++++ b/node_modules/react-native-maps/src/MapView.tsx
+@@ -1103,10 +1103,15 @@ class MapView extends React.Component<MapViewProps, State> {
+       this.props.onMarkerDeselect(event);
+     }
+   };
++  // DOGTRACKER_CAMERA_HEADING (DogTracker patch): Android sends the camera's
++  // bearing with every camera-move event, so a compass can follow the map
++  // during a rotate gesture without a getCamera() round trip per frame.
+   private handleRegionChange = (event: NativeSyntheticEvent<any>) => {
+     if (this.props.onRegionChange) {
++      const heading = event.nativeEvent.heading;
+       this.props.onRegionChange(event.nativeEvent.region, {
+         isGesture: event.nativeEvent.isGesture,
++        ...(Number.isFinite(heading) ? { heading } : null),
+       });
+     }
+   };
+@@ -1135,8 +1140,10 @@ class MapView extends React.Component<MapViewProps, State> {
+ 
+   private handleRegionChangeComplete = (event: NativeSyntheticEvent<any>) => {
+     if (this.props.onRegionChangeComplete) {
++      const heading = event.nativeEvent.heading;
+       this.props.onRegionChangeComplete(event.nativeEvent.region, {
+         isGesture: event.nativeEvent.isGesture,
++        ...(Number.isFinite(heading) ? { heading } : null),
+       });
+     }
+   };
+diff --git a/node_modules/react-native-maps/src/MapView.types.ts b/node_modules/react-native-maps/src/MapView.types.ts
+index 0832a72..8986f69 100644
+--- a/node_modules/react-native-maps/src/MapView.types.ts
++++ b/node_modules/react-native-maps/src/MapView.types.ts
+@@ -118,6 +118,8 @@ export type MapPressEvent = ClickEvent<{
+ 
+ export type Details = {
+   isGesture?: boolean;
++  // DOGTRACKER_CAMERA_HEADING: the camera bearing (Android, Google).
++  heading?: number;
+ };
+ 
+ export type UserLocationChangeEvent = NativeSyntheticEvent<{
