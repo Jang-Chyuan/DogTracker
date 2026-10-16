@@ -340,7 +340,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       requireOwner(owner);
       // Right after the update: the backfill first (short steps with pauses
       // between, so the App's other reads go on), then the answer.
-      if (!await wifiLatestReady(connection)) await scheduleWifiBackfill(connection, 0);
+      // A failed step: no partial answer (the caller keeps what it showed);
+      // the next call starts the backfill again where it stopped.
+      if (!await wifiLatestReady(connection) && !await scheduleWifiBackfill(connection, 0))
+        throw new Error('Wi-Fi upload times are not ready');
       const query = 'SELECT master_id, received_at AS time FROM cloud_wifi_latest WHERE owner_user_id=?';
       return Object.fromEntries(rows(await connection.executeAsync(query, [owner]))
         .map(row => [Number(row.master_id), Number(row.time)])

@@ -149,3 +149,28 @@ test('review: a table an older App emptied leaves no Wi-Fi time behind after the
     expect(await cloud.wifiUploads('a')).toEqual({});
   } finally { db.close(); }
 });
+
+test('review: a failed backfill step gives no partial answer; the next call finishes it', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_backfill');
+    const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
+      VALUES ('a', ?, ?, 3, 1, ?)`);
+    db.sqlite.exec('BEGIN');
+    for (let i = 0; i < WIFI_BACKFILL_IDS + 5; i += 1) insert.run(`e${i}`, 100 + i, i === WIFI_BACKFILL_IDS + 2 ? 'wifi' : i === 0 ? 'wifi' : 'phone');
+    db.sqlite.exec('COMMIT');
+    await db.executeBatchAsync(cloudRowSetup());
+    const batch = db.executeBatchAsync.getMockImplementation();
+    let calls = 0;
+    db.executeBatchAsync.mockImplementation(commands => {
+      calls += 1;
+      if (calls === 2) return Promise.reject(new Error('disk I/O error'));
+      return batch(commands);
+    });
+    await expect(cloud.wifiUploads('a')).rejects.toThrow('not ready');
+    expect(await cloud.wifiUploads('a')).toEqual({ 3: 100 + WIFI_BACKFILL_IDS + 2 });
+  } finally { db.close(); }
+});
