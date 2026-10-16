@@ -115,6 +115,7 @@ class LocationTrackerService : Service(), LocationListener {
             .put("motionState", if (expired) "unknown" else latest.motionState)
             .put("bearing", latest.bearing ?: JSONObject.NULL))
         }.toString()
+      updateNotice(now)
       handler.postDelayed(this, 1000)
     }
   }
@@ -144,19 +145,20 @@ class LocationTrackerService : Service(), LocationListener {
     // the app's next resume (resumeIfEnabled) starts it again.
     val kind = ServiceStartLog.kindOf(intent == null)
     val startedWall = System.currentTimeMillis()
+    var cannotStart = RecordingNotice.CANNOT_START
     try {
-      val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
-      val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-      startForeground(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog)
-        .setContentTitle(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1128)).setContentText(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1129))
-        .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true).addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1130), stop).build())
+      startForeground(ID, recordingNotification(RecordingNotice.RECORDING))
+      shownNotice = RecordingNotice.RECORDING
+      com.dogtracker.PlainNotices.clear(this, com.dogtracker.PlainNotices.RECORDING_START_ID)
       val precise = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+      if (!precise) cannotStart = RecordingNotice.NEEDS_PRECISE_LOCATION
       check(precise) { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1131) }
       // 067: fused location (GPS + Wi-Fi + cell + sensors) where it can be had.
       val choice = LocationSource.choose(playServicesAvailable(), Build.VERSION.SDK_INT,
         androidx.core.location.LocationManagerCompat.isLocationEnabled(manager),
         manager.allProviders.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }.toSet())
       source = choice
+      if (choice == LocationSource.Choice.None) cannotStart = RecordingNotice.LOCATION_OFF
       if (choice == LocationSource.Choice.None) error(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1132))
       val background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -169,6 +171,7 @@ class LocationTrackerService : Service(), LocationListener {
       // Recording again: the 「點一下繼續記錄路線」 prompt is done.
       RecordingResumeReceiver.clear(this)
       startedAtMs = System.currentTimeMillis()
+      startedNanos = SystemClock.elapsedRealtimeNanos()
       runCatching { startLog.started(kind, startedWall) }
       handler.post {
         gapLog.saved(SystemClock.elapsedRealtimeNanos(), startedAtMs, pipeline, writeErrors)
@@ -180,10 +183,34 @@ class LocationTrackerService : Service(), LocationListener {
       // A refused restart is not a permission the user can grant here.
       status = com.dogtracker.NativeCopy.text(if (kind == ServiceStartLog.Kind.RESTART) com.dogtracker.R.string.c1138
         else com.dogtracker.R.string.c1134)
+      // Started by the app or by the user: say why in plain words (the start log has the detail). A
+      // system restart that was refused is the 「點一下繼續記錄路線」 prompt's business (RecordingResume).
+      if (kind != ServiceStartLog.Kind.RESTART) com.dogtracker.PlainNotices.post(this,
+        com.dogtracker.PlainNotices.RECORDING_START_ID, cannotStart.text(), "my-route")
       stopSelf()
     }
     return if (running) START_STICKY else START_NOT_STICKY
   }
+  // The notification in plain words (RecordingNotice); posted again only when its state changes.
+  private var shownNotice = RecordingNotice.RECORDING
+  private fun recordingNotification(notice: RecordingNotice): Notification {
+    val launch = com.dogtracker.NotificationChannels.launch(this, "my-route")
+    val stop = PendingIntent.getService(this, ID, Intent(this, javaClass).setAction("STOP"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_dog)
+      .setContentTitle(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1128)).setContentText(notice.text())
+      .setColor(com.dogtracker.NotificationChannels.accent(this)).setOnlyAlertOnce(true).setContentIntent(launch).setOngoing(true)
+      .addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1130), stop).build()
+  }
+  private fun updateNotice(now: Long) {
+    if (!running) return
+    val age = pipeline.latest?.let { (now - it.elapsedNanos) / 1e9 }
+    val notice = RecordingNotice.during(androidx.core.location.LocationManagerCompat.isLocationEnabled(manager),
+      age, (now - startedNanos) / 1e9)
+    if (notice == shownNotice) return
+    shownNotice = notice
+    runCatching { getSystemService(NotificationManager::class.java).notify(ID, recordingNotification(notice)) }
+  }
+  private var startedNanos = 0L
   private var source: LocationSource.Choice = LocationSource.Choice.None
   private var fused: com.google.android.gms.location.FusedLocationProviderClient? = null
   @Volatile private var fusedCallback: com.google.android.gms.location.LocationCallback? = null

@@ -75,6 +75,9 @@ class BleForegroundService : Service() {
   private var expectedMasterId = 0
   private var lastReceivedElapsed = 0L
   private var subscribedElapsed = 0L
+  // What the notification says besides connected or not (ReceiverNotificationText); the exact reasons stay in lastStatus.
+  private var problem = ReceiverProblem.NONE
+  private var lastDataAtMs = 0L
   private var stale = false
   private val framer = BleJsonFramer()
   // Starts and refusals, kept across process ends (ServiceStartLog).
@@ -82,10 +85,10 @@ class BleForegroundService : Service() {
   private var wifiResult: ((String?, String?) -> Unit)? = null
   private var wifiRead = false
   private val reconnectRunnable = Runnable { connectGatt() }
-  private val connectTimeout = Runnable { fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1072)) }
+  private val connectTimeout = Runnable { fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1072), ReceiverProblem.NO_DATA) }
   private val wifiTimeout = Runnable {
     finishWifi(null, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1073))
-    fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1074))
+    fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1074), ReceiverProblem.NO_DATA)
   }
   // The alerts while the app is off screen (BackgroundAlerts skips its turn
   // while the app is on screen and runs them itself).
@@ -131,7 +134,7 @@ class BleForegroundService : Service() {
           stale = true
           publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1075))
         }
-        if (age >= 90_000) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1076))
+        if (age >= 90_000) fail(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1076), ReceiverProblem.NO_DATA)
       }
       handler.postDelayed(this, 5_000)
     }
@@ -191,6 +194,9 @@ class BleForegroundService : Service() {
     handler.post {
       if (intent?.action == ACTION_CONNECT) {
         closeGatt()
+        problem = ReceiverProblem.NONE
+        lastDataAtMs = 0L
+        com.dogtracker.PlainNotices.clear(this, com.dogtracker.PlainNotices.RECEIVER_CONFIG_ID)
         // A newly chosen receiver starts as "connecting".
         disconnectedAt = 0
         prefs.edit().remove("receiverLink").commit()
@@ -266,17 +272,18 @@ class BleForegroundService : Service() {
     handler.removeCallbacks(reconnectRunnable)
     if (manualStop || connecting || isConnected) return
     if (!hasPermission()) {
-      scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1078))
+      scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1078), ReceiverProblem.NEEDS_PERMISSION)
       return
     }
     try {
       val adapter = getSystemService(BluetoothManager::class.java)?.adapter
       if (adapter == null || !adapter.isEnabled) {
-        scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1079))
+        scheduleReconnect(30_000, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1079), ReceiverProblem.BLUETOOTH_OFF)
         return
       }
       closeGatt()
       connecting = true
+      problem = ReceiverProblem.NONE
       // An attempt is running: not the widened wait any more.
       retryDelayMs = 0L
       publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1080, deviceName))
@@ -339,6 +346,8 @@ class BleForegroundService : Service() {
           ReceiverPauses.resumed(prefs.getString(ReceiverPauses.KEY, ""), System.currentTimeMillis())).apply()
         subscribedElapsed = SystemClock.elapsedRealtime()
         lastReceivedElapsed = 0
+        lastDataAtMs = 0L
+        problem = ReceiverProblem.NONE
         stale = false
         publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1089))
       }
@@ -417,6 +426,9 @@ class BleForegroundService : Service() {
         when (val check = ReceiverMasterId.check(data, expectedMasterId)) {
           is ReceiverMasterId.Check.Other -> {
             stopSession(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1098, expectedMasterId, check.masterId))
+            // The ongoing notification goes with the service: say what is wrong, in plain words.
+            com.dogtracker.PlainNotices.post(this, com.dogtracker.PlainNotices.RECEIVER_CONFIG_ID,
+              ReceiverNotificationText.of(false, false, 0L, ReceiverProblem.BAD_CONFIG), "receiver-settings")
             return
           }
           ReceiverMasterId.Check.Missing -> {
@@ -441,6 +453,7 @@ class BleForegroundService : Service() {
         lastReceivedElapsed = SystemClock.elapsedRealtime()
         lastDataElapsed = lastReceivedElapsed
         stale = false
+        lastDataAtMs = now
         val value = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         prefs.edit().putString("lastPayload", value).putLong("lastReceivedAt", now).apply()
         publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1418, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
@@ -491,7 +504,7 @@ class BleForegroundService : Service() {
     result?.invoke(value, error)
   }
 
-  private fun fail(message: String) {
+  private fun fail(message: String, why: ReceiverProblem = ReceiverProblem.NONE) {
     // Only the loss of an established link starts a disconnection; failed
     // reconnect attempts keep its first moment.
     if (isConnected) {
@@ -500,11 +513,13 @@ class BleForegroundService : Service() {
       runCatching { wakeLock.acquire(Events.DISCONNECT_GRACE_MS + 2 * ALERT_CHECK_MS) }
     }
     closeGatt()
-    scheduleReconnect(reason = message)
+    scheduleReconnect(reason = message, why = why)
   }
 
-  private fun scheduleReconnect(delayOverride: Long? = null, reason: String = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1106)) {
+  private fun scheduleReconnect(delayOverride: Long? = null, reason: String = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1106),
+    why: ReceiverProblem = ReceiverProblem.NONE) {
     if (manualStop) return
+    problem = why
     val delay = reconnectBackoff.next(SystemClock.elapsedRealtime(), delayOverride)
     retryDelayMs = delay
     publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1107, reason, delay / 1000))
@@ -554,7 +569,7 @@ class BleForegroundService : Service() {
   // 設定 → 接收器 (S2); 「中斷連線」 is S2's 中斷連線.
   private fun notification(@Suppress("UNUSED_PARAMETER") status: String) = NotificationCompat.Builder(this, CHANNEL_ID)
     .setContentTitle(receiverTitle()).setContentText(
-      ReceiverNotificationText.of(isConnected, disconnectedAt > 0, retryDelayMs),
+      ReceiverNotificationText.of(isConnected, disconnectedAt > 0, retryDelayMs, problem, lastDataAtMs),
     ).setColor(NotificationChannels.accent(this)).setSmallIcon(R.drawable.ic_stat_dog)
     .setContentIntent(NotificationChannels.launch(this, "receiver-settings"))
     .addAction(0, com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c204), PendingIntent.getService(this, NOTIFICATION_ID,

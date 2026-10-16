@@ -85,7 +85,7 @@
     <string name="c1107" formatted="false">"{{value1}}；{{value2}} 秒後重試"</string>
     <string name="c1108" formatted="false">"BLE 連線已關閉"</string>
     <string name="c1109" formatted="false">"背景接收已停止"</string>
-    <string name="c1110" formatted="false">"DogTracker・接收器 {{value1}}"</string>
+    <string name="c1110" formatted="false">"DogTracker・接收器 {{number}}"</string>
     <string name="c1111" formatted="false">"DogTracker・接收器"</string>
     <string name="c1112" formatted="false">"正在接收狗的位置"</string>
     <string name="c1113" formatted="false">"斷線了，{{count}} 分鐘後再試著連線"</string>
@@ -122,16 +122,22 @@
     <string name="c1144" formatted="false">"無法啟動搜尋轉送"</string>
     <string name="c1145" formatted="false">"無法設定背景雲端同步"</string>
     <string name="c1146" formatted="false">"無法取消背景同步"</string>
-    <string name="c1147" formatted="false">"等待下次同步，待傳資料已保留"</string>
-    <string name="c1148" formatted="false">"等待網路，待傳資料已保留"</string>
-    <string name="c1149" formatted="false">"等待同步程式，待傳資料已保留"</string>
     <string name="c1150" formatted="false">"正在同步狗的位置"</string>
     <string name="c1151" formatted="false">"DogTracker・資料同步"</string>
-    <string name="c1152" formatted="false">"準備同步待傳資料"</string>
     <string name="c1153" formatted="false">"DogTracker"</string>
     <string name="c1159" formatted="false">"{{dogName}}：{{duration}}沒有新位置"</string>
     <string name="c1161" formatted="false">"{{dogName}}：{{duration}}沒有新資料"</string>
     <string name="c1401" formatted="false">"DogTracker 更新完成，點一下繼續記錄路線"</string>
     <string name="c1402" formatted="false">"手機已重新開機，點一下繼續記錄路線"</string>
     <string name="c1418" formatted="false">"BLE 接收中；{{value1}} 收到資料"</string>
+    <string name="c1420" formatted="false">"正在接收狗的位置・{{time}} 收到資料"</string>
+    <string name="c1421" formatted="false">"藍牙關著，打開藍牙才能接收"</string>
+    <string name="c1422" formatted="false">"需要藍牙權限，請打開 App 允許"</string>
+    <string name="c1423" formatted="false">"接收器設定有問題，請打開 App 檢查"</string>
+    <string name="c1424" formatted="false">"收不到資料，正在重新連線"</string>
+    <string name="c1425" formatted="false">"請開啟手機定位"</string>
+    <string name="c1426" formatted="false">"定位訊號不好，稍後自動繼續"</string>
+    <string name="c1427" formatted="false">"無法開始記錄，請打開 App"</string>
+    <string name="c1428" formatted="false">"稍後會再同步，沒傳出去的資料都還在"</string>
+    <string name="c1429" formatted="false">"準備同步狗的位置"</string>
 </resources>
