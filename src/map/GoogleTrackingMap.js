@@ -265,7 +265,8 @@ function usePhotoMarker(avatar, ref) {
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
-function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0, compact = false }) {
+const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0,
+  compact = false }) {
   const { isDark, opacity } = useTheme();
   // The launch screen's handover draws a copy of each dog over the map while
   // it flies and pops them in; the real marker shows once they are in place.
@@ -308,7 +309,7 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
       zIndex={zIndex}
       // No title or description: those draw the SDK's own bubble, and a tap
       // already opens the dog. The label below is what TalkBack reads.
-      onPress={onPress}
+      onPress={onPress ? () => onPress(marker.slaveId) : undefined}
     >
       <View
         collapsable={false}
@@ -326,6 +327,23 @@ function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownK
       </View>
     </StyledMarker>
   );
+}, sameDogMarker);
+
+// A dog's marker draws again only when something it shows changes
+// (2026-10-16: on every switch of the card's dog — a new selection, the
+// camera moving to it — every marker was drawn again). The marker and its
+// name tag are new objects each time the map's dogs are worked out; they
+// count as the same when every value in them is.
+const sameShown = (left, right) => left === right
+  || (!!left && !!right && typeof left === 'object' && typeof right === 'object'
+    && JSON.stringify(left) === JSON.stringify(right));
+function sameDogMarker(previous, next) {
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    const same = key === 'marker' || key === 'tag' ? sameShown(previous[key], next[key]) : previous[key] === next[key];
+    if (!same) return false;
+  }
+  return true;
 }
 
 // TalkBack for the face carrying a 「3 隻」 tag: the dogs in it, and what a
@@ -1782,6 +1800,10 @@ function GoogleTrackingMapRenderer({
   // a face drawn over another dog's name tag canvas is that face's dog, and a
   // name tag showing over the empty canvas of a marker drawn above it is the
   // tag's dog. Without a recent touch or screen points, Google's pick stands.
+  // One function for every marker (kept by ref), so a marker is not drawn
+  // again only because the map was.
+  const pressLatest = useRef(null);
+  const pressMarker = useCallback(slaveId => pressLatest.current?.(slaveId), []);
   const pressDogMarker = slaveId => {
     const finger = lastTouch.current;
     const origin = surfaceOrigin.current;
@@ -1800,6 +1822,7 @@ function GoogleTrackingMapRenderer({
     }
     pressDog(drawn ?? slaveId);
   };
+  pressLatest.current = pressDogMarker;
   // Whether `tap` (dp) falls inside the full marker bitmap (face plus name
   // tag canvas) of the dog last opened by a marker tap; unknown counts as inside.
   const insidePressedMarker = tap => {
@@ -2139,7 +2162,7 @@ function GoogleTrackingMapRenderer({
                   ? groupSpeech(tags[marker.slaveId], dogMarkers, marker.slaveId)
                   : undefined
               }
-              onPress={onDogPress ? () => pressDogMarker(marker.slaveId) : undefined}
+              onPress={onDogPress ? pressMarker : undefined}
             />
           ))}
         </MapView>

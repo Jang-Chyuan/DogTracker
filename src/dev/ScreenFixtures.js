@@ -44,6 +44,7 @@ export const FIXTURE_OWNER = 'fixture-owner';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
 // ~11 m per step in latitude, ~10 m in longitude here.
 const STEP = 0.0001;
 
@@ -1001,6 +1002,20 @@ const FIXTURES = {
     ]),
     cloudRows: [],
   }),
+  // card-switch with six hours of rows per dog (one every 5 s, 4,321 each):
+  // swiping the row of dogs must move on at once (2026-10-16), not wait for
+  // the next dog's card to be worked out.
+  'card-switch-heavy': now => {
+    const rows = from => [4, 5, 6, 8, 9, 12].flatMap((slave, index) => series(bleRow, now, {
+      slave, from, every: 5 * SECOND, start: [14 - 9 * index, 9 + 7 * index], step: [0.001, 0.0015],
+      battery: 70 - index * 5, activity: time => (index % 2 === 0 && time > now - 3 * HOUR ? 0.02
+        : Math.round((0.2 + 0.1 * Math.sin(time / 600000)) * 32) / 32) }));
+    // The map gets the last ten minutes (as its own paged reads would); the
+    // card reads the six hours. Activity in 1/32 steps: sums in any order
+    // are exact, so the card reads the same as from SQLite.
+    return { receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+      ble: inTimeOrder(rows(10 * MINUTE)), cardBle: inTimeOrder(rows(6 * HOUR)), cloudRows: [] };
+  },
   // card-switch with 豆豆 renamed to a fictional 15-character name: the
   // title row 「‹（頭像✏️）名字 ›」 cuts it with 「…」 at the normal font and
   // wraps it at 200%.
@@ -2002,7 +2017,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     alertsOpen = false, diagnosticsEnabled = false, readFailure = null, deletion = null, launch = null, restoring = false,
     permissionsGuide = null, pairing = null, history = null, geocoder = null, historyView = null, historyCloud = null,
     historyExport = null, activityView = null, activity = null, activityClock = null, alertPause = null,
-    waitingDismissed = false, waitingNew = false,
+    waitingDismissed = false, waitingNew = false, cardBle = null,
     wifi = { ssids: ['家裡', '辦公室'], activeSsid: '家裡' } } = make(now);
   const fixtureHistory = history || historyPage(now, { ble, cloudRows });
   const genericActivity = {
@@ -2055,7 +2070,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     receiverState: receiver,
     readReceiverState: { getState: async () => receiver },
     cloudSync: cloud,
-    raw: { ble, cloud: cloudRows, history: history ? [...(history.ble || []), ...(history.cloudRows || [])] : [],
+    raw: { ble, cardBle, cloud: cloudRows, history: history ? [...(history.ble || []), ...(history.cloudRows || [])] : [],
       today: phone?.today || [] },
     tracking: {
       point: point ?? emptyTrackingPoint,
@@ -2132,7 +2147,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // Faces by collar number (useDogAvatars' avatars); the default otherwise.
     avatars,
     // CloudDatabase.dogCardRows over the fixture's rows (DogCardReadings).
-    readCardRows: async (slaveId, since) => cardRows(ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
+    readCardRows: async (slaveId, since) => cardRows(cardBle ?? ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
     // 診斷 (S8): the same rows as the data pages would read them.
     diagnostics: diagnosticsSources({ ble, cloudRows, owner: cloud?.ownerId ?? null,
       today: phone?.today || [], readFailure }),
