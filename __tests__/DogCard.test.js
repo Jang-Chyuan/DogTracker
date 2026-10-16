@@ -496,6 +496,31 @@ test('the card readings never show another reader\'s rows (logout, account or fi
   expect(seen.at(-1).battery.percentage).toBe(70);
 });
 
+test('swiping back to a dog shows its readings at once (one draw), while they are read again', async () => {
+  const { useDogCardReadings } = require('../src/map/useDogCardReadings');
+  const seen = [];
+  function Probe({ read, slaveId }) {
+    seen.push({ slaveId, readings: useDogCardReadings(read, slaveId, NOW) });
+    return null;
+  }
+  const rows = value => ({ local: [], cloud: [], battery: [{ time: NOW - 60000, battery_percentage: value, source: 'ble' }] });
+  const pending = [];
+  const read = jest.fn(slaveId => new Promise(resolve => pending.push(() => resolve(rows(slaveId * 10)))));
+  await act(async () => { renderer = Renderer.create(<Probe read={read} slaveId={4} />); });
+  await act(async () => pending.shift()());
+  expect(seen.at(-1).readings.battery.percentage).toBe(40);
+  await act(async () => renderer.update(<Probe read={read} slaveId={6} />));
+  // A dog not read yet: nothing (never dog 4's).
+  expect(seen.at(-1)).toMatchObject({ slaveId: 6, readings: { loaded: false } });
+  await act(async () => pending.shift()());
+  expect(seen.at(-1).readings.battery.percentage).toBe(60);
+  // Back to dog 4: its last rows in the very first draw, read again behind.
+  await act(async () => renderer.update(<Probe read={read} slaveId={4} />));
+  const first = seen.findIndex(item => item.slaveId === 4 && seen.indexOf(item) > 2);
+  expect(seen[first].readings.battery.percentage).toBe(40);
+  expect(read).toHaveBeenCalledTimes(3);
+});
+
 test('E06: status labels reserve scaled width instead of wrapping at 1.3x', async () => {
   const rn = require('react-native');
   jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 390, height: 800, scale: 1, fontScale: 1.3 });
