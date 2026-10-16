@@ -3,7 +3,7 @@ import { historyDiagnosticsEnabled } from '../logger';
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { sameHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
 import { createDayCache, HISTORY_KEPT_DAYS, HISTORY_KEPT_ROWS } from './HistoryDayCache';
-import { recentDogModels, recentDogRows } from './HistoryRecentDogs';
+import { recentDogModels, recentDogRows, recentTodayView, rememberTodayView } from './HistoryRecentDogs';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -946,7 +946,19 @@ export function useHistoryScreen({
     && value.protagonist === current.protagonist && value.rangeOwner === current.rangeOwner
     // An opening's first selection has no `kept` yet; a day changed sets it null.
     && (value.kept ?? null) === (current.kept ?? null);
-  const verifiedEntry = verifiedIdentity ? verifiedModels.current.peek(entry => entry.identity === verifiedIdentity) : null;
+  let verifiedEntry = verifiedIdentity ? verifiedModels.current.peek(entry => entry.identity === verifiedIdentity) : null;
+  // Today's view of the entry dog alone outlives the opening for
+  // HISTORY_TODAY_REUSE_MS (HistoryRecentDogs): opened again, it is this
+  // opening's verified view at once, under the very rules below (the same
+  // account, publisher and lineage, view and range; the stored proof still
+  // covering its cutoff), while today's tail is fetched behind it.
+  const todayViewKey = subject === 'dog' && today && baseKey && verifiedIdentity && idsKey === String(entryId)
+    ? `${baseKey}|${shownKey}|${owner ?? ''}|${cloud?.owner ?? ''}|${proofRequired}` : null;
+  if (!verifiedEntry && todayViewKey) {
+    const carried = recentTodayView(todayViewKey, clock());
+    const candidate = carried && { ...carried, identity: verifiedIdentity, session: verifiedSession };
+    if (candidate && verifiedMatches(candidate)) verifiedEntry = verifiedModels.current.put(candidate);
+  }
   // A range drag never shows a retained model: it shows the busy state, then
   // the released range (PR 115).
   const verifiedView = !rangePending && verifiedMatches(verifiedEntry)
@@ -1056,13 +1068,16 @@ export function useHistoryScreen({
     if (builtModel && coverageReady && coverageOpening.current.key === coverageKey) coverageOpening.current.shown = true;
     const kept = verifiedModels.current;
     if (!verifiedIdentity) { if (kept.size) kept.clear(); return; }
-    if (builtModel && coverageReady) kept.put({ identity: verifiedIdentity, session: verifiedSession,
-      scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
-      lineage: shownPublication?.lineage, manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
-      cutoff: proofRequired ? coverageCutoff : null, model: builtModel, rows: shownRows },
-    // Another opening, account or publisher: those days go.
-    entry => entry.identity === verifiedIdentity || !samePublisher(entry));
-    else if (verifiedEntry && !verifiedMatches(verifiedEntry)) kept.remove(entry => entry === verifiedEntry);
+    if (builtModel && coverageReady) {
+      const entry = kept.put({ identity: verifiedIdentity, session: verifiedSession,
+        scope: shownPublication?.scope, owner: shownPublication?.owner, generation: shownPublication?.generation,
+        lineage: shownPublication?.lineage, manual, protagonist: current.protagonist, rangeOwner: current.rangeOwner, kept: current.kept,
+        cutoff: proofRequired ? coverageCutoff : null, model: builtModel, rows: shownRows },
+      // Another opening, account or publisher: those days go.
+      old => old.identity === verifiedIdentity || !samePublisher(old));
+      // Its age: how far its rows are proven (an account's dogs), else now.
+      if (todayViewKey) rememberTodayView(todayViewKey, entry, proofRequired ? coverageCutoff : clock(), clock());
+    } else if (verifiedEntry && !verifiedMatches(verifiedEntry)) kept.remove(entry => entry === verifiedEntry);
   });
   const dayModel = held && !retained ? null : builtModel ?? retained?.model ?? null;
   useEffect(() => {
@@ -1649,6 +1664,9 @@ export function useHistoryScreen({
     rangeActive: active,
     // 「截至 HH:mm」 only for today: another day's verified view is the whole
     // day (its cutoff is just when it was opened).
+    // Today's view kept while its newest rows are fetched (a reopening, an
+    // archive pass, a return to the front): 「更新中」 on the summary line.
+    updating: !!retained && today,
     asOf: retained ? (today && now - retained.cutoff >= 60000 ? retained.cutoff : null)
       : cloud?.coverageRequired && subject === 'dog' && today && coverageReady && now - coverageCutoff >= 60000 ? coverageCutoff : null,
     updateHistory,
