@@ -1,7 +1,7 @@
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { logger } from '../logger';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { createLocalDatabases } from '../database/LocalDatabases';
 import { CLOUD_DATABASE_METHODS } from '../cloud/CloudDatabase';
@@ -19,6 +19,8 @@ import {
   createTrackingSourceState,
   trackingSourceReducer,
 } from '../tracking/TrackingSourceState';
+
+const TRANSITION_ACTIONS = new Set(['rows', 'route', 'position-context', 'history-loading', 'history-loaded']);
 import { CATCH_UP_IDLE, createResumeCatchUp } from '../tracking/ResumeCatchUp';
 
 function isForeground(state) {
@@ -75,8 +77,16 @@ export function useTrackingSession(createDatabases = createLocalDatabases) {
   // Empty feed polls still report refreshing/caught-up/the same route. Keep
   // every action in the pure reducer, but let useState's eager identity check
   // skip scheduling the App when that reducer returns the current state.
+  // The feed's bulk updates (rows, the route window, position context,
+  // history progress) render as a transition: React builds that render in
+  // slices and yields between them, so a catch-up after the App came back
+  // (minutes of rows, the 24 h route) no longer blocks the JS thread for one
+  // long commit (2026-10-16: 0.9–1.4 s on a signed-in emulator). The latest
+  // position, refreshing and caught-up stay urgent.
   const dispatchTracking = useCallback(action => {
-    setTrackingSources(current => trackingSourceReducer(current, action));
+    const update = () => setTrackingSources(current => trackingSourceReducer(current, action));
+    if (TRANSITION_ACTIONS.has(action.type)) startTransition(update);
+    else update();
   }, []);
   const [preferences, setPreferences] = useState({
     value: DEFAULT_TRACKING_PREFERENCES,

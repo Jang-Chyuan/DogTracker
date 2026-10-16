@@ -340,9 +340,19 @@ const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, z
 // camera moving to it — every marker was drawn again). The marker and its
 // name tag are new objects each time the map's dogs are worked out; they
 // count as the same when every value in them is.
-const sameShown = (left, right) => left === right
-  || (!!left && !!right && typeof left === 'object' && typeof right === 'object'
-    && JSON.stringify(left) === JSON.stringify(right));
+// Value by value, stopping at the first difference (no JSON.stringify of
+// both on every render of every marker: 2026-10-16, a resume's commit).
+const sameShown = (left, right) => {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return Number.isNaN(left) && Number.isNaN(right);
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key) || !sameShown(left[key], right[key])) return false;
+  }
+  return true;
+};
 function sameDogMarker(previous, next) {
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
   for (const key of keys) {

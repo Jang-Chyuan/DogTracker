@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { logger } from '../logger';
-import { historySourceStream, filterHistoryPoints } from '../history/HistorySources';
+import { historyPackets, historySourceStream, filterHistoryPoints } from '../history/HistorySources';
 import { historyIndoorNodes } from '../history/HistoryStops';
 import { configFor } from '../history/HistoryConfig';
-import { applyHistoryHolds } from '../placement/IndoorHold';
+import { applyHistoryHolds, createHistoryHolds } from '../placement/IndoorHold';
 import { HISTORY_DAY_CONTEXT_MS } from '../mapHistory/HistoryDatabase';
 
 // The live map's hold rows begin half an hour back on a cold start
@@ -28,9 +28,9 @@ const DOG = configFor('dog');
  * `clipped`: the stay runs on before `readFrom`.
  * @returns {{ from, clipped, hold: { coordinate, reason, since, source } | null } | null}
  */
-export function historyStayAt({ rows = [], seed = [] } = {}, { at, readFrom = -Infinity, config = DOG } = {}) {
+export function historyStayAt({ rows = [], seed = [] } = {}, { at, readFrom = -Infinity, config = DOG, replayHolds = null } = {}) {
   if (!Number.isFinite(at) || !rows.length) return null;
-  const stream = historySourceStream(rows, { replayHolds: packets => applyHistoryHolds(packets, { seed }) });
+  const stream = historySourceStream(rows, { replayHolds: replayHolds ?? (packets => applyHistoryHolds(packets, { seed })) });
   const context = filterHistoryPoints(stream.points, { subject: 'dog', config });
   // A stay that reaches `at`: its newest row at most a packet gap before it.
   const node = historyIndoorNodes(context, { config })
@@ -43,6 +43,31 @@ export function historyStayAt({ rows = [], seed = [] } = {}, { at, readFrom = -I
     : null;
   return { from: Math.min(node.start, at),
     clipped: node.heldSince < readFrom && node.start - readFrom <= config.gapMs, hold };
+}
+
+// Packets the hold replay takes between two yields to the JS thread.
+export const STAY_REPLAY_STEP = 250;
+const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
+/**
+ * historyStayAt with its costly part — replaying a day of packets through the
+ * hold tracker — done STAY_REPLAY_STEP packets at a time with the JS thread
+ * free in between: done in one go it held the thread about a second for a dog
+ * right after the App came back (2026-10-16). Same answer as historyStayAt.
+ */
+export async function historyStayAtSoon(answer = {}, options = {}) {
+  const { rows = [], seed = [] } = answer;
+  if (!Number.isFinite(options.at) || !rows.length) return null;
+  const packets = historyPackets(rows);
+  const pass = createHistoryHolds({ seed });
+  for (let i = 0; i < packets.length; i += STAY_REPLAY_STEP) {
+    pass.append(packets.slice(i, i + STAY_REPLAY_STEP));
+    await nextTask();
+  }
+  // The pass copied each packet: the stream's own packets are left as they are.
+  const replayHolds = () => pass.output;
+  replayHolds.copiesPackets = true;
+  return historyStayAt(answer, { ...options, replayHolds });
 }
 
 /**
@@ -96,7 +121,7 @@ export function useHistoryHolds(read, candidates, { owner = null, busy = false }
         try {
           const start = at - CARD_INDOOR_LOOKBACK_MS;
           const answer = await read({ subject: 'dog', slaveId, start, end: at + 1, owner });
-          const stay = historyStayAt(answer, { at, readFrom: start - HISTORY_DAY_CONTEXT_MS });
+          const stay = await historyStayAtSoon(answer, { at, readFrom: start - HISTORY_DAY_CONTEXT_MS });
           if (stay?.hold) hold = { ...stay.hold, from: stay.from, ...(stay.clipped ? { fromClipped: true } : {}) };
         } catch (error) {
           logger.warn('[Indoor hold] history read failed', error?.message);
