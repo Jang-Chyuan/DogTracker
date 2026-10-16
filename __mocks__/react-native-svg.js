@@ -15,6 +15,7 @@ export const G = shape('g');
 export const Text = shape('text');
 export const Ellipse = shape('ellipse');
 export const Defs = shape('defs');
+export const Pattern = shape('pattern');
 export const ClipPath = shape('clippath');
 export const Image = shape('image');
 export const Filter = shape('filter');

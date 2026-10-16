@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { makeStyles, useStyles, useTheme } from '../theme/ThemeProvider';
 import {
   layout,
@@ -48,17 +49,6 @@ const STATE_COLOR = {
   charging: 'activityCharging',
 };
 
-// Dash marks (left offset, width) for a dashed no-data line `length` dp long;
-// the pattern is centred so both ends have the same margin.
-export function dashMarks(length, [mark, gap] = size.activity.noDataDash) {
-  const count = Math.floor((length + gap) / (mark + gap));
-  // A span shorter than one dash (a quarter or two of a day) is one short dash.
-  if (!(length > 0)) return [];
-  if (count < 1) return [{ left: 0, width: length }];
-  const start = (length + gap - count * (mark + gap)) / 2;
-  return Array.from({ length: count }, (_, i) => ({ left: start + i * (mark + gap), width: mark }));
-}
-
 // Runs of consecutive no-data quarter hours in a day: [first, last] indexes.
 export function missingRuns(bars) {
   const runs = [];
@@ -72,16 +62,25 @@ export function missingRuns(bars) {
   return runs;
 }
 
-function DashedLine({ length, testID, style }) {
+// 沒有資料: a pale band with 45 degree hatching (one SVG pattern, so a gap of
+// any width costs one rect). It is a background, not a bar: full height,
+// drawn behind the bars.
+export function HatchBand({ bandWidth: width, bandHeight: height, testID, style }) {
   const { colors } = useTheme();
-  const styles = useStyles(getStyles);
-  const stroke = size.activity.noDataStroke;
+  const { spacing, stroke, opacity } = size.activity.hatch;
+  if (!(width > 0) || !(height > 0)) return null;
   return (
-    <View testID={testID} style={[{ width: length, height: stroke }, style]}>
-      {dashMarks(length).map(mark => (
-        <View key={mark.left} style={[styles.dash, { left: mark.left, width: mark.width, height: stroke,
-          backgroundColor: colors.activityMissingLine }]} />
-      ))}
+    <View testID={testID} pointerEvents="none" style={[{ width, height }, style]}>
+      <Svg width={width} height={height}>
+        <Defs>
+          <Pattern id="activityHatch" patternUnits="userSpaceOnUse" width={spacing} height={spacing}>
+            <Path d={`M-1 ${spacing + 1} L${spacing + 1} -1 M${spacing - 1} ${spacing + 1} L${spacing + 1} ${spacing - 1} M-1 1 L1 -1`}
+              stroke={colors.activityMissingLine} strokeWidth={stroke} strokeOpacity={opacity} />
+          </Pattern>
+        </Defs>
+        <Rect width={width} height={height} fill={colors.activityMissingBand} />
+        <Rect width={width} height={height} fill="url(#activityHatch)" />
+      </Svg>
     </View>
   );
 }
@@ -332,6 +331,14 @@ function DayChart({ view }) {
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <View style={[styles.chart, styles.dayBars]}
           onLayout={event => setWidth(event.nativeEvent.layout.width)} testID="activity-day-chart">
+          {width > 0 && missingRuns(view.bars).map(([first, last]) => {
+            const slot = (width - (view.bars.length - 1) * size.activity.dayBarGap) / view.bars.length;
+            return (
+              <HatchBand key={first} testID={`activity-day-nodata-${first}`} bandHeight={CHART}
+                bandWidth={(last - first + 1) * slot + (last - first) * size.activity.dayBarGap}
+                style={[styles.dayNoData, { left: first * (slot + size.activity.dayBarGap) }]} />
+            );
+          })}
           {view.bars.map(bar => (
             <View key={bar.index} style={styles.daySlot}>
               {!bar.pending && (bar.count > 0 ? (
@@ -341,14 +348,6 @@ function DayChart({ view }) {
                 style={[styles.dayGap, bar.state === 'charging' && { backgroundColor: colors.activityCharging }]} />)}
             </View>
           ))}
-          {width > 0 && missingRuns(view.bars).map(([first, last]) => {
-            const slot = (width - (view.bars.length - 1) * size.activity.dayBarGap) / view.bars.length;
-            return (
-              <DashedLine key={first} testID={`activity-day-nodata-${first}`}
-                length={(last - first + 1) * slot + (last - first) * size.activity.dayBarGap}
-                style={[styles.dayNoData, { left: first * (slot + size.activity.dayBarGap) }]} />
-            );
-          })}
         </View>
         <View style={styles.axis}>
           {width > 0 && HOURS.map((hour, index) => (
@@ -362,14 +361,14 @@ function DayChart({ view }) {
   );
 }
 
-// A whole bar of no data: a dashed line along its baseline, no fill.
+// A whole bar of no data: the hatched band over the bar's full height.
 function BarNoData({ testID }) {
   const styles = useStyles(getStyles);
   const [width, setWidth] = useState(0);
   return (
-    <View style={styles.barNoData}
+    <View style={styles.barNoData} testID={`${testID}-slot`}
       onLayout={event => setWidth(event.nativeEvent.layout.width)}>
-      {width > 0 && <DashedLine length={width} testID={testID} />}
+      <HatchBand bandWidth={width} bandHeight={CHART} testID={testID} />
     </View>
   );
 }
@@ -436,9 +435,9 @@ function Legend({ view }) {
       {items.map(item => (
         <View key={item.state} style={styles.legendItem}>
           {item.state === 'missing' ? (
-            <View style={[styles.swatch, { width: size.activity.noDataLegendWidth }]}>
-              <DashedLine length={size.activity.noDataLegendWidth} testID="activity-legend-missing"
-                style={{ marginTop: (size.activity.legendSwatch - size.activity.noDataStroke) / 2 }} />
+            <View style={[styles.swatch, styles.swatchMissing]}>
+              <HatchBand bandWidth={size.activity.legendSwatch - 2 * border.hairline}
+                bandHeight={size.activity.legendSwatch - 2 * border.hairline} testID="activity-legend-missing" />
             </View>
           ) : (
             <View
@@ -585,9 +584,9 @@ const getStyles = makeStyles(theme => {
     dayBars: { flexDirection: 'row', alignItems: 'flex-end', gap: size.activity.dayBarGap },
     daySlot: { flex: 1, justifyContent: 'flex-end' },
     dayBar: { borderTopLeftRadius: size.activity.dayBarRadius, borderTopRightRadius: size.activity.dayBarRadius },
-    dash: { position: 'absolute' },
-    dayNoData: { position: 'absolute', bottom: 0 },
-    barNoData: { alignSelf: 'stretch', height: size.activity.noDataStroke },
+    dayNoData: { position: 'absolute', top: 0 },
+    barNoData: { position: 'absolute', left: 0, right: 0, bottom: 0, height: CHART },
+    swatchMissing: { borderWidth: border.hairline, borderColor: colors.activityMissingLine, overflow: 'hidden' },
     dayGap: { height: size.activity.dayGapHeight },
     axisLeft: { textAlign: 'left' },
     axisRight: { textAlign: 'right' },
