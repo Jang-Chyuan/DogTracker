@@ -10,7 +10,7 @@ import { motion, radius, size as sizes, space, type } from '../theme/tokens';
  * (MapControls.CatchUpPill, 070): what is shown is kept while its newest data
  * is fetched. Under 減少動態效果 it stands still.
  */
-export default function ShimmerLabel({ text = t('c1420'), testID = 'shimmer-label' }) {
+export default function ShimmerLabel({ text = t('c1430'), testID = 'shimmer-label' }) {
   const { colors } = useTheme();
   const reduced = useReduceMotion();
   const sweep = useRef(new Animated.Value(0)).current;

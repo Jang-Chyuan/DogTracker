@@ -31,9 +31,6 @@ export default function PhoneLocationOverlay({
   const { colors, opacity, isDark, literalColors } = useTheme();
   const styles = useStyles(getStyles);
   const location = useLivePhone(feed, shownLocation);
-  // The callout's fix time comes from the map's copy: the feed's would change
-  // the marker's text, and have Google redraw the map, every second.
-  const described = shownLocation?.position ?? location.position;
   const { position, ageSeconds } = location;
   // Age still fences animation/native display publication, never the dot colour.
   const stale = !historical && (ageSeconds == null || ageSeconds > 3);
@@ -185,13 +182,6 @@ export default function PhoneLocationOverlay({
       (PixelRatio.getFontScale?.() || 1) *
       sizes.mapLabel.maxLines +
     2 * (sizes.mapLabel.paddingV + sizes.mapLabel.border);
-  const title = historical
-    ? t("c767")
-    : stale || muted
-    ? t('c055')
-    : position.motionState === 'stationary'
-    ? t("c769")
-    : t("c770");
   return (
     <>
       {!historical &&
@@ -228,17 +218,9 @@ export default function PhoneLocationOverlay({
         anchor={{ x: 0.5, y: sizes.phoneDot.canvas / 2 / height }}
         tracksViewChanges={settling}
         zIndex={historical ? 25 : 30}
+        // No title or description: Google's native info window never opens
+        // (the 「手機」 name tag already says what the dot is, 2026-10-17).
         onPress={onPress}
-        title={onPress ? undefined : title}
-        description={
-          onPress
-            ? undefined
-            : historical
-            ? ((position.rawSpeedKmh == null) ? t("c723", { value: new Date(position.timestamp).toLocaleString() }) : t("c724", { value: new Date(position.timestamp).toLocaleString(), value2: position.rawSpeedKmh.toFixed(1) + ' km/h' }))
-            : t("c766", { value: described.accuracy.toFixed(1), value2: new Date(
-                described.timestamp,
-              ).toLocaleTimeString() })
-        }
       >
         <View
           collapsable={false}
