@@ -75,16 +75,19 @@ test('each Master\'s newest Wi-Fi row: rows stored before come in the background
     // The update (CloudDatabase.initialize): triggers and the range still to add.
     await db.executeBatchAsync(cloudRowSetup());
     expect(await wifiLatestReady(db)).toBe(false);
-    // Until the backfill finished: what the trigger has seen since (nothing
-    // yet), never a walk of the account's rows.
-    expect(await cloud.wifiUploads('a')).toEqual({});
-    // Meanwhile a newer Wi-Fi row arrives (trigger) and an older one is deleted.
+    // A newer Wi-Fi row arrives (trigger) and an older one is deleted before the backfill.
     insert.run('a', 'late', 99999999, 4, 'wifi');
     db.sqlite.exec("DELETE FROM supabase_dog_status WHERE event_id = 'e5'");
-    // (wifiUploads started the backfill too: steps of WIFI_BACKFILL_IDS ids.)
-    while (await backfillWifiStep(db));
+    // One step by hand; the answer then waits for the rest (never a walk of the account's rows).
+    expect(await backfillWifiStep(db)).toBe(true);
+    const statements = [];
+    const read = db.executeAsync.getMockImplementation();
+    db.executeAsync.mockImplementation((sql, params) => { statements.push(sql); return read(sql, params); });
+    const answer = await cloud.wifiUploads('a');
+    expect(statements.some(sql => /GROUP BY master_id/.test(sql) && /FROM supabase_dog_status\s+WHERE owner_user_id/.test(sql))).toBe(false);
     expect(await wifiLatestReady(db)).toBe(true);
     const after = { ...expected, 4: 99999999 };
+    expect(answer).toEqual(after);
     expect(await cloud.wifiUploads('a')).toEqual(after);
     expect(await cloud.wifiUploads('b')).toEqual(old('b'));
     // A row repaired to Wi-Fi later counts too.
@@ -134,8 +137,14 @@ test('review: a table an older App emptied leaves no Wi-Fi time behind after the
   try {
     add('a', 100, 3, 'wifi');
     expect(await cloud.wifiUploads('a')).toEqual({ 3: 100 });
-    // The older App's 刪除全部狗資料: the rows go, these tables stay.
+    // The older App's 刪除全部狗資料: the rows go (its DELETE fires these
+    // triggers), and a later download of phone uploads brings nothing back.
     db.sqlite.exec('DELETE FROM supabase_dog_status');
+    add('a', 300, 3, 'phone');
+    await db.executeBatchAsync(cloudRowSetup());
+    expect(await cloud.wifiUploads('a')).toEqual({});
+    // An older database that never had the triggers: an empty table at the update.
+    db.sqlite.exec("DROP TRIGGER cloud_rows_deleted_v2; INSERT INTO cloud_wifi_latest VALUES ('a', 3, 100); DELETE FROM supabase_dog_status");
     await db.executeBatchAsync(cloudRowSetup());
     expect(await cloud.wifiUploads('a')).toEqual({});
   } finally { db.close(); }

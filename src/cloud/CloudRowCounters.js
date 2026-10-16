@@ -45,8 +45,11 @@ export const CLOUD_ROW_TRIGGERS = [
     UPDATE cloud_row_count SET n = n + 1 WHERE id = 1;
     ${wifiUpsert('NEW')};
   END`,
+  // Emptied (also by an older App, which keeps these triggers): nothing
+  // stored, nothing uploaded to show, whatever is downloaded afterwards.
   `CREATE TRIGGER IF NOT EXISTS cloud_rows_deleted_v2 AFTER DELETE ON supabase_dog_status BEGIN
     UPDATE cloud_row_count SET n = n - 1 WHERE id = 1;
+    DELETE FROM cloud_wifi_latest WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status);
   END`,
   // A Wi-Fi row the backfill has not reached yet keeps its time when deleted
   // (the trim right after the update), as a row deleted after it did.
@@ -70,10 +73,11 @@ const TRIGGER_NAMES = ['cloud_rows_inserted_v2', 'cloud_rows_deleted_v2', 'cloud
  */
 export function cloudRowSetup() {
   return [...CLOUD_ROW_TABLES,
-    // Never released; a development build had them with an upsert the
-    // publication's OR IGNORE defeated (the _v2 triggers replace them).
+    // Made again at every start, so a changed definition always applies (the
+    // unsuffixed ones were a development build's, never released).
     'DROP TRIGGER IF EXISTS cloud_rows_inserted', 'DROP TRIGGER IF EXISTS cloud_rows_deleted',
     'DROP TRIGGER IF EXISTS cloud_rows_wifi_changed',
+    ...TRIGGER_NAMES.map(name => `DROP TRIGGER IF EXISTS ${name}`),
     // An older version of the App emptied the table (刪除全部狗資料) without
     // knowing these: nothing stored means nothing uploaded to show.
     'DELETE FROM cloud_wifi_latest WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status)',
