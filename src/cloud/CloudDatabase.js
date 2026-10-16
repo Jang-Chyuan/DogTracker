@@ -86,9 +86,17 @@ export const TRIM_BATCH = 500;
 export const TRIM_DELAY_MS = 20000;
 export const TRIM_PAUSE_MS = 25;
 const capTrims = new WeakSet();
+// The newest open's maintenance starter, per native owner: a job whose
+// wrapper failed (a headless sync's, closed when its sync ended) hands the
+// work to it, even when that open came while the failing job still ran.
+const maintenanceStarters = new WeakMap();
+function handOverMaintenance(key, failed) {
+  const next = maintenanceStarters.get(key);
+  if (next && next !== failed) setTimeout(next, 0);
+}
 const backfills = new WeakMap();
 /** Starts (or, `delayMs` 0, hurries) the backfill; resolves when it is done or failed. */
-function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
+function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS, onFail = null) {
   const key = connection.lockKey || connection;
   let state = backfills.get(key);
   if (!state) {
@@ -97,7 +105,7 @@ function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
     state.done = new Promise(resolve => { finish = resolve; });
     const step = () => backfillWifiStep(connection, work => withConnectionLock(connection, work))
       .then(more => { if (more) setTimeout(step, WIFI_BACKFILL_PAUSE_MS); else finish(true); },
-        () => { backfills.delete(key); finish(false); });
+        () => { backfills.delete(key); finish(false); onFail?.(); });
     state.start = () => {
       if (state.started) return;
       state.started = true;
@@ -115,12 +123,16 @@ export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
   // Internal: started by every open, not one of the database's methods.
-  const startMaintenance = database.startMaintenance;
+  const core = { startMaintenance: database.startMaintenance };
   delete database.startMaintenance;
+  const startMaintenance = () => core.startMaintenance?.(startMaintenance);
   const initializeOnce = database.initialize;
   database.initialize = (...args) => {
     const ready = initializeOnce(...args);
-    Promise.resolve(ready).then(() => startMaintenance?.(), () => {});
+    Promise.resolve(ready).then(() => {
+      maintenanceStarters.set(connection.lockKey || connection, startMaintenance);
+      startMaintenance();
+    }, () => {});
     return ready;
   };
   const latestConnection = options.latestConnection ?? connection;
@@ -203,7 +215,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
   // rows), a pause between, on the App's queue in turn with everything else.
   // Without the counter (no page downloaded since the update) it waits: the
   // next download's own trim brings the table to the cap anyway.
-  function scheduleCapTrim() {
+  function scheduleCapTrim(onFail = null) {
     const key = connection.lockKey || connection;
     if (capTrims.has(key)) return;
     capTrims.add(key);
@@ -226,7 +238,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       return Number(result?.rowsAffected) >= PAYLOAD_BATCH;
     }));
     const next = (work, then) => work().then(more => { if (more) setTimeout(() => next(work, then), TRIM_PAUSE_MS); else then(); },
-      () => capTrims.delete(key));
+      () => { capTrims.delete(key); onFail?.(); });
     setTimeout(() => next(trim, () => next(payload, () => capTrims.delete(key))), TRIM_DELAY_MS);
   }
 
@@ -236,7 +248,14 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
     // while none of it is running for this native owner: a headless sync's
     // wrapper closes when its sync ends, its job then fails, and the next
     // wrapper's open starts it again with itself (Codex review).
-    startMaintenance() { scheduleWifiBackfill(connection); scheduleCapTrim(); },
+    // `self`: this open's starter as registered (maintenanceStarters), so a
+    // failing job never hands the work back to itself.
+    startMaintenance(self) {
+      const key = connection.lockKey || connection;
+      const failed = () => handOverMaintenance(key, self);
+      scheduleWifiBackfill(connection, WIFI_BACKFILL_DELAY_MS, failed);
+      scheduleCapTrim(failed);
+    },
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
       return withConnectionLock(connection, async () => {

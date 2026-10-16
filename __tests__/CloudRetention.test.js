@@ -162,3 +162,28 @@ test('review: maintenance started by a headless wrapper that closed is started a
     expect(sql.prepare("SELECT raw_payload FROM supabase_dog_status WHERE event_id = 'old'").get().raw_payload).toBeNull();
   } finally { connection.close(); jest.useRealTimers(); }
 });
+
+test('review: a UI open while the closed headless wrapper\'s job still waits takes the work over when that job fails', async () => {
+  jest.useFakeTimers();
+  const connection = createMemoryConnection();
+  const sql = connection.sqlite;
+  try {
+    connection.lockKey = {};
+    await createDogDatabase(connection).initialize();
+    let closed = false;
+    const headless = { ...connection,
+      executeAsync: (...args) => (closed ? Promise.reject(new Error('closed')) : connection.executeAsync(...args)),
+      executeBatchAsync: (...args) => (closed ? Promise.reject(new Error('closed')) : connection.executeBatchAsync(...args)) };
+    await createCloudDatabase(headless, { maxRows: 2 }).initialize();
+    sql.exec('INSERT INTO cloud_row_count(id, n) VALUES (1, 0)');
+    const insert = sql.prepare(`INSERT INTO supabase_dog_status (received_at, owner_user_id, event_id, master_id, raw_payload)
+      VALUES (?, 'a', ?, 5, '{}')`);
+    for (let i = 0; i < 5; i += 1) insert.run(Date.now() - 2 * CLOUD_PAYLOAD_MS + i, `e${i}`);
+    closed = true;
+    // The UI opens before the headless job's timers fire.
+    await createCloudDatabase({ ...connection }, { maxRows: 2 }).initialize();
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(sql.prepare('SELECT COUNT(*) AS n FROM supabase_dog_status').get().n).toBe(2);
+    expect(sql.prepare('SELECT COUNT(*) AS n FROM supabase_dog_status WHERE raw_payload IS NOT NULL').get().n).toBe(0);
+  } finally { connection.close(); jest.useRealTimers(); }
+});
