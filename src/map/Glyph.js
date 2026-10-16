@@ -227,17 +227,16 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
         </>
       )}
       {name === 'compass' && (
-        // The compass (shown once the map is turned): a ring as wide as the
-        // gear and the other map icons (2..22), the needle inside it with
-        // its north half in red.
+        // The compass (shown once the map is turned): only the needle, as
+        // tall as the gear (2..22) and 10 wide, its north half in red. No ring
+        // (2026-10-16 user feedback on #226).
         <>
-          <Circle cx={12} cy={12} r={10} {...stroke} />
           <Path
-            d="M12 4l4 8H8z"
+            d="M12 2L17 12L7 12Z"
             fill={themeLiteral.critLine}
             stroke="none"
           />
-          <Path d="M12 20l-4-8h8z" fill={color} stroke="none" />
+          <Path d="M12 22L7 12L17 12Z" fill={color} stroke="none" />
         </>
       )}
     </Svg>
