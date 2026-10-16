@@ -69,7 +69,7 @@ test('A3b on screen: name, three rows in order, the distance in the first, red a
   // 訊號源 is on the dog's edit sheet now, not on the card.
   expect(text).not.toContain('訊號源');
   // The distance sits at the first row's right end (no headline above).
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置不在接收範圍850 m');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍');
   expect(text).not.toContain('離手機');
   const order = ['位置', '電量', '活動量'].map(label => text.indexOf(label));
   expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -115,27 +115,37 @@ test('rows that are not buttons are 40dp (56dp with a second line); 活動量 st
   expect(minHeights('activity')).toEqual([touch.cardRow]);
 });
 
-test('at a large font the distance goes under the first row\'s words; an old phone fix says so under it', async () => {
+// 2026-10-16: the distance always stays at the first line's right end, at
+// every font; it went under the words at a large font or with a long value,
+// which made the row (and, for every dog, the card) a line taller.
+test('the distance stays at the first line\'s right end at every font; an old phone fix says so under it', async () => {
   const { PixelRatio } = require('react-native');
   const old = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * 60000 - 5000 } }, NOW);
   const scale = jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
-  await mount({ card: model({}, { phone: old }) });
   const distance = () => byTestId('dog-card-distance').find(node => typeof node.type === 'string');
-  // Beside the first line (on its line, at its right end), or under the words.
-  const inWords = () => StyleSheet.flatten(distance().props.style).alignItems === 'flex-start';
   const besideFirstLine = () => {
     let host = distance().parent;
     while (host && typeof host.type !== 'string') host = host.parent;
-    return StyleSheet.flatten(host.props.style)?.flexDirection === 'row';
+    return StyleSheet.flatten(host.props.style)?.flexDirection === 'row'
+      && StyleSheet.flatten(distance().props.style).alignItems === 'flex-end';
   };
-  expect(flatten(distance())).toBe('850 m手機位置 3 分鐘前');
-  expect(inWords()).toBe(false);
-  expect(besideFirstLine()).toBe(true);
-  await act(async () => renderer.unmount());
-  scale.mockReturnValue(2);
-  await mount({ card: model({}, { phone: old }) });
-  expect(inWords()).toBe(true);
-  expect(besideFirstLine()).toBe(false);
+  for (const fontScale of [1, 1.3, 2]) {
+    scale.mockReturnValue(fontScale);
+    await mount({ card: model({}, { phone: old }) });
+    expect(flatten(distance())).toBe('850 m');
+    expect(besideFirstLine()).toBe(true);
+    // The phone's old fix is the row's own line, at its right edge, under the
+    // distance: it never widens the distance's column.
+    const age = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '手機位置 3 分鐘前');
+    expect(StyleSheet.flatten(age.props.style).textAlign).toBe('right');
+    expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍手機位置 3 分鐘前');
+    // The value beside it wraps in its own column rather than pushing it down.
+    const value = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '09:05 之後沒有新位置');
+    expect(value.props.numberOfLines).toBeUndefined();
+    expect(StyleSheet.flatten(value.props.style)).toMatchObject({ flex: 1, flexShrink: 1 });
+    await act(async () => renderer.unmount());
+    renderer = null;
+  }
 });
 
 test('看軌跡 is 40dp drawn with a 48dp target; the rows sit 12dp under the top, behind a 1dp line', async () => {
@@ -167,33 +177,6 @@ test('the address takes the row\'s whole width under the value and the distance,
   expect(StyleSheet.flatten(firstLine.props.style).flexDirection).toBe('row');
   expect(firstLine.findAll(node => node.props.children === address)).toHaveLength(0);
   expect(flatten(firstLine.children)).toBe('室內850 m');
-});
-
-test('the distance stays beside the first line only while the value fits there on one line', async () => {
-  const { PixelRatio } = require('react-native');
-  jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
-  await mount();
-  const distance = () => byTestId('dog-card-distance').find(node => typeof node.type === 'string');
-  const under = () => StyleSheet.flatten(distance().props.style).alignItems === 'flex-start';
-  const sample = renderer.root.findAll(node => node.props.importantForAccessibility === 'no-hide-descendants'
-    && node.props.onTextLayout)[0];
-  const firstLine = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
-    && StyleSheet.flatten(node.props.style)?.flexDirection === 'row'
-    && node.findAll(item => item.props.testID === 'dog-card-distance').length > 0)[0];
-  // Not measured yet: beside (the normal font).
-  expect(under()).toBe(false);
-  const layout = async ({ value, room, width = 70 }) => {
-    await act(async () => sample.props.onTextLayout({ nativeEvent: { lines: [{ width: value }] } }));
-    await act(async () => firstLine.props.onLayout({ nativeEvent: { layout: { width: room } } }));
-    await act(async () => distance().props.onLayout({ nativeEvent: { layout: { width } } }));
-  };
-  // A 360dp phone: 「09:05 之後沒有新位置」 (about 175dp) and 「↗ 1.4 km」
-  // (70dp) do not fit in 214dp: the distance goes under, the value stays one line.
-  await layout({ value: 175, room: 214 });
-  expect(under()).toBe(true);
-  // Room for both: beside again.
-  await layout({ value: 175, room: 300 });
-  expect(under()).toBe(false);
 });
 
 test('three columns: the label, a lane only for the 「!」 (on every row), the value — values line up', async () => {
@@ -249,80 +232,27 @@ test('label over value (a large font on a narrow phone): the lane first, the lab
   expect(StyleSheet.flatten(row.children[0].props.style).alignSelf).toBe('flex-start');
 });
 
-// 2026-10-14 (the card grew once after it had risen): it stays hidden until
-// every dog's first row is measured and still, then rises at its final height
-// and does not change after.
-const reserveFor = () => {
-  const other = dogCard({ slaveId: 6, coordinate: { latitude: 24.9947, longitude: 121.3194 }, fixAt: NOW - 5000,
-    packetAt: NOW - 5000, batteryPercentage: 62, heldReason: '室內', heldSource: 'weak' }, {
-    freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW }, now: NOW, name: '小黑',
-    address: '桃園區中正路 1 號附近', phone: null });
-  return [{ key: 6, row: other.rows[0], headline: other.headline }];
-};
-const layout = height => ({ nativeEvent: { layout: { height } } });
-const rowsBox = () => renderer.root.findAll(node => typeof node.type === 'string'
-  && StyleSheet.flatten(node.props.style)?.minHeight !== undefined
-  && node.findAll(item => item.props.testID === 'dog-card-row-position').length > 0
-  && StyleSheet.flatten(node.props.style)?.borderTopWidth)[0];
-const measuredRows = () => {
-  const measured = renderer.root.findAll(node => typeof node.type === 'string' && node.props.onLayout
-    && !node.props.testID);
-  const [rows, first] = measured.filter(node => node.findAll(item => item.props.testID === 'dog-card-row-position'
-    && !findHidden(item)).length);
-  return { rows, first, sample: measured.find(node => findHidden(node)) };
-};
-
-test('the card opens at its final height: hidden until every dog is measured, then never changes', async () => {
-  const { onHeight } = await mount({ reserve: reserveFor() });
-  // Laid out, but not shown yet: the other dogs are not measured.
-  expect(onHeight).not.toHaveBeenCalled();
-  const { rows, first, sample } = measuredRows();
-  await act(async () => rows.props.onLayout(layout(160)));
-  await act(async () => first.props.onLayout(layout(56)));
-  // A size held for a moment only (a row before its distance settled) is
-  // not the one it opens with.
-  await act(async () => sample.props.onLayout(layout(120)));
-  await act(async () => jest.advanceTimersByTime(16));
-  await act(async () => sample.props.onLayout(layout(80)));
-  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(160 - 56 + 80);
-  // The card's own layout with that room, then it rises.
-  await act(async () => byTestId('dog-card')[0].props.onLayout(layout(444)));
-  await act(async () => jest.advanceTimersByTime(100));
-  expect(onHeight.mock.calls).toEqual([[452]]);
-  // After the rise: 小黑 shorter or taller, nothing changes.
-  await act(async () => jest.advanceTimersByTime(1000));
-  await act(async () => sample.props.onLayout(layout(40)));
-  await act(async () => jest.advanceTimersByTime(1000));
-  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(184);
-  expect(onHeight.mock.calls).toEqual([[452]]);
-  // The hidden rows are never read out.
+// 2026-10-16: the card keeps no room for the other dogs' rows (it left a
+// blank gap above 看軌跡 for a dog with short rows): it rises at its own
+// height at once, and follows the open dog's rows when another is picked.
+test('the card is as tall as its own rows: it rises at once and follows another dog\'s rows', async () => {
+  const { onHeight } = await mount();
+  expect(onHeight.mock.calls).toEqual([[428]]);
+  // No hidden copies of other dogs' rows, no kept room.
   expect(renderer.root.findAll(node => node.props.importantForAccessibility === 'no-hide-descendants'
-    && node.props.accessible === false).length).toBeGreaterThan(0);
+    && node.props.pointerEvents === 'none')).toHaveLength(0);
+  const rowsBox = renderer.root.findAll(node => typeof node.type === 'string'
+    && StyleSheet.flatten(node.props.style)?.borderTopWidth
+    && node.findAll(item => item.props.testID === 'dog-card-row-position').length > 0)[0];
+  expect(StyleSheet.flatten(rowsBox.props.style).minHeight).toBeUndefined();
+  // Another dog with one line fewer: the card is shorter.
+  await act(async () => byTestId('dog-card')[0].props.onLayout({ nativeEvent: { layout: { height: 400 } } }));
+  expect(onHeight.mock.calls).toEqual([[428], [408]]);
 });
-
-test('measuring slower than 150 ms: it rises at the height it has and adds no room later', async () => {
-  const { onHeight } = await mount({ reserve: reserveFor() });
-  await act(async () => jest.advanceTimersByTime(200));
-  expect(onHeight.mock.calls).toEqual([[428]]);
-  const { rows, first, sample } = measuredRows();
-  await act(async () => rows.props.onLayout(layout(160)));
-  await act(async () => first.props.onLayout(layout(56)));
-  await act(async () => sample.props.onLayout(layout(120)));
-  await act(async () => jest.advanceTimersByTime(1000));
-  expect(StyleSheet.flatten(rowsBox().props.style).minHeight).toBe(0);
-  expect(onHeight.mock.calls).toEqual([[428]]);
-});
-
-const findHidden = node => {
-  for (let item = node; item; item = item.parent) {
-    if (item.props?.importantForAccessibility === 'no-hide-descendants' && item.props?.pointerEvents === 'none') return true;
-  }
-  return false;
-};
 
 test('手機沒有定位 sits where the distance would', async () => {
   await mount({ card: model({}, { phone: null }) });
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe(`位置09:05 之後沒有新位置不在接收範圍${i18nT('c726')}`);
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe(`位置09:05 之後沒有新位置${i18nT('c726')}不在接收範圍`);
 });
 
 test('only 活動量, the pencil and 看軌跡 can be pressed; each reads out what it does', async () => {
@@ -380,7 +310,7 @@ test('a held dog\'s 位置 row is 56dp high (A7b); the address line shows once k
   expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m');
   expect(heights()).toContain(56);
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內桃園區中正路 1 號附近850 m');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m桃園區中正路 1 號附近');
   expect(heights()).toContain(56);
 });
 
@@ -393,7 +323,7 @@ test('held indoors: 位置 「室內・N 分」 and 活動量 「休息中・已
   }
   const activity = dogCardReadings({ local: rows }, NOW).activity;
   await mount({ card: model(held, { ...fresh, activity, address: '桃園區中正路 1 號附近' }) });
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內・26 分桃園區中正路 1 號附近850 m');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內・26 分850 m桃園區中正路 1 號附近');
   expect(flatten(byTestId('dog-card-row-activity')[0])).toContain('休息中・已 12 分鐘');
   const labels = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string', { deep: true })
     .map(node => node.props.accessibilityLabel);

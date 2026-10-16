@@ -35,9 +35,7 @@ import { cloudRowsOnPhoneClock, serverClock } from '../cloud/ServerClock';
 import { localReception } from '../alerts/LocalReception';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
-import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
-// An indoor dog's address being asked: the room it may need.
-const ADDRESS_RESERVE_LINES = 2;
+import { useAddress } from '../placement/AddressLookup';
 import { useMapClock } from '../map/useMapClock';
 
 import { useReceiverState } from '../map/useReceiverState';
@@ -999,42 +997,10 @@ export default function MapScreen({
     () => Object.fromEntries(livePresentation.dogMarkers.map(marker => [marker.slaveId, marker])),
     [livePresentation.dogMarkers],
   );
-  // The other dogs' first rows (2026-10-14: the card must not grow or shrink
-  // from dog to dog): what each would show, so the card keeps room for the
-  // tallest. Their addresses are asked too (the history's cache), their
-  // battery and activity rows are one line each at the normal font.
+  // The row of dogs shows when there are others to switch to. The card keeps
+  // no room for the other dogs' rows (2026-10-16: it left a blank gap above
+  // 看軌跡); it is as tall as the open dog's own rows.
   const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
-  const otherDogs = useMemo(() => (switching
-    ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))
-      .filter(Boolean) : []), [switching, switchDogs, cardDogId, dogs]);
-  const otherPlaces = usePlaceNames(otherDogs.map(dog => (isIndoorHold(dog) ? dog.coordinate : null)));
-  // An address still being asked gets the room of two lines (it may come
-  // back long), so its answer never makes the card taller; the open dog's
-  // own too.
-  const reserve = useMemo(() => {
-    const others = otherDogs.map((dog, index) => {
-      const freshness = judgedFreshness(dog, { now, cloud: cloudClockInput, pauses, catchUpSince,
-        previousStale: previousMarkerStale.current });
-      const place = otherPlaces[index];
-      const asking = isIndoorHold(dog) && place?.state === 'pending';
-      const model = dogCard(dog, {
-        freshness,
-        range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
-        phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
-        now,
-        name: dogName(dog.slaveId, dogAliases),
-        address: isIndoorHold(dog) && !asking
-          ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
-      });
-      const row = asking ? { ...model.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : model.rows[0];
-      return { key: dog.slaveId, row, headline: model.headline };
-    });
-    if (!cardModel) return others;
-    const asking = isIndoorHold(cardDog) && !address;
-    const own = asking ? { ...cardModel.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : cardModel.rows[0];
-    return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
-  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, catchUpSince, cloudDogs?.ranges, livePhone, nativePhone, fixture,
-    dogAliases, cardModel, cardDog, address]);
   const switcher = useMemo(() => {
     if (!switching) return null;
     return {
@@ -1429,7 +1395,6 @@ export default function MapScreen({
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
           switcher={switcher}
-          reserve={reserve}
         />
       )}
       </View>

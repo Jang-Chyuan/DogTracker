@@ -37,7 +37,7 @@ import { PressScale } from './MapControls';
 import BangGlyph from '../components/BangGlyph';
 import { slideOrFade } from '../utils/reduceMotion';
 import DogCarousel from './DogCarousel';
-import { isLargeFont, linesFor } from '../utils/textScale';
+import { linesFor } from '../utils/textScale';
 import {
   layout,
   motion,
@@ -61,16 +61,6 @@ const CLOSE_MS = 180;
 // this, closes it; anything less springs back.
 const CLOSE_SHARE = 0.25;
 const CLOSE_VELOCITY = 0.5;
-// How long the rows' height must hold still before the card keeps it.
-const ROOM_SETTLE_MS = 300;
-// Opening (2026-10-14: the card grew once after it had risen): the card
-// stays hidden until every dog's row is measured and the sizes have held
-// still for OPEN_STILL_MS, then rises straight to its final height. If that
-// takes longer than OPEN_BUDGET_MS it rises at the height it has and keeps
-// it (no room added later), so opening never feels slower. (The hidden rows
-// are laid out in the card's own pass, so on a phone they come with it.)
-const OPEN_STILL_MS = 48;
-const OPEN_BUDGET_MS = 150;
 // The card floats a little off the screen edges, as in the A3 mockups.
 const CARD_INSET = space.s;
 // 看軌跡 is 40dp drawn (2026-10-14: smaller, the rows get the room); the
@@ -116,15 +106,17 @@ function Mark({ tone }) {
 
 /**
  * The direction and distance from the phone (「↗ 320 m」) at the first row's
- * right end, or 「手機沒有定位」; the phone's own old fix under it.
+ * right end, or 「手機沒有定位」. Always there, whatever the status
+ * (2026-10-16): the value beside it wraps instead. The phone's own old fix
+ * (「手機位置 3 分鐘前」) is a line of the row under it (StatusRow), so it
+ * never widens this column and squeezes the value.
  */
-function Distance({ headline, heading, under, onWidth }) {
+function Distance({ headline, heading }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
-  const measure = event => onWidth?.(event.nativeEvent.layout.width);
   if (headline?.kind === 'no-phone') {
     return (
-      <Text style={[styles.noPhone, under && styles.distanceUnder]} accessible={false} onLayout={measure}>
+      <Text style={styles.noPhone} accessible={false}>
         {headline.text}
       </Text>
     );
@@ -135,16 +127,13 @@ function Distance({ headline, heading, under, onWidth }) {
     (((headline.bearing - (heading || 0)) % 360) + 360) % 360
   }deg`;
   return (
-    <View style={under ? styles.distanceUnder : styles.distanceEnd} testID="dog-card-distance" onLayout={measure}>
+    <View style={styles.distanceEnd} testID="dog-card-distance">
       <View style={styles.distanceLine}>
         <View style={{ transform: [{ rotate: turn }] }} testID="dog-card-arrow">
           <Glyph name="arrow" color={colors.text} size={sizes.card.directionIcon} />
         </View>
         <Text style={styles.distance} accessible={false}>{headline.distance}</Text>
       </View>
-      {headline.phoneAge ? (
-        <Text style={styles.phoneAge} accessible={false}>{headline.phoneAge}</Text>
-      ) : null}
     </View>
   );
 }
@@ -153,18 +142,10 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   const { fontScale, width } = useWindowDimensions();
   const labelWidth = sizes.card.labelWidth * Math.max(1, fontScale);
   const stacked = labelWidth + sizes.card.markLane > width * 0.4;
-  // The distance sits beside the first line when the value fits there on one
-  // line with it; otherwise (a narrow phone, a large font, a long value) it
-  // goes under the row's words, rather than squeezing the value into a
-  // narrow column that wraps 「沒有新位置・最後 / 09:05」. Until measured: beside,
-  // except at a large font.
-  const [fit, setFit] = useState({ value: 0, distance: 0, room: 0 });
-  const measured = fit.value > 0 && fit.distance > 0 && fit.room > 0;
-  const under = headline ? (measured ? fit.value + space.s + fit.distance > fit.room : isLargeFont()) : false;
-  const keep = key => value => setFit(current =>
-    (Math.abs(current[key] - value) < 0.5 ? current : { ...current, [key]: value }));
-  const distance = headline
-    ? <Distance headline={headline} heading={heading} under={under} onWidth={keep('distance')} /> : null;
+  // The distance always sits at the first line's right end (2026-10-16: going
+  // under the words made the row a line taller, and the card kept that room
+  // for every dog); a value too long beside it wraps in its own column.
+  const distance = headline ? <Distance headline={headline} heading={heading} /> : null;
   const { colors } = useTheme();
   const TONE = useStyles(getTONE);
   const ACTIVITY_TONE = useStyles(getACTIVITY_TONE);
@@ -206,22 +187,8 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   );
   const head = (
     <>
-      {/* The first line: the value, and the distance beside it only. */}
-      {headline ? (
-        // The value's own width on one line, to see whether it fits.
-        <Text
-          style={[styles.value, styles.sample]}
-          numberOfLines={1}
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          onTextLayout={event => keep('value')(Math.max(0,
-            ...event.nativeEvent.lines.map(line => line.width)))}
-        >
-          {row.value}
-        </Text>
-      ) : null}
-      <View style={styles.firstLine}
-        onLayout={headline ? event => keep('room')(event.nativeEvent.layout.width) : undefined}>
+      {/* The first line: the value, and the distance beside it. */}
+      <View style={styles.firstLine}>
         <Text
           style={[styles.value, { color: valueColor }]}
           accessible={false}
@@ -235,31 +202,30 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
             <Text style={styles.detailInline}>{`（${clock(row.at)}）`}</Text>
           ) : null}
         </Text>
-        {distance && !under ? distance : null}
+        {distance}
       </View>
     </>
   );
   // Under the first line, the whole width of the value's column (under the
   // distance too): the address or coordinates, two lines at most; the
-  // second problem; the distance when it does not fit beside.
+  // second problem.
   const rest = [
     row.key !== 'activity' && row.detail ? (
       <Text key="detail" style={styles.detailLine} numberOfLines={linesFor(2)} accessible={false}>
         {row.detail}
       </Text>
     ) : null,
-    // Measuring only (an address still asked): the room of its lines.
-    row.reserveLines && !row.detail ? (
-      <View key="room" style={[styles.detailRoom, {
-        height: row.reserveLines * type.small.lineHeight * scale,
-      }]} />
-    ) : null,
     row.alert ? (
       <Text key="alert" style={[styles.alertLine, { color: TONE.crit.text }]} accessible={false}>
         {row.alert}
       </Text>
     ) : null,
-    distance && under ? <View key="distance">{distance}</View> : null,
+    // Under the distance, at the row's right edge.
+    headline?.kind === 'distance' && headline.phoneAge ? (
+      <Text key="phoneAge" style={[styles.phoneAge, styles.phoneAgeLine]} accessible={false}>
+        {headline.phoneAge}
+      </Text>
+    ) : null,
   ].filter(Boolean);
   const content = (
     <View
@@ -379,47 +345,6 @@ function CardHeader({ card, avatar, switcher, onEdit, width }) {
 }
 
 /**
- * The rows' height to keep: see DogCard. Before the card is shown it follows
- * the measurements as they come (up or down); once shown it only grows, by a
- * height that has held still for ROOM_SETTLE_MS (a row measured once before
- * its distance found its place must not keep that room) — and not at all
- * when the card opened before the measurements were done (`frozen`).
- */
-function useRowsRoom(reserve) {
-  const [heights, setHeights] = useState({});
-  const keys = new Set(['rows', 'first', ...reserve.map(item => `dog-${item.key}`)]);
-  const changedAt = useRef(0);
-  const measure = (key, event) => {
-    const height = Math.round(event.nativeEvent.layout.height);
-    setHeights(current => {
-      if (current[key] === height) return current;
-      changedAt.current = Date.now();
-      return { ...current, [key]: height };
-    });
-  };
-  const firsts = Object.entries(heights).filter(([key]) => key === 'first' || (key.startsWith('dog-') && keys.has(key)))
-    .map(([, height]) => height);
-  const want = heights.rows ? heights.rows - (heights.first ?? 0) + Math.max(0, ...firsts) : 0;
-  const measuredAll = [...keys].every(key => heights[key] != null);
-  const [held, setHeld] = useState(0);
-  const shown = useRef(false);
-  const frozen = useRef(false);
-  useEffect(() => {
-    if (!shown.current || frozen.current || want <= held) return undefined;
-    const timer = setTimeout(() => setHeld(current => Math.max(current, want)), ROOM_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [want, held]);
-  // Shown: what it took when it rose, then only more (see above).
-  const wantRef = useRef(want);
-  wantRef.current = want;
-  const open = () => {
-    shown.current = true;
-    setHeld(wantRef.current);
-  };
-  return { room: shown.current ? held : want, measure, ready: measuredAll, changedAt, frozen, open };
-}
-
-/**
  * @param card DogCardModel.dogCard()
  * @param avatar the dog's face (useDogAvatars), or null for the default
  * @param switcher MapScreen's, with other dogs on the map: the order's dogs
@@ -442,7 +367,6 @@ const DogCard = forwardRef(function DogCard(
     onTrack,
     trackBusy = false,
     switcher = null,
-    reserve = [],
   },
   ref,
 ) {
@@ -477,13 +401,11 @@ const DogCard = forwardRef(function DogCard(
     // Only a new dog, not every reading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.slaveId]);
-  // The card keeps one height from dog to dog (2026-10-14): the rows get
-  // room for the tallest first row any dog in the row of dogs shows (each
-  // measured, never seen), and never give back room once taken while the
-  // card is open — so neither the card nor the map buttons jump.
-  const room = useRowsRoom(reserve);
-  const reserveRef = useRef(reserve);
-  reserveRef.current = reserve;
+  // The card is as tall as the open dog's rows (2026-10-16: it no longer
+  // keeps room for the tallest of the other dogs, which left a blank gap
+  // above 看軌跡); the distance never moves under a row's words, so a dog's
+  // rows only differ by the lines they really have (an address, a second
+  // problem).
   // The close that is running (a slide, or the reduced-motion fade).
   const closingRun = useRef(null);
   const mounted = useRef(true);
@@ -524,11 +446,8 @@ const DogCard = forwardRef(function DogCard(
     );
     return () => subscription.remove();
   }, [close]);
-  // Hidden until it opens (see OPEN_STILL_MS): the height it would have.
-  const pending = useRef({ value: 0, since: 0, timer: null });
-  useEffect(() => () => clearTimeout(pending.current.timer), []);
+  // Off screen until measured, then it rises at that height.
   const rise = value => {
-    room.open();
     measured.current = value;
     setHeight(value);
     callbacks.current.onHeight?.(value);
@@ -540,36 +459,13 @@ const DogCard = forwardRef(function DogCard(
       easing: ease,
     }).start();
   };
-  const roomRef = useRef(room);
-  roomRef.current = room;
-  const tryOpen = () => {
-    const wait = pending.current;
-    clearTimeout(wait.timer);
-    if (measured.current || !wait.value) return;
-    const current = roomRef.current;
-    const now = Date.now();
-    const still = now - Math.max(current.changedAt.current, wait.changedAt ?? 0) >= OPEN_STILL_MS;
-    if (!reserveRef.current.length || (current.ready && still)) {
-      rise(wait.value);
-    } else if (now - wait.since >= OPEN_BUDGET_MS) {
-      current.frozen.current = true;
-      rise(wait.value);
-    } else {
-      wait.timer = setTimeout(tryOpen, OPEN_STILL_MS / 3);
-    }
-  };
   const onLayout = event => {
     const own = Math.round(event.nativeEvent.layout.height);
     // What it covers, counted from the screen bottom (it floats above it).
     const value = own ? own + CARD_INSET + insets.bottom : 0;
     if (!value) return;
     if (!measured.current) {
-      if (value !== pending.current.value) {
-        pending.current.value = value;
-        pending.current.changedAt = Date.now();
-      }
-      if (!pending.current.since) pending.current.since = Date.now();
-      tryOpen();
+      rise(value);
       return;
     }
     if (value === measured.current) return;
@@ -645,31 +541,17 @@ const DogCard = forwardRef(function DogCard(
           scrollTop.current = event.nativeEvent.contentOffset.y;
         }}
       >
-        <View style={[styles.rows, { minHeight: room.room }]}>
-          <View onLayout={event => room.measure('rows', event)}>
-            {card.rows.map((row, index) => (
-              <View key={row.key} onLayout={index === 0 ? event => room.measure('first', event) : undefined}>
-                <StatusRow
-                  row={row}
-                  first={index === 0}
-                  onPress={row.key === 'activity' ? onActivity : undefined}
-                  headline={index === 0 ? card.headline : null}
-                  heading={heading}
-                />
-              </View>
-            ))}
-          </View>
-          {/* The other dogs' first rows, never seen: the room they need. */}
-          {reserve.length ? (
-            <View style={styles.reserve} pointerEvents="none" accessible={false}
-              importantForAccessibility="no-hide-descendants">
-              {reserve.map(item => (
-                <View key={item.key} onLayout={event => room.measure(`dog-${item.key}`, event)}>
-                  <StatusRow row={item.row} first headline={item.headline} heading={heading} />
-                </View>
-              ))}
-            </View>
-          ) : null}
+        <View style={styles.rows}>
+          {card.rows.map((row, index) => (
+            <StatusRow
+              key={row.key}
+              row={row}
+              first={index === 0}
+              onPress={row.key === 'activity' ? onActivity : undefined}
+              headline={index === 0 ? card.headline : null}
+              heading={heading}
+            />
+          ))}
         </View>
       </ScrollView>
       <PressScale
@@ -751,17 +633,13 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
     },
     body: { flexShrink: 1 },
-    // Laid out like the rows, under them, and never seen.
-    reserve: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
     scroll: { flexGrow: 0, flexShrink: 1 },
-    // 「↗ 320 m」 at the first row's right end; under its words at a large font.
+    // 「↗ 320 m」 at the first row's right end, at every font.
     distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
-    distanceUnder: { alignSelf: 'flex-start', alignItems: 'flex-start', marginTop: space.xs },
-    // Measured off screen: no wrapping, never seen.
-    sample: { position: 'absolute', left: 0, top: 0, width: sizes.card.measureWidth, opacity: 0, flex: 0 },
     distanceLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
     distance: { ...type.status, color: colors.text },
     phoneAge: { ...type.caption, color: colors.textMuted },
+    phoneAgeLine: { textAlign: 'right' },
     noPhone: { ...type.caption, color: colors.textMuted, marginLeft: space.s, flexShrink: 0 },
     // Set apart from the row of dogs (or the face and name) above.
     rows: { marginTop: space.m, borderTopWidth: border.hairline, borderTopColor: colors.line },
@@ -804,7 +682,6 @@ const getStyles = makeStyles(theme => {
     value: { ...type.value, flex: 1, flexShrink: 1 },
     detailInline: { ...type.small, color: colors.textMuted, fontWeight: type.body.fontWeight },
     detailLine: { ...type.small, color: colors.textMuted, marginTop: space.xs },
-    detailRoom: { marginTop: space.xs },
     alertLine: { ...type.small, fontWeight: type.value.fontWeight, marginTop: space.xs },
     mark: { width: sizes.card.labelMark, height: sizes.card.labelMark },
     track: {
