@@ -176,11 +176,10 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       const batteryState = reading ? advanceBattery(batteries?.[dog.slaveId] ?? null, reading) : null;
       return { ...dog, ...(held ? { coordinate: held.coordinate, heldReason: held.reason,
         heldSince: held.since, heldSource: held.source,
-        // Where the history's 室內 node of this hold starts (HoldStore.step);
-        // the card's 「室內・N 分」 counts from it.
+        // Where the history's 室內 node of this hold starts (HoldStore.step).
         heldFrom: Number.isFinite(held.from) ? held.from : held.since,
         // The live rows begin inside the hold (a cold start sees half an
-        // hour): it may have begun before heldFrom (useCardIndoorStay).
+        // hour): it may have begun before heldFrom.
         ...(held.fromClipped && Number.isFinite(held.from) ? { heldFromClipped: true } : {}),
         receivedAt: lastPacketAt } : {}),
         stale, lastPacketAt, lastPositionAt: positionAt,
