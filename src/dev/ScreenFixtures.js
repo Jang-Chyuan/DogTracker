@@ -235,6 +235,24 @@ const restingFor = (now, span) => time => (time >= now - span ? 0.02 : 0.3);
 // ---- the dogs ------------------------------------------------------------
 
 // Dog 4 (豆豆) heard by this phone's receiver 7 up to `until` ms ago.
+// 豆豆's morning for the charging fixtures (2026-10-16): walking near home
+// from four hours ago until `walkUntil` ago, then on the charger at home
+// (activity 0 marked valid, usb_present 1) until `chargeUntil` ago, then
+// lying still there (0.02, off the charger). One packet every 30 s.
+function chargingDay(now, { walkUntil, chargeUntil = 0 }) {
+  const home = (progress, where) => northEastOf(where, 420, 1);
+  const rows = [
+    ...track(bleRow, now, { slave: 4, from: 4 * HOUR, to: walkUntil + 30 * SECOND, every: 30 * SECOND, battery: 58,
+      activity: 0.3, dog: (progress, where) => northEastOf(where, 420 + 200 * (1 - progress), progress) }),
+    ...track(bleRow, now, { slave: 4, from: walkUntil, to: chargeUntil ? chargeUntil + 30 * SECOND : 5 * SECOND,
+      every: 30 * SECOND, battery: 62, usb: 1, activity: 0, dog: home }),
+  ];
+  if (chargeUntil) {
+    rows.push(...track(bleRow, now, { slave: 4, from: chargeUntil, to: 5 * SECOND, every: 30 * SECOND, battery: 62,
+      activity: 0.02, dog: home }));
+  }
+  return rows;
+}
 const dog4Ble = (now, until = 5 * SECOND) =>
   series(bleRow, now, { slave: 4, from: 10 * MINUTE, to: until, start: [14, 9], step: [0.05, 0.08] });
 // Dog 6 (小黑) and dog 8 (阿福) from another team's receiver 9, via the cloud.
@@ -942,6 +960,35 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 2026-10-16: a collar on its charger reports activity 0, marked valid
+  // (newer firmware), and read as 「休息中・超過 6 小時」. 豆豆 walked until
+  // 08:10, then has been on USB power at home (一筆 every 30 s, activity 0,
+  // usb_present 1): 電量 「充電中 62%」 and 活動量 「充電中」, never 休息.
+  'card-charging': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...chargingDay(now, { walkUntil: 80 * MINUTE }),
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // 豆豆 came off the charger at 08:50 and has lain still since: the rest
+  // starts where the charging ended, 「休息中・已 40 分鐘」 (not from 06:50,
+  // when the charger's zeros began).
+  'card-rest-after-charging': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...chargingDay(now, { walkUntil: 160 * MINUTE, chargeUntil: 40 * MINUTE }),
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // A4 今天 for the same 豆豆: walking (一般), 充電中 06:50–08:50 in its own
+  // neutral colour (not 休息, not 沒有資料), then 休息 from 08:50.
+  'activity-charging': now => ({ ...FIXTURES['card-rest-after-charging'](now), openPage: 'activity',
+    activityView: { mode: 'day', date: now } }),
   // card-ok, but 豆豆 has rested since 01:18 after an hour of moving about
   // (before the last half hour one packet a minute with its activity and no
   // fix, so nothing holds it indoors), longer than the card's six-hour read:
@@ -1090,7 +1137,8 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
-  // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 with
+  // minutes), collar on USB at 62% (活動量 「充電中」: its 0.02 readings for
+  // 40 minutes are the charger's, not a rest). 位置 「室內」 with
   // the held place's address under it (053a) is the first row.
   'card-indoor': now => ({
     geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
@@ -2309,11 +2357,13 @@ function fakeWifi({ ssids = [], activeSsid = '' } = {}) {
 function cardRows(ble, cloud, slaveId, since, until = null) {
   const mine = (rows, time) => rows.filter(row => row.slave_id === slaveId)
     .map(row => ({ ...row, time: time(row) }));
+  // The activity readings and the rows on USB power (充電中), as dogCardRows reads them.
   const activity = rows => rows.filter(row => row.time >= since && (until == null || row.time < until)
-    && row.activity_valid === 1)
+    && (row.activity_valid === 1 || row.usb_present === 1))
     .sort((left, right) => left.time - right.time)
-    .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: row.activity_time ?? null,
-      master_id: row.master_id, slave_id: row.slave_id }));
+    .map(row => ({ time: row.time, activity: row.activity, activity_valid: row.activity_valid,
+      activity_time: row.activity_time ?? null, master_id: row.master_id, slave_id: row.slave_id,
+      usb_present: row.usb_present ?? null }));
   const newestBattery = (rows, source) => rows.filter(row => row.battery_valid === 1
     && plausibleBattery(row.battery_percentage, row.battery_mv))
     .sort((left, right) => right.time - left.time).slice(0, CARD_BATTERY_ROWS)
