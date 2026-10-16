@@ -160,7 +160,8 @@ function runStart(values, end, length, extendNeeds, test, earliest, maxMissing =
  *   `over`: a rest that runs back to the first reading, which is within one
  *   rest window (restMinutes) of `from`: nothing read ends it, so it began
  *   before the readings do and lasts longer than they reach back (the card's
- *   「休息中・超過 6 小時」, not a count that slides with the lookback).
+ *   cue to read further back, useDogCardReadings; past its limit
+ *   「休息中・超過 24 小時」, not a count that slides with the lookback).
  */
 export function activityState(minutes = [], { end, from = null, config = ACTIVITY } = {}) {
   const none = { state: null, since: null, durationMinutes: null };
@@ -206,7 +207,7 @@ export function durationText(minutes) {
 /**
  * The card's 活動量 row: { word, detail, speechDetail, tone } —
  * 「休息中」+「已 18 分鐘」 (tone 'rest'; a rest `over` the lookback
- * 「超過 6 小時」, `lookbackMinutes`), 「劇烈活動」+「已 3 分鐘」
+ * 「超過 24 小時」, `lookbackMinutes`), 「劇烈活動」+「已 3 分鐘」
  * ('vigorous'), 「一般」 ('normal'), 「—」 (null) when there is not enough data
  * or the dog has no new position. `speechDetail` is what TalkBack says for the
  * minutes (「活動量低已 18 分鐘」): they are the collar's motion, not the

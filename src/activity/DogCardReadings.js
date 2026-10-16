@@ -6,9 +6,17 @@ import { t } from '../i18n';
 import { activityMinutes, activityReadings } from './ActivityMinutes';
 import { advanceBattery, batteryReading, PLAUSIBLE_BATTERY_SQL } from '../tracking/BatteryPlausibility';
 
-// How far back the 活動量 row looks: a rest that reaches back to where these
-// rows begin reads 「休息中・超過 6 小時」 (ActivityMinutes.activityState `over`).
+// How far back the 活動量 row reads every time: a rest that reaches back to
+// where these rows begin (ActivityMinutes.activityState `over`) is followed
+// further back, one CARD_REST_STEP_MS at a time (useDogCardReadings), to find
+// where it really began (「休息中・已 8 小時 12 分」).
 export const CARD_ACTIVITY_LOOKBACK_MS = 6 * 3600000;
+export const CARD_REST_STEP_MS = CARD_ACTIVITY_LOOKBACK_MS;
+// How far back a rest is followed at most: past it the row says 「休息中・超過
+// 24 小時」. A collar that reports valid, still readings for a whole day is
+// not a rest worth timing to the minute (a collar left lying somewhere, or a
+// fault), and three more reads at most keep the card light.
+export const CARD_REST_MAX_LOOKBACK_MS = 24 * 3600000;
 // How many of each table's newest battery readings the 電量 row judges
 // (BatteryPlausibility): enough for a sudden drop to be confirmed or not.
 export const CARD_BATTERY_ROWS = 20;
@@ -18,21 +26,27 @@ const rowsOf = result => result.results || result.rows?._array || [];
 
 /**
  * Raw rows for one dog from dog_status and (signed in) supabase_dog_status.
+ * With `until`: only the activity rows from `since` up to (not including)
+ * `until`, for a rest followed further back; no battery rows.
  * @returns {{ local: row[], cloud: row[], battery: row[], since }} rows carry
  *   `time` (received_at or track_at) and `source`; `since` is where the
  *   activity rows begin (the 活動量 row's lookback edge); `battery` holds each table's
  *   newest CARD_BATTERY_ROWS rows with a valid battery reading that can be
  *   believed on its own (0..100%, 0% only with an empty cell's voltage).
  */
-export async function readDogCardRows(db, owner, slaveId, since) {
+export async function readDogCardRows(db, owner, slaveId, since, until = null) {
   if (!Number.isInteger(slaveId) || slaveId < 1 || !Number.isFinite(since)) throw new Error(t("c445"));
+  const bounded = until != null;
+  if (bounded && !Number.isFinite(until)) throw new Error(t("c445"));
   const columns = 'activity, activity_valid, activity_time, master_id, slave_id';
   const local = rowsOf(await db.executeAsync(`SELECT received_at AS time, ${columns}
-    FROM dog_status WHERE slave_id=? AND received_at>=? AND activity_valid=1
-    ORDER BY received_at`, [slaveId, since]));
+    FROM dog_status WHERE slave_id=? AND received_at>=? ${bounded ? 'AND received_at<?' : ''} AND activity_valid=1
+    ORDER BY received_at`, bounded ? [slaveId, since, until] : [slaveId, since]));
   const cloud = owner ? rowsOf(await db.executeAsync(`SELECT ${CLOUD_TIME} AS time, ${columns}
-    FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=? AND ${CLOUD_TIME}>=? AND activity_valid=1
-    ORDER BY ${CLOUD_TIME}`, [owner, slaveId, since])) : [];
+    FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=? AND ${CLOUD_TIME}>=?
+    ${bounded ? `AND ${CLOUD_TIME}<?` : ''} AND activity_valid=1
+    ORDER BY ${CLOUD_TIME}`, bounded ? [owner, slaveId, since, until] : [owner, slaveId, since])) : [];
+  if (bounded) return { local, cloud, battery: [], since, until };
   const battery = [
     ...rowsOf(await db.executeAsync(`SELECT received_at AS time, battery_percentage, battery_mv, usb_present,
       'ble' AS source FROM dog_status WHERE slave_id=? AND battery_valid=1 AND battery_percentage IS NOT NULL

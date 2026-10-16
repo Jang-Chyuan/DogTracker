@@ -9,6 +9,19 @@ export function createAtomicDogCardReader(database, owner, getMapPublication = n
   const accepted = new Map();
   let busy = false, blocked = false, success = null, released = null, epoch = 0;
   const holding = () => busy || !!getMapPublication?.()?.busy;
+  // Older activity rows, for a rest followed back (useDogCardReadings): both
+  // tables or none. While a download publishes, null (asked again later),
+  // never this phone's rows alone: the rest would look shorter than it is.
+  // The accepted rows above are left as they are.
+  async function readEarlier(slaveId, since, until) {
+    const fence = captureMapRead(getMapPublication, owner, success);
+    const version = epoch;
+    const open = () => !holding() && !blocked && fence.open;
+    if (owner && !open()) return null;
+    const rows = await database.dogCardRows(owner ?? null, slaveId, since, until);
+    if (owner && !(open() && version === epoch && fence.valid())) return null;
+    return { local: rows.local, cloud: owner ? rows.cloud : [], since, until };
+  }
   return {
     update(nextBusy, nextSuccess) {
       if (busy !== nextBusy || success !== nextSuccess) {
@@ -19,7 +32,8 @@ export function createAtomicDogCardReader(database, owner, getMapPublication = n
         success = nextSuccess;
       }
     },
-    async read(slaveId, since) {
+    async read(slaveId, since, until = null) {
+      if (until != null) return readEarlier(slaveId, since, until);
       const previous = accepted.get(slaveId);
       const fence = captureMapRead(getMapPublication, owner, success);
       const version = epoch;

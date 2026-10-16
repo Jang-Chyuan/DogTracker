@@ -135,10 +135,18 @@ export function activityRow(activity, { reference, positionAt, stale }) {
   // judged up to their newest minute, not up to now, or the minutes still to
   // come make the window look empty (「—」, 沒有資料).
   const end = old ? minuteOf(newestAt) : Math.min(minuteOf(reference) - MINUTE, minuteOf(newestAt));
-  // A rest reaching back to where the rows begin: 「超過 6 小時」 (2026-10-15:
-  // 「已 5 小時 58 分」「已 6 小時」 took turns as the lookback slid).
-  const words = activityWords(activityState(minutes, { end, from: activity.from }),
-    { lookbackMinutes: CARD_ACTIVITY_LOOKBACK_MS / MINUTE });
+  // A rest is followed back to where it began (useDogCardReadings reads
+  // older rows while it reaches the edge): 「已 8 小時 12 分」. Still reaching
+  // the edge — the older rows are being read (`extending`: 「休息中」 alone,
+  // not a number about to change), or it reaches past the limit — it is
+  // 「超過 24 小時」, in whole hours of what was read, so it never slides
+  // minute by minute with the read window (2026-10-15).
+  const state = activityState(minutes, { end, from: activity.from });
+  const reach = Number.isFinite(activity.from) ? reference - activity.from : CARD_ACTIVITY_LOOKBACK_MS;
+  const words = activityWords(state, { lookbackMinutes: Math.max(1, Math.floor(reach / HOUR)) * 60 });
+  if (state.over && activity.extending && words.tone === 'rest') {
+    return { ...words, detail: null, speechDetail: null, at: old ? newestAt : null };
+  }
   return { ...words, at: old && words.tone ? newestAt : null };
 }
 
