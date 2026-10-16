@@ -299,6 +299,7 @@ test('the original light palette is unchanged', () => {
   delete originalColors.activityMissing;
   delete originalColors.activityCharging;
   delete originalColors.activityMissingLine;
+  delete originalColors.activityMissingBand;
   const originalOpacity = { ...tokens.opacity };
   delete originalOpacity.mapHeaderBacking;
   delete originalOpacity.endRing;
@@ -414,4 +415,11 @@ test.each([lightTheme, darkTheme])('activityMissingLine reads as a graphic on th
   expect(contrast(c.activityMissingLine, c.bg)).toBeGreaterThanOrEqual(3);
   expect(contrast(c.activityMissingLine, c.surface)).toBeGreaterThanOrEqual(3);
   expect(c.activityMissingLine).not.toBe(c.noDataLine);
+});
+
+test.each([lightTheme, darkTheme])('the no-data band is pale ground the hatching reads on ($isDark)', theme => {
+  const c = theme.colors;
+  expect(c.activityMissingBand).not.toBe(c.bg);
+  expect(c.activityMissingBand).not.toBe(c.activityNormal);
+  expect(contrast(c.activityMissingLine, c.activityMissingBand)).toBeGreaterThanOrEqual(2.5);
 });
