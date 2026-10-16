@@ -2,7 +2,7 @@ import { size as sizes } from '../theme/tokens';
 import { PAW_STROKE } from './PawGeometry';
 import { LEAVE_SHAPE } from './LeaveGeometry';
 import { useTheme } from '../theme/ThemeProvider';
-import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
 // The gear outline of the design's mockups (24×24).
 const GEAR =
@@ -73,10 +73,14 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
         </>
       )}
       {name === 'frame' && (
-        // 框住全部: four corners around a centre dot.
+        // 框住全部: four corners around a small paw (2026-10-17, replaces the
+        // centre dot). Same geometry as the history list's paw (PawGeometry),
+        // scaled to 0.65 and centred, so it clears the brackets by ~1.5.
         <>
           <Path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" {...stroke} />
-          <Circle cx={12} cy={12} r={1.6} fill={color} />
+          <G transform="translate(12 12) scale(0.65) translate(-12 -11.95)">
+            <Path d={PAW_STROKE} {...stroke} strokeWidth={2.2} />
+          </G>
         </>
       )}
       {name === 'locate' && (

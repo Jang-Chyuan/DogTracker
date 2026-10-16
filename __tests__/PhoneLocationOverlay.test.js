@@ -154,9 +154,6 @@ test('history dot animates refreshes without stale styling or interpolating long
     rawSpeedKmh: 5,
   });
   await render(first, 3600, true, true);
-  expect(renderer.root.findByType(Marker).props.title).toBe(
-    i18nT("c767"),
-  );
   expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
   const next = Object.freeze({ ...first, latitude: 25.001, timestamp: 20000 });
   await render(next, 3600, true, true);
@@ -212,9 +209,7 @@ test('stationary locks immediately, stale shows last fix and inactive cancels ti
   expect(renderer.root.findByType(Marker).props.coordinate.latitude).toBe(
     locked.latitude,
   );
-  expect(renderer.root.findByType(Marker).props.title).toContain('靜止鎖定');
   await render(locked, 4);
-  expect(renderer.root.findByType(Marker).props.title).toBe(i18nT('c055'));
   expect(renderer.root.findByType(Circle).props.fillColor).toBe(lightTheme.literalColors.phoneAccuracyFill);
   await render({ ...position, timestamp: 12000, rawSpeedKmh: 60 });
   await act(async () => jest.advanceTimersByTime(300));
@@ -273,7 +268,6 @@ test.each([['light', lightTheme], ['dark', darkTheme]])('ordinary no-update age 
   await act(async () => { renderer = Renderer.create(element(live)); });
   const marker = () => renderer.root.findByType(Marker);
   const initialAnchor = marker().props.anchor;
-  const initialDescription = marker().props.description;
   const initialDot = dotStyle().backgroundColor;
   const initialCircle = renderer.root.findByType(Circle).props;
   for (const ageSeconds of [4, 601, null]) {
@@ -282,7 +276,6 @@ test.each([['light', lightTheme], ['dark', darkTheme]])('ordinary no-update age 
     await act(async () => jest.advanceTimersByTime(1000));
     expect(marker().props.coordinate).toEqual({ latitude: position.latitude, longitude: position.longitude });
     expect(marker().props.anchor).toEqual(initialAnchor);
-    expect(marker().props.description).toBe(initialDescription);
     expect(dotStyle().backgroundColor).toBe(initialDot);
     expect(renderer.root.findByType(Circle).props.fillColor).toBe(initialCircle.fillColor);
     expect(renderer.root.findByType(Circle).props.strokeColor).toBe(initialCircle.strokeColor);
@@ -321,5 +314,19 @@ test.each([
     .toBe(muted ? lightTheme.literalColors.stalePhoneDot : lightTheme.literalColors.phoneDot);
   await act(async () => jest.advanceTimersByTime(1000));
   expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
-  expect(renderer.root.findByType(Marker).props.description).toContain(new Date(position.timestamp).toLocaleTimeString());
+});
+
+test.each([
+  ['live moving', false, 'moving', 0],
+  ['live stationary', false, 'stationary', 0],
+  ['live stale', false, 'moving', 9],
+  ['history last position', true, 'moving', 0],
+])('%s phone dot has no title, description or press handler, so no info window opens', async (name, historical, motionState, age) => {
+  await render({ ...position, motionState }, age, true, historical);
+  const props = renderer.root.findByType(Marker).props;
+  expect(props.title).toBeUndefined();
+  expect(props.description).toBeUndefined();
+  expect(props.onPress).toBeUndefined();
+  // The 「手機」 name tag still names the dot.
+  expect(renderer.root.findByProps({ testID: 'phone-name-tag' })).toBeTruthy();
 });
