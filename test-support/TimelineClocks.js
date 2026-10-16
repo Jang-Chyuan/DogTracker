@@ -72,10 +72,12 @@ export function departureClocks(nodes) {
 }
 
 /**
- * The metres the list's rows show, added up (the summary must be this):
- * walking / moving rows and, on my route since 2026-10-15 (#200), a stay's
- * own moves — 「停 25 分・45 m」, 「在附近走動 …」 — also when the list
- * shows that stay inside the start or end row.
+ * The metres the list's rows carry, added up (the summary must be this, so
+ * no metres are lost): walking / moving rows and, on my route since
+ * 2026-10-15 (#200), a stay's own moves, also when the list shows that stay
+ * inside the start or end row. Since 2026-10-16 only 「在附近走動 …・200 m」
+ * shows them; an ordinary stay's pill is 「停 25 分」, so the visible
+ * distances need not add up to the summary.
  */
 export function listedMetres(nodes) {
   const foot = row => row.type === 'movement' && (row.mode === 'walking' || row.mode === 'moving');
