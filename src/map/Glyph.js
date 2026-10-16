@@ -4,6 +4,10 @@ import { LEAVE_SHAPE } from './LeaveGeometry';
 import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
+// 框住全部 paw: scaled to 0.4 of the 24-unit paw (about 7dp wide) so every
+// bracket stays at least 3dp away (asserted in PawGlyph.test.js).
+export const FRAME_PAW = { scale: 0.4, strokeWidth: 2.5, cy: 11.95 };
+
 // The gear outline of the design's mockups (24×24).
 const GEAR =
   'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
@@ -75,11 +79,11 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
       {name === 'frame' && (
         // 框住全部: four corners around a small paw (2026-10-17, replaces the
         // centre dot). Same geometry as the history list's paw (PawGeometry),
-        // scaled to 0.65 and centred, so it clears the brackets by ~1.5.
+        // scaled (FRAME_PAW) and centred, clear of the brackets by 3dp or more.
         <>
           <Path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" {...stroke} />
-          <G transform="translate(12 12) scale(0.65) translate(-12 -11.95)">
-            <Path d={PAW_STROKE} {...stroke} strokeWidth={2.2} />
+          <G transform={`translate(12 12) scale(${FRAME_PAW.scale}) translate(-12 -${FRAME_PAW.cy})`}>
+            <Path d={PAW_STROKE} {...stroke} strokeWidth={FRAME_PAW.strokeWidth} />
           </G>
         </>
       )}
