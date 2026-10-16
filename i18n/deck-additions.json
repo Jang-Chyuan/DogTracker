@@ -9450,6 +9450,9 @@
     ],
     "src": "程式（070 補登）",
     "kind": "定稿"
+,
+    "retired": true,
+    "replaced_by": "c353"
   },
   {
     "id": "c1418",

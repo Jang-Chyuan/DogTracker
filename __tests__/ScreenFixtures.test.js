@@ -870,7 +870,7 @@ test('card-indoor-long-address / -silent / -out / -silent-out: one first row, ev
   const out = await card('card-indoor-out');
   expect(out.keys).toEqual(['position', 'battery', 'activity']);
   expect(out.rows.position).toMatchObject({ value: expect.stringMatching(/^室內・\d+ 分$/), tone: null,
-    alert: expect.stringMatching(/^不在接收範圍・\d\d:\d\d 確認$/) });
+    alert: expect.stringMatching(/^不在接收範圍・最後確認 \d\d:\d\d$/) });
   const both = await card('card-indoor-silent-out');
   expect(both.rows.position).toMatchObject({ value: '09:05 之後沒有新資料', tone: 'crit',
     alert: expect.stringMatching(/^不在接收範圍/), detail: long.rows.position.detail });

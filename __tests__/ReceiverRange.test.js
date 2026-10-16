@@ -245,7 +245,7 @@ describe('labels (copy deck)', () => {
     [[ble(0, 300)], {}, '在範圍內'],
     [[ble(0, 900)], {}, '快離開接收範圍'],
     [[ble(0, 1500)], {}, '不在接收範圍'],
-    [[ble(0, 1500)], { held: true }, '不在接收範圍・01:00 確認'],
+    [[ble(0, 1500)], { held: true }, '不在接收範圍・最後確認 01:00'],
   ])('%#', (rows, options, label) => {
     expect(rangeLabel(rangeView(judgeRange(rows), options), clock)).toBe(label);
   });

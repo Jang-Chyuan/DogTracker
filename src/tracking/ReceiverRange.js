@@ -222,13 +222,13 @@ export function rangeView(state, { held = false } = {}) {
   };
 }
 
-/** The row's words (copy deck c348, c067, c078, c1417). */
+/** The row's words (copy deck c348, c067, c078, c353). */
 export function rangeLabel(view, formatClock) {
   if (!view) return null;
   if (view.status === RANGE_STATUS.IN) return t('c348');
   if (view.status === RANGE_STATUS.NEAR) return t('c067');
   if (view.showConfirmedAt && Number.isFinite(view.confirmedAt) && formatClock) {
-    return t('c1417', { time: formatClock(view.confirmedAt) });
+    return t('c353', { time: formatClock(view.confirmedAt) });
   }
   return t('c078');
 }

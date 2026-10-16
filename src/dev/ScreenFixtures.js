@@ -1146,7 +1146,7 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // 小黑 walked out to 1.6 km (out of range) and went indoors there 12
-  // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・HH:MM 確認」
+  // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・最後確認 HH:MM」
   // in red — two things in one row, one red 「!」.
   'card-indoor-out': now => ({
     geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,

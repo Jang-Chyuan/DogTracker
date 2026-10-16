@@ -117,7 +117,7 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), no �
     range: { ...range(RANGE_STATUS.OUT), judgedAt: new Date(2026, 9, 7, 9, 5).getTime() } });
   expect(out.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
   expect(row(out, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
-    alert: '不在接收範圍・09:05 確認' });
+    alert: '不在接收範圍・最後確認 09:05' });
   // Held and stale: 沒有新資料 in red over the same address.
   const silent = card(held, { freshness: { ...stale, basis: 'packet' }, address: '桃園區中正路 1 號附近' });
   expect(row(silent, 'position')).toMatchObject({ value: '09:05 之後沒有新資料', tone: 'crit',
