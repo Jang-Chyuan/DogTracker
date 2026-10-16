@@ -80,7 +80,7 @@ function DashedLine({ length, testID, style }) {
     <View testID={testID} style={[{ width: length, height: stroke }, style]}>
       {dashMarks(length).map(mark => (
         <View key={mark.left} style={[styles.dash, { left: mark.left, width: mark.width, height: stroke,
-          backgroundColor: colors.noDataLine }]} />
+          backgroundColor: colors.activityMissingLine }]} />
       ))}
     </View>
   );

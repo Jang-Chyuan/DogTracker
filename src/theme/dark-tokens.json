@@ -28,6 +28,7 @@
     "activityLow": "#92ACE0",
     "activityNormal": "#7A706A",
     "activityMissing": "#BAB0AD",
+    "activityMissingLine": "#8A928F",
     "activityCharging": "#5CC9A3",
     "activityHigh": "#F0944A",
     "activityHighText": "#F5A86A",

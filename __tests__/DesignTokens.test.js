@@ -298,6 +298,7 @@ test('the original light palette is unchanged', () => {
   const originalColors = { ...tokens.colors };
   delete originalColors.activityMissing;
   delete originalColors.activityCharging;
+  delete originalColors.activityMissingLine;
   const originalOpacity = { ...tokens.opacity };
   delete originalOpacity.mapHeaderBacking;
   delete originalOpacity.endRing;
@@ -406,4 +407,11 @@ test.each([lightTheme, darkTheme])('activityCharging is green, readable as a gra
   }
   expect(contrast(c.activityCharging, c.bg)).toBeGreaterThanOrEqual(3);
   expect(contrast(c.activityCharging, c.surface)).toBeGreaterThanOrEqual(3);
+});
+
+test.each([lightTheme, darkTheme])('activityMissingLine reads as a graphic on the chart background ($isDark)', theme => {
+  const c = theme.colors;
+  expect(contrast(c.activityMissingLine, c.bg)).toBeGreaterThanOrEqual(3);
+  expect(contrast(c.activityMissingLine, c.surface)).toBeGreaterThanOrEqual(3);
+  expect(c.activityMissingLine).not.toBe(c.noDataLine);
 });

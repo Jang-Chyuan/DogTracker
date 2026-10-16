@@ -204,7 +204,7 @@ test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops;
   const legend = state => renderer.root.findAll(node => node.props.testID === `activity-legend-${state}`)[0];
   expect(StyleSheet.flatten(legend('missing').props.style).backgroundColor).toBeUndefined();
   const dashes = renderer.root.findAll(node => node.props.testID === 'activity-legend-missing')[0]
-    .findAll(node => StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.noDataLine);
+    .findAll(node => StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.activityMissingLine);
   expect(dashes.length).toBeGreaterThanOrEqual(1);
   expect(StyleSheet.flatten(legend('normal').props.style).backgroundColor).toBe(theme.colors.activityNormal);
   expect(text('activity-row-missing')).toContain('合計');
