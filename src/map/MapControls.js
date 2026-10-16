@@ -313,7 +313,7 @@ export function CompassButton({ top, turn, onPress, onLayout }) {
           <Glyph
             name="compass"
             color={colors.text}
-            size={sizes.icon.map}
+            size={sizes.icon.compass}
           />
         </Animated.View>
       </PressScale>

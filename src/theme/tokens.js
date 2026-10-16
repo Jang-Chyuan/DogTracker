@@ -244,6 +244,9 @@ export const size = {
     canvas: 24,
     stroke: 2,
     map: 22,
+    // The compass needle (no ring, #226 feedback): a filled needle drawn
+    // larger so it reads as heavy as the 22dp gear outline.
+    compass: 28,
     row: 20,
     walk: 20,
     pencil: 20,
