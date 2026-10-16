@@ -4,6 +4,8 @@ import { withCloudSyncSlot } from '../cloud/CloudSyncSlot';
 import { withConnectionLock } from './connectionLock';
 import { executeHistoryMaterialBatch } from '../cloud/HistoryMaterialPublication';
 import { forgetAddresses } from '../placement/AddressLookup';
+import { releaseRecentDogs } from '../mapHistory/HistoryRecentDogs';
+import { cloudRowsAfterClear, cloudRowsBeforeClear } from '../cloud/CloudRowCounters';
 // 設定 → 進階 → 刪除全部狗資料 (design S7; 判定表「刪除全部狗資料」): only this
 // phone's dog position records and its downloaded copy. It does not touch
 // the cloud, the phone's own route, the dogs' names and faces, or any
@@ -75,13 +77,23 @@ export function createDogDataStore(connection, latestSnapshots = null) {
      * UnsentRowsError when there are any now: 「先上傳／一起刪除」 first).
      */
     async deleteAll({ includeUnsent = false, beforeDelete = () => {} } = {}) {
+      // Nothing of a deleted dog's history stays in memory for reopening.
+      releaseRecentDogs();
       const queue = await hasQueue();
       const waiting = queue ? await unsent() : 0;
       if (waiting > 0 && !includeUnsent) throw new UnsentRowsError(waiting);
       const clearArchive = () => withConnectionLock(connection, async () => {
         // Discover schemas only after earlier archive work drained: that work
         // may have created a stage/proof table since the user pressed delete.
-        const commands = (await existing()).map(table => ({ query: `DELETE FROM ${table}`, params: [] }));
+        const tables = await existing();
+        // The cloud copy's triggers (CloudRowCounters) stand aside while it is
+        // emptied, so SQLite drops its rows at once rather than one by one.
+        const cloud = tables.includes('supabase_dog_status');
+        const commands = [
+          ...(cloud ? cloudRowsBeforeClear() : []),
+          ...tables.map(table => ({ query: `DELETE FROM ${table}`, params: [] })),
+          ...(cloud ? cloudRowsAfterClear() : []),
+        ];
         if (queue) {
           // S3 still says when this account last uploaded (UploadDatabase.summary).
           commands.push({ query: `INSERT OR REPLACE INTO ble_upload_meta(key,value)

@@ -2,6 +2,7 @@ import { executeHistoryMaterialBatch, readHistoryMaterial } from './HistoryMater
 import { initializeHistoryCoverage, invalidateEvictedCoverage, coverageContainsTime, HISTORY_CONTEXT_BEFORE_MS } from './HistoryCoverage';
 import { t } from '../i18n';
 import { withConnectionLock } from '../database/connectionLock';
+import { CLOUD_ROWS, cloudRowCountInit } from './CloudRowCounters';
 
 const tables = [
   ['supabase_dog_status', 'owner_user_id', ['owner_user_id', 'event_id']],
@@ -89,11 +90,13 @@ export function createStagedCloudDatabase(connection, options, createCore) {
       const writes = commands.filter(command => !/^DELETE FROM supabase_dog_status WHERE id IN/.test(command.query)
         && !/^UPDATE history_download_state SET complete=0 WHERE complete=1 AND EXISTS/.test(command.query));
       const stageUsed = kinds.map(value => `(SELECT COUNT(*) FROM ${tableName(value, 'supabase_dog_status')})`).join('+');
-      const used = `(SELECT COUNT(*) FROM supabase_dog_status)+${stageUsed}`;
+      const used = `${CLOUD_ROWS}+${stageUsed}`;
       // Never reclaim another job's staged rows, nor rows the publication keeps.
       const reclaim = kind === 'auto' ? reclaimBeyondCap(tableName(kind, 'supabase_dog_status'), cap) : [];
       try {
+        const counted = await cloudRowCountInit(connection);
         await connection.executeBatchAsync([
+          ...counted,
           ...writes.map(command => {
             const query = command.publishedCopy ? command.query : rewrite(kind, command.query);
             if (/^INSERT INTO supabase_dog_status/.test(command.query)) return {
@@ -245,7 +248,8 @@ export function createStagedCloudDatabase(connection, options, createCore) {
           chunks.push({ query: `SELECT id FROM ${telemetry} WHERE +owner_user_id=? AND id>? AND id<=?`, params: [owner, after, through] });
           after = through;
         }
-        const commands = [];
+        // The row counter, counted once before the first page after the update.
+        const commands = [...await cloudRowCountInit(connection)];
         // COW repairs apply only if the published metadata still matches the
         // captured base. A later completed manual job must win over stale auto.
         const baseMatches = baseFields.map(name => `d.base_${name} IS supabase_dog_status.${name}`).join(' AND ');
@@ -278,7 +282,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
         // same two days before this owner's newest verified hour.
         commands.push({ query: `DELETE FROM cloud_sync_buckets WHERE owner_user_id=?
           AND bucket_start<(SELECT MAX(bucket_start) FROM cloud_sync_buckets WHERE owner_user_id=?)-${BUCKET_RETENTION_MS}`, params: [owner, owner] });
-        const eviction = reclaimHistory('supabase_dog_status', `(SELECT COUNT(*) FROM supabase_dog_status)-${cap}`, kind === 'manual');
+        const eviction = reclaimHistory('supabase_dog_status', `${CLOUD_ROWS}-${cap}`, kind === 'manual');
         commands.push({ query: invalidateEvictedCoverage(eviction), params: [] });
         if (kind === 'manual') {
           // A completed manual scope may not lose its own rows to the cap and
@@ -289,7 +293,7 @@ export function createStagedCloudDatabase(connection, options, createCore) {
               WHERE d.owner=? AND d.complete=1 AND p.complete=0)`, params: [owner] });
         }
         commands.push({ query: eviction, params: [] });
-        commands.push({ query: 'INSERT INTO cloud_stage_quota(used,budget) SELECT COUNT(*),? FROM supabase_dog_status', params: [cap] });
+        commands.push({ query: `INSERT INTO cloud_stage_quota(used,budget) SELECT ${CLOUD_ROWS},?`, params: [cap] });
         commands.push({ query: 'DELETE FROM cloud_stage_quota', params: [] });
         for (const [table, ownerColumn] of tables.slice(1)) commands.push({ query: `DELETE FROM ${tableName(kind, table)} WHERE ${ownerColumn}=?`, params: [owner] });
         commands.push({ query: 'DELETE FROM cloud_download_jobs WHERE owner=? AND kind=?', params: [owner, kind] });
