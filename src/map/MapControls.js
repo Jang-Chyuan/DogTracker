@@ -289,9 +289,11 @@ export function SettingsGear({
 /**
  * The compass (指南針): only while the map is turned; 48dp round, 16dp from
  * the right, at `top` (12dp under the gear, or under the top cards). The
- * needle points to north; a tap turns the map back to north.
+ * needle points to north; a tap turns the map back to north. `turn` is the
+ * camera bearing as an Animated.Value, set on every camera frame, so the
+ * needle follows a rotate gesture without re-rendering the map.
  */
-export function CompassButton({ top, heading, onPress, onLayout }) {
+export function CompassButton({ top, turn, onPress, onLayout }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
@@ -303,13 +305,17 @@ export function CompassButton({ top, heading, onPress, onLayout }) {
         onPress={onPress}
         style={styles.round}
       >
-        <View style={{ transform: [{ rotate: `${-heading}deg` }] }}>
+        <Animated.View
+          testID="map-compass-needle"
+          style={{ transform: [{ rotate: turn.interpolate({
+            inputRange: [0, 360], outputRange: ['0deg', '-360deg'] }) }] }}
+        >
           <Glyph
             name="compass"
-            color={colors.iconMuted}
+            color={colors.text}
             size={sizes.icon.map}
           />
-        </View>
+        </Animated.View>
       </PressScale>
     </View>
   );
