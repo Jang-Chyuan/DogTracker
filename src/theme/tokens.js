@@ -332,9 +332,9 @@ export const size = {
   },
   card: {
     avatar: 40,
-    // The status rows' columns (2026-10-14): the label (right-aligned; as
-    // wide as 「接收範圍」 needs), a lane only for the 「!」 (4 + 16 + 8dp, on
-    // every row), then the value — still 90dp from the row's start.
+    // The status rows' columns (2026-10-17): the label (left-aligned, the 「!」
+    // 4dp after its text) in labelWidth + markLane = 90dp (the longest label
+    // plus a 「!」 fits), then the value — 90dp from the row's start.
     labelWidth: 62,
     markLane: 28,
     labelMark: 16,

@@ -179,32 +179,34 @@ test('the address takes the row\'s whole width under the value and the distance,
   expect(flatten(firstLine.children)).toBe('室內850 m');
 });
 
-test('three columns: the label, a lane only for the 「!」 (on every row), the value — values line up', async () => {
-  const { size: sizes } = require('../src/theme/tokens');
+test('two columns: left-aligned label with the 「!」 right after its text, the value column fixed', async () => {
+  const { size: sizes, space } = require('../src/theme/tokens');
   const { PixelRatio } = require('react-native');
   jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
   const rn = require('react-native');
-  jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 411, height: 900, scale: 3.5, fontScale: 1 });
+  jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 360, height: 900, scale: 3.5, fontScale: 1 });
   await mount();
-  const lanes = renderer.root.findAll(node => node.props.testID === 'dog-card-mark-lane' && typeof node.type === 'string');
-  // One per row: 位置 and 電量 with their 「!」, 活動量 without — the same width.
-  expect(lanes).toHaveLength(3);
-  for (const lane of lanes) expect(StyleSheet.flatten(lane.props.style).width).toBe(sizes.card.markLane);
-  expect(lanes.map(lane => lane.findAll(node => /^dog-card-mark-(crit|warn)$/.test(node.props.testID ?? '')
+  // No lane any more.
+  expect(renderer.root.findAll(node => node.props.testID === 'dog-card-mark-lane')).toHaveLength(0);
+  const cells = renderer.root.findAll(node => node.props.testID === 'dog-card-label-cell' && typeof node.type === 'string');
+  expect(cells).toHaveLength(3);
+  for (const cell of cells) {
+    // One width for every row: the longest label plus a 「!」.
+    expect(StyleSheet.flatten(cell.props.style).width).toBe(sizes.card.labelWidth + sizes.card.markLane);
+    expect(StyleSheet.flatten(cell.props.style).flexDirection).toBe('row');
+  }
+  // 位置 and 電量 have a 「!」, 活動量 not; the 「!」 follows the label, 4dp after.
+  expect(cells.map(cell => cell.findAll(node => /^dog-card-mark-(crit|warn)$/.test(node.props.testID ?? '')
     && node.props.background).length)).toEqual([1, 1, 0]);
-  // The lane sits between the label and the value: label first, value last.
-  // Label, 「!」 and value share the first line; every label right-aligned in
-  // a column of one width, so they all end on one line and the 「!」 follow.
   for (const key of ['position', 'battery', 'activity']) {
     const row = jsonNode(renderer.toJSON(), node => node.props?.testID === `dog-card-row-${key}`);
-    const head = jsonNode(row, node => Array.isArray(node.children)
-      && node.children.some(child => child?.props?.testID === 'dog-card-mark-lane'));
-    const index = head.children.findIndex(node => node.props?.testID === 'dog-card-mark-lane');
-    expect(index).toBe(1);
-    expect(flatten(head.children[0])).toMatch(/^(位置|電量|活動量)$/);
-    expect(StyleSheet.flatten(head.children[0].props.style).width).toBe(sizes.card.labelWidth);
-    const text = jsonNode(head.children[0], node => node.type === 'Text');
-    expect(StyleSheet.flatten(text.props.style).textAlign).toBe('right');
+    const cell = jsonNode(row, node => node.props?.testID === 'dog-card-label-cell');
+    expect(flatten(cell.children[0])).toMatch(/^(位置|電量|活動量)$/);
+    const text = jsonNode(cell, node => node.type === 'Text');
+    expect(StyleSheet.flatten(text.props.style).textAlign).toBeUndefined();
+    if (cell.children[1]) {
+      expect(StyleSheet.flatten(cell.children[1].props.style).marginLeft).toBe(space.xs);
+    }
   }
   // The address and the second problem stay in the value's column.
   const position = jsonNode(renderer.toJSON(), node => node.props?.testID === 'dog-card-row-position');
@@ -222,14 +224,17 @@ const jsonNode = (node, test) => {
   return jsonNode(node.children, test);
 };
 
-test('label over value (a large font on a narrow phone): the lane first, the label and value stacked beside it', async () => {
+test('label over value (a large font on a narrow phone): the label with its 「!」 on top, the value under it', async () => {
   const rn = require('react-native');
   jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 360, height: 780, scale: 3, fontScale: 2 });
   await mount();
   const row = jsonNode(renderer.toJSON(), node => node.props?.testID === 'dog-card-row-position');
-  expect(row.children[0].props.testID).toBe('dog-card-mark-lane');
-  expect(flatten(row.children[1])).toMatch(/^位置/);
-  expect(StyleSheet.flatten(row.children[0].props.style).alignSelf).toBe('flex-start');
+  const stack = row.children[0];
+  const cell = stack.children[0];
+  expect(cell.props.testID).toBe('dog-card-label-cell');
+  expect(flatten(cell.children[0])).toBe('位置');
+  expect(cell.children[1]).toBeTruthy();
+  expect(StyleSheet.flatten(cell.props.style).flexDirection).toBe('row');
 });
 
 // 2026-10-14 (the card grew once after it had risen): it stays hidden until
@@ -565,7 +570,7 @@ test('E06: status labels reserve scaled width instead of wrapping at 1.3x', asyn
   const { size: sizes } = require('../src/theme/tokens');
   let cell = label.parent;
   while (cell && !rn.StyleSheet.flatten(cell.props.style)?.width) cell = cell.parent;
-  expect(rn.StyleSheet.flatten(cell.props.style).width).toBe(sizes.card.labelWidth * 1.3);
+  expect(rn.StyleSheet.flatten(cell.props.style).width).toBe(sizes.card.labelWidth * 1.3 + sizes.card.markLane);
   jest.restoreAllMocks();
 });
 

@@ -98,7 +98,7 @@ const getACTIVITY_TONE = makeStyles(theme => {
 
 /**
  * The round 「!」 of a problem (red) or a warning (amber) row (2026-10-14),
- * centred in its own lane between the label and the value.
+ * placed right after its label's text.
  */
 function Mark({ tone }) {
   const { colors } = useTheme();
@@ -153,7 +153,8 @@ function Distance({ headline, heading }) {
 function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   const { fontScale, width } = useWindowDimensions();
   const labelWidth = sizes.card.labelWidth * Math.max(1, fontScale);
-  const stacked = labelWidth + sizes.card.markLane > width * 0.4;
+  const labelColumn = labelWidth + sizes.card.markLane;
+  const stacked = labelColumn > width * 0.4;
   // The distance always sits at the first line's right end (2026-10-16: going
   // under the words made the row a line taller, and the card kept that room
   // for every dog); a value too long beside it wraps in its own column.
@@ -171,30 +172,29 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
     : row.key === 'activity'
     ? ACTIVITY_TONE[row.activityTone] || ACTIVITY_TONE.missing
     : colors.text;
-  // Three columns (2026-10-14): the label, right-aligned so every label
-  // ends on one line; a lane only for the 「!」, right after it (the same on
-  // every row, with or without one); the value. Label, 「!」 and value share
-  // the first line; the lines under it (address, the second problem) stay
-  // in the value's column. Label over value (the largest fonts): the lane
-  // first, then the label and the value stacked beside it.
+  // Two columns (2026-10-17, user decision; was three with a 「!」 lane): the
+  // label, left-aligned, with the 「!」 right after its text (4dp gap, wherever
+  // the text ends — no column of 「!」); the value. The label column is wide
+  // enough for the longest label plus the 「!」, so values stay level between
+  // rows and dogs. Label, 「!」 and value share the first line; the lines
+  // under it stay in the value's column. Label over value (the largest
+  // fonts): the label and its 「!」 on top, the value under them.
   const scale = Math.max(1, fontScale);
   const valueLine = type.value.lineHeight * scale;
   const label = (
-    <View style={[styles.labelCell, stacked ? styles.labelCellStacked : {
-      width: labelWidth, marginTop: (valueLine - type.caption.lineHeight * scale) / 2 }]}>
-      <Text style={[styles.rowLabel, !stacked && styles.rowLabelEnd]} accessible={false}>
+    <View
+      style={[styles.labelCell, stacked ? styles.labelCellStacked : {
+        width: labelColumn, marginTop: (valueLine - Math.max(type.caption.lineHeight * scale, sizes.card.labelMark)) / 2 }]}
+      testID="dog-card-label-cell"
+    >
+      <Text style={styles.rowLabel} accessible={false}>
         {row.label}
       </Text>
-    </View>
-  );
-  const lane = (
-    <View
-      style={[styles.lane, {
-        marginTop: ((stacked ? type.caption.lineHeight * scale : valueLine) - sizes.card.labelMark) / 2,
-      }]}
-      testID="dog-card-mark-lane"
-    >
-      {markTone && <Mark tone={markTone} />}
+      {markTone && (
+        <View style={styles.markGap}>
+          <Mark tone={markTone} />
+        </View>
+      )}
     </View>
   );
   const head = (
@@ -256,25 +256,21 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
       testID={`dog-card-row-${row.key}`}
     >
       {stacked ? (
-        <>
-          {lane}
-          <View style={styles.stack}>
-            {label}
-            <View style={styles.rowTexts}>
-              {head}
-              {rest}
-            </View>
+        <View style={styles.stack}>
+          {label}
+          <View style={styles.rowTexts}>
+            {head}
+            {rest}
           </View>
-        </>
+        </View>
       ) : (
         <View style={styles.rowBody}>
           <View style={styles.headLine}>
             {label}
-            {lane}
             <View style={styles.rowTexts}>{head}</View>
           </View>
           {rest.length ? (
-            <View style={{ marginLeft: labelWidth + sizes.card.markLane }}>{rest}</View>
+            <View style={{ marginLeft: labelColumn }}>{rest}</View>
           ) : null}
         </View>
       )}
@@ -791,21 +787,16 @@ const getStyles = makeStyles(theme => {
       minWidth: sizes.card.labelWidth,
       paddingLeft: space.s,
       flexShrink: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     labelCellStacked: { paddingLeft: 0 },
-    // Every label ends on the same line, 4dp before the 「!」.
-    rowLabelEnd: { textAlign: 'right' },
-    // The 「!」 lane: 4dp after the label, the 16dp 「!」, 8dp before the value
-    // — the same on every row; level with the first line.
-    lane: {
-      width: sizes.card.markLane,
-      paddingLeft: space.xs,
-      alignSelf: 'flex-start',
-      flexShrink: 0,
-    },
+    // The 「!」 follows the label text, 4dp after it (the cell is as wide as
+    // the longest label plus a 「!」, so the value column never moves).
+    markGap: { marginLeft: space.xs, flexShrink: 0 },
     rowBody: { flex: 1 },
     headLine: { flexDirection: 'row', alignItems: 'flex-start' },
-    // Label over value (the largest fonts), right of the lane.
+    // Label over value (the largest fonts), under the label.
     stack: { flex: 1, gap: space.xs },
     rowLabel: { ...type.caption, color: colors.textMuted },
     rowTexts: { flex: 1, minWidth: 0 },
