@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { chargingSql, isCharging } from '../models/UsbPresent';
 // The readings a dog's open card needs beyond the map's own rows: the dog's
 // activity readings of the last hours (both tables, for the 活動量 row) and
 // its newest believed battery reading (the 電量 row says how old it is when it
@@ -38,13 +39,16 @@ export async function readDogCardRows(db, owner, slaveId, since, until = null) {
   if (!Number.isInteger(slaveId) || slaveId < 1 || !Number.isFinite(since)) throw new Error(t("c445"));
   const bounded = until != null;
   if (bounded && !Number.isFinite(until)) throw new Error(t("c445"));
-  const columns = 'activity, activity_valid, activity_time, master_id, slave_id';
+  // The activity readings, and every row on USB power (充電中: its minutes
+  // are not judged, and end a rest; ActivityMinutes).
+  const columns = 'activity, activity_valid, activity_time, master_id, slave_id, usb_present';
   const local = rowsOf(await db.executeAsync(`SELECT received_at AS time, ${columns}
-    FROM dog_status WHERE slave_id=? AND received_at>=? ${bounded ? 'AND received_at<?' : ''} AND activity_valid=1
+    FROM dog_status WHERE slave_id=? AND received_at>=? ${bounded ? 'AND received_at<?' : ''}
+    AND (activity_valid=1 OR ${chargingSql()})
     ORDER BY received_at`, bounded ? [slaveId, since, until] : [slaveId, since]));
   const cloud = owner ? rowsOf(await db.executeAsync(`SELECT ${CLOUD_TIME} AS time, ${columns}
     FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=? AND ${CLOUD_TIME}>=?
-    ${bounded ? `AND ${CLOUD_TIME}<?` : ''} AND activity_valid=1
+    ${bounded ? `AND ${CLOUD_TIME}<?` : ''} AND (activity_valid=1 OR ${chargingSql()})
     ORDER BY ${CLOUD_TIME}`, bounded ? [owner, slaveId, since, until] : [owner, slaveId, since])) : [];
   if (bounded) return { local, cloud, battery: [], since, until };
   const battery = [
@@ -85,6 +89,6 @@ export function dogCardReadings({ local = [], cloud = [], battery = [], since = 
   }
   const accepted = state?.accepted;
   const newest = accepted ? { percentage: accepted.percentage,
-    charging: acceptedRow?.usb_present === 1 || acceptedRow?.usb_present === true, at: accepted.at } : null;
+    charging: isCharging(acceptedRow), at: accepted.at } : null;
   return { activity: { minutes, newestAt, from: Number.isFinite(since) ? since : null }, battery: newest };
 }

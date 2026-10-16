@@ -24,7 +24,7 @@ test('day averages and deduplicates with shared BLE precedence; missing curve is
   expect(view.points).toHaveLength(1440);
   expect(view.points[0]).toMatchObject({ value: 0.5, count: 2, state: 'normal' });
   expect(view.points[1]).toMatchObject({ value: null, count: 0, state: 'missing' });
-  expect(view.totals).toEqual({ rest: 0, normal: 2, vigorous: 0, missing: 1438 });
+  expect(view.totals).toEqual({ rest: 0, normal: 2, vigorous: 0, missing: 1438, charging: 0 });
   expect(view.gaps[0]).toEqual({ start: START + M, end: START + 2 * M, durationMinutes: 1 });
   expect(JSON.stringify(readings)).toBe(original);
 });
@@ -59,7 +59,7 @@ test('today excludes unfinished minute and all future time from totals/gaps', ()
   const view = buildDayView({ ...options, now, readings: input(START, [0.3, 0.3, 0.3, 1, 1]) });
   expect(view.label).toBe('10/1（四）今天');
   expect(view.points).toHaveLength(3);
-  expect(view.totals).toEqual({ rest: 0, normal: 3, vigorous: 0, missing: 0 });
+  expect(view.totals).toEqual({ rest: 0, normal: 3, vigorous: 0, missing: 0, charging: 0 });
   expect(view.gaps).toEqual([]);
   expect(view.evaluatedEnd).toBe(START + 3 * M);
   const midnight = buildDayView({ ...options, now: START });
@@ -99,7 +99,7 @@ test('week Sunday boundary and daily bars use full capacity with missing white s
   expect(view.points).toEqual([]);
   const bar = view.bars[4];
   expect(bar.label).toBe('10/1（四）');
-  expect(bar.segments.map(s => s.state)).toEqual(['rest', 'normal', 'vigorous']);
+  expect(bar.segments.map(s => s.state)).toEqual(['rest', 'normal', 'vigorous', 'charging']);
   expect(bar.segments[2].share).toBeCloseTo(2 / 1440);
   expect(bar.segments[2].height).toBeCloseTo(200 * 2 / 1440);
   expect(bar.missingShare).toBeCloseTo(1437 / 1440);
@@ -132,7 +132,7 @@ test('year uses month capacities including leap February, not averages of daily 
 test('empty data, durations, legend and thresholds use A4 text', () => {
   const view = buildDayView(options);
   expect(view.emptyText).toBe(i18nT('c352'));
-  expect(view.rows.map(row => row.label)).toEqual([i18nT('c086'), i18nT('c088'), i18nT('c089')]);
+  expect(view.rows.map(row => row.label)).toEqual([i18nT('c086'), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
   expect(view.rows[2].durationText).toBe('24 小時');
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
   expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
@@ -140,7 +140,7 @@ test('empty data, durations, legend and thresholds use A4 text', () => {
     { state: 'rest', min: 0, max: 0.05, label: i18nT('c086') },
     { state: 'vigorous', min: 0.8, max: 1, label: i18nT('c088') },
   ]);
-  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual([i18nT('c086'), i18nT("c434"), i18nT('c088'), i18nT('c089')]);
+  expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual([i18nT('c086'), i18nT("c434"), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
   expect(ACTIVITY_VIEW_COPY.low).toBe(i18nT('c086'));
   expect(ACTIVITY_VIEW_COPY.high).toBe(i18nT('c088'));
   expect(ACTIVITY_VIEW_COPY.explanation).toBeUndefined();
@@ -279,12 +279,12 @@ test('time before the dog\'s first reading is not 沒有資料', () => {
   const first = date(10, 1, 12);
   const view = buildDayView({ date: START, now: NOW, earliest: first, since: first,
     readings: input(first, [0.3, 0.3, 0.3]) });
-  expect(view.totals).toEqual({ rest: 0, normal: 3, vigorous: 0, missing: 12 * 60 - 3 });
+  expect(view.totals).toEqual({ rest: 0, normal: 3, vigorous: 0, missing: 12 * 60 - 3, charging: 0 });
   expect(view.rows[2].rangeLabels).toEqual(['12:03–24:00']);
   expect(view.points[0]).toMatchObject({ value: null, state: 'before' });
   const week = buildWeekView({ date: START, now: NOW, earliest: first, since: first,
     minutes: [{ minute: first, value: 0.3, count: 1 }] });
-  expect(week.bars[0].totals).toEqual({ rest: 0, normal: 0, vigorous: 0, missing: 0 });
+  expect(week.bars[0].totals).toEqual({ rest: 0, normal: 0, vigorous: 0, missing: 0, charging: 0 });
   expect(week.bars[0].pendingMinutes).toBe(1440);
   expect(week.rows[2].rangeLabels[0]).toBe('10/1（四） 12:01–24:00');
 });
