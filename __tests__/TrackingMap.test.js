@@ -1810,3 +1810,24 @@ test('a tap on a marker\'s empty canvas beside a dog is an empty-map tap: it clo
     mockCamera.getCamera.mockResolvedValue(null);
   }
 });
+
+// 2026-10-16: switching the card's dog drew every dog marker again (new
+// marker objects from the same dogs); only the dogs whose look changed are.
+test('a dog marker draws again only when what it shows changes', async () => {
+  const DogMarkerView = require('../src/map/DogMarkerView').default;
+  const other = { ...slaveMarker, slaveId: 8, name: '狗 8', tag: '狗 8', label: '狗 8',
+    coordinate: { latitude: 25.002, longitude: 121.002 } };
+  const onDogPress = jest.fn();
+  const shown = () => Object.fromEntries(renderer.root.findAllByType(DogMarkerView)
+    .map(view => [view.props.marker.slaveId, view.props]));
+  await render({ presentation: { ...defaults.presentation, dogMarkers: [slaveMarker, other] }, onDogPress });
+  await readyMap();
+  const before = shown();
+  await act(async () => renderer.update(<TrackingMap {...defaults} onDogPress={onDogPress}
+    presentation={{ ...defaults.presentation,
+      dogMarkers: [{ ...slaveMarker, selected: true }, { ...other, coordinate: { ...other.coordinate } }] }} />));
+  const after = shown();
+  expect(after[8]).toBe(before[8]);
+  expect(after[7]).not.toBe(before[7]);
+  expect(after[7].marker.selected).toBe(true);
+});
