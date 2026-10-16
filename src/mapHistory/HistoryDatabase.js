@@ -286,8 +286,6 @@ export function createHistoryDatabase(db) {
         cursors[key] = cursor;
         return found;
       }
-      const table = async name => rows(await db.executeAsync(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
         if (!rows(await route.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'")).length) return { rows: [], seed: [], after: cursors };
         // The model's columns (the same as 「今天 x km」's) and the CSV
