@@ -43,6 +43,9 @@ export const colors = {
   activityNormal: '#D3CCC4',
   // No activity evidence: neutral, readable as both text and chart graphics.
   activityMissing: '#686868',
+  // A4 充電中 (2026-10-16): minutes on the charger, a cool neutral apart from
+  // 一般's warm grey and 沒有資料's dark grey (3:1 on surface as a graphic).
+  activityCharging: '#7C929C',
   // Chart fill only; the card's 劇烈活動 text uses activityHighText.
   activityHigh: '#E07A2E',
   activityHighText: '#B85A12',

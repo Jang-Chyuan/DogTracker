@@ -297,6 +297,7 @@ test('the original light palette is unchanged', () => {
   );
   const originalColors = { ...tokens.colors };
   delete originalColors.activityMissing;
+  delete originalColors.activityCharging;
   const originalOpacity = { ...tokens.opacity };
   delete originalOpacity.mapHeaderBacking;
   delete originalOpacity.endRing;

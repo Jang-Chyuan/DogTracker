@@ -6,14 +6,16 @@ const MINUTE = 60000;
 // A local binding: a global lookup per minute is slow over a year of minutes.
 const isNaN = Number.isNaN;
 const STATES = ['rest', 'normal', 'vigorous'];
-const WORDS = { rest: t('c086'), normal: t("c434"), vigorous: t('c088'), missing: t('c089') };
+// 充電中 (2026-10-16): minutes the collar was on USB power. Not the dog's
+// activity: not 休息／一般／劇烈, not 沒有資料 either, shown on their own.
+const WORDS = { rest: t('c086'), normal: t("c434"), vigorous: t('c088'), missing: t('c089'), charging: t('c731') };
 const DAYS = t("c446");
 
 export const ACTIVITY_VIEW_COPY = Object.freeze({
   tabs: Object.freeze([t("c444"), t('c081'), t('c082'), t('c083')]),
   previous: '‹',
   next: '›',
-  legend: Object.freeze([...STATES, 'missing'].map(state => Object.freeze({ state, label: WORDS[state] }))),
+  legend: Object.freeze([...STATES, 'missing', 'charging'].map(state => Object.freeze({ state, label: WORDS[state] }))),
   low: t('c086'),
   high: t('c088'),
   provisional: t("c456"),
@@ -126,7 +128,7 @@ function axisLabel(mode, start) {
  * a 休息 / 劇烈 run covers it (missing minutes inside a run stay missing for
  * the totals, but the run's ground is continuous).
  */
-export function classify(values, config = ACTIVITY) {
+export function classify(values, config = ACTIVITY, charging = null) {
   const n = values.length;
   const restWindow = config.restMinutes;
   const needs = Math.ceil(restWindow * config.coverage - 1e-9);
@@ -142,7 +144,8 @@ export function classify(values, config = ACTIVITY) {
     const v = values[i];
     const has = isNaN(v) ? 0 : 1;
     data[i + 1] = data[i] + has;
-    bad[i + 1] = bad[i] + (has && v > restMax ? 1 : 0);
+    // A minute on the charger breaks a rest like an active minute.
+    bad[i + 1] = bad[i] + ((has && v > restMax) || (charging && charging[i]) ? 1 : 0);
   }
   nextData[n] = n;
   for (let i = n - 1; i >= 0; i -= 1) nextData[i] = isNaN(values[i]) ? nextData[i + 1] : i;
@@ -200,18 +203,24 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const n = Math.max(0, Math.round((limit - base) / MINUTE));
   const values = new Float64Array(n).fill(NaN);
   const counts = new Uint16Array(n);
+  const charging = new Uint8Array(n);
   for (let i = 0; i < minutes.length; i += 1) {
     const item = minutes[i];
     // Minutes are whole (minuteOf), so the slot is exact.
     const index = (item.minute - base) / MINUTE;
     if (index >= 0 && index < n) {
+      // A charging minute is not data (its value is not the dog's).
+      if (item.charging) {
+        charging[index] = 1;
+        continue;
+      }
       values[index] = item.value;
       const count = item.count ?? 1;
       counts[index] = count > 65535 ? 65535 : count;
     }
   }
-  const { rest, vigorous } = classify(values, ACTIVITY);
-  // Period minutes: 0 missing, 1 normal, 2 rest, 3 vigorous.
+  const { rest, vigorous } = classify(values, ACTIVITY, charging);
+  // Period minutes: 0 missing, 1 normal, 2 rest, 3 vigorous, 5 charging.
   const first = 9;
   const last = Math.max(first, Math.round((end - base) / MINUTE));
   const length = last - first;
@@ -220,7 +229,8 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const before = Number.isFinite(since) ? Math.max(0, Math.floor((minuteOf(since) - period.start) / MINUTE)) : 0;
   for (let i = 0; i < length; i += 1) {
     const k = first + i;
-    if (k >= n || isNaN(values[k])) states[i] = before > i ? 4 : 0;
+    if (k < n && charging[k]) states[i] = 5;
+    else if (k >= n || isNaN(values[k])) states[i] = before > i ? 4 : 0;
     else states[i] = vigorous[k] ? 3 : rest[k] ? 2 : 1;
   }
   const at = i => period.start + i * MINUTE;
@@ -241,35 +251,38 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   };
   const band = cover => runsOf(cover, 1, first).map(({ start, end: stop }) => ({ start, end: stop }));
   const bands = { rest: band(rest), vigorous: band(vigorous) };
-  const CODE = { missing: 0, normal: 1, rest: 2, vigorous: 3 };
-  const totals = { rest: 0, normal: 0, vigorous: 0, missing: 0 };
-  const NAMES = ['missing', 'normal', 'rest', 'vigorous', 'before'];
-  const tallies = [0, 0, 0, 0, 0];
+  const CODE = { missing: 0, normal: 1, rest: 2, vigorous: 3, charging: 5 };
+  const totals = { rest: 0, normal: 0, vigorous: 0, missing: 0, charging: 0 };
+  const NAMES = ['missing', 'normal', 'rest', 'vigorous', 'before', 'charging'];
+  const tallies = [0, 0, 0, 0, 0, 0];
   for (let i = 0; i < length; i += 1) tallies[states[i]] += 1;
-  NAMES.slice(0, 4).forEach((name, code) => { totals[name] = tallies[code]; });
+  NAMES.forEach((name, code) => { if (name !== 'before') totals[name] = tallies[code]; });
   const points = [];
   if (mode === 'day') {
     for (let i = 0; i < length; i += 1) {
       const k = first + i;
-      const has = states[i] !== 0 && states[i] !== 4;
+      const has = states[i] !== 0 && states[i] !== 4 && states[i] !== 5;
       points.push({ minute: at(i), value: has ? values[k] : null, count: has ? counts[k] : 0, state: NAMES[states[i]] });
     }
   }
   const gaps = runsOf(states, 0);
-  const own = { rest: runsOf(states, CODE.rest), vigorous: runsOf(states, CODE.vigorous), missing: gaps };
+  const own = { rest: runsOf(states, CODE.rest), vigorous: runsOf(states, CODE.vigorous), missing: gaps,
+    charging: runsOf(states, CODE.charging) };
   const ranges = {};
-  for (const state of ['rest', 'vigorous', 'missing']) ranges[state] = mode === 'day' ? own[state] : splitByDay(own[state]);
+  for (const state of ['rest', 'vigorous', 'missing', 'charging']) {
+    ranges[state] = mode === 'day' ? own[state] : splitByDay(own[state]);
+  }
   const bars = mode === 'day' ? bucketDayMinutes(points, now, period.start) : [];
   if (mode !== 'day') {
     let index = 0;
     for (let start = period.start; start < period.end;) {
       const d = new Date(start);
       const stop = mode === 'year' ? new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime() : addDays(start, 1);
-      const counted = [0, 0, 0, 0, 0];
+      const counted = [0, 0, 0, 0, 0, 0];
       const stopIndex = Math.round((stop - period.start) / MINUTE);
       while (index < length && index < stopIndex) counted[states[index++]] += 1;
       bars.push(barOf(mode, start, stop,
-        { missing: counted[0], normal: counted[1], rest: counted[2], vigorous: counted[3] }));
+        { missing: counted[0], normal: counted[1], rest: counted[2], vigorous: counted[3], charging: counted[5] }));
       start = stop;
     }
   }
@@ -284,14 +297,16 @@ export function bucketDayMinutes(points, now, start) {
   const current = new Date(now);
   const last = today ? Math.floor((current.getHours() * 60 + current.getMinutes()) / 15) : 95;
   const buckets = Array.from({ length: 96 }, (_, index) => ({
-    index, pending: index > last, count: 0, sum: 0,
+    index, pending: index > last, count: 0, sum: 0, charging: 0,
     totals: { rest: 0, normal: 0, vigorous: 0 },
   }));
   for (const point of points) {
-    if (point.value == null || point.minute >= minuteOf(now)) continue;
+    if (point.minute >= minuteOf(now)) continue;
     const date = new Date(point.minute);
     const index = Math.floor((date.getHours() * 60 + date.getMinutes()) / 15);
     const bucket = buckets[index];
+    if (point.state === 'charging' && !bucket.pending) bucket.charging += 1;
+    if (point.value == null) continue;
     if (bucket.pending || !Object.hasOwn(bucket.totals, point.state)) continue;
     bucket.count += 1;
     bucket.sum += point.value;
@@ -299,14 +314,16 @@ export function bucketDayMinutes(points, now, start) {
   }
   return buckets.map(({ sum, ...bucket }) => {
     const value = bucket.count ? sum / bucket.count : null;
-    const state = value == null ? 'missing' : bucket.totals.vigorous >= 2 ? 'vigorous'
+    // A quarter hour with no reading of the dog but some on the charger is
+    // 充電中 (a flat band, like 沒有資料's).
+    const state = value == null ? (bucket.charging ? 'charging' : 'missing') : bucket.totals.vigorous >= 2 ? 'vigorous'
       : bucket.totals.rest > bucket.totals.normal ? 'rest' : 'normal';
     return { ...bucket, value, state, height: value == null ? 0 : Math.max(size.activity.dayBarMin, value * size.activity.chart) };
   });
 }
 
 export function activityChartSummary(totals) {
-  return ['vigorous', 'rest', 'normal', 'missing']
+  return ['vigorous', 'rest', 'normal', 'missing', 'charging']
     .filter(state => totals[state] > 0)
     .map(state => `${WORDS[state]} ${totalText(totals[state])}`).join('，') || ACTIVITY_VIEW_COPY.empty;
 }
@@ -318,13 +335,13 @@ function barOf(mode, start, stop, tally) {
     axisLabel: axisLabel(mode, start),
     capacityMinutes, totals: tally, missingShare: tally.missing / capacityMinutes,
     pendingMinutes: capacityMinutes - Object.values(tally).reduce((x, y) => x + y, 0),
-    segments: STATES.map(state => ({ state, label: WORDS[state], minutes: tally[state],
-      share: tally[state] / capacityMinutes, height: tally[state] / capacityMinutes * 200 })) };
+    segments: [...STATES, 'charging'].map(state => ({ state, label: WORDS[state], minutes: tally[state] ?? 0,
+      share: (tally[state] ?? 0) / capacityMinutes, height: (tally[state] ?? 0) / capacityMinutes * 200 })) };
 }
 
 function finish({ mode, period, navigation, now, end, totals, ranges, bars, points, bands, gaps }) {
-  const rows = ['rest', 'vigorous', 'missing'].map(state => {
-    const list = ranges[state];
+  const rows = ['rest', 'vigorous', 'missing', 'charging'].map(state => {
+    const list = ranges[state] ?? [];
     return { state, label: WORDS[state], durationMinutes: totals[state], durationText: totalText(totals[state]),
       ranges: list, rangeLabels: list.slice(0, 3).map(span => rangeLabel(span, period)),
       additionalRanges: Math.max(0, list.length - 3),
@@ -354,8 +371,8 @@ function finish({ mode, period, navigation, now, end, totals, ranges, bars, poin
 export function combineYearView({ date, now, earliest, months }) {
   const period = activityPeriod('year', date ?? now);
   const navigation = activityNavigation('year', date ?? now, { now, earliest });
-  const totals = { rest: 0, normal: 0, vigorous: 0, missing: 0 };
-  const ranges = { rest: [], vigorous: [], missing: [] };
+  const totals = { rest: 0, normal: 0, vigorous: 0, missing: 0, charging: 0 };
+  const ranges = { rest: [], vigorous: [], missing: [], charging: [] };
   const gaps = [];
   const bars = [];
   const byStart = new Map(months.map(view => [view.start, view]));
@@ -363,11 +380,11 @@ export function combineYearView({ date, now, earliest, months }) {
     const d = new Date(start);
     const stop = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
     const month = byStart.get(start);
-    const tally = { rest: 0, normal: 0, vigorous: 0, missing: 0 };
+    const tally = { rest: 0, normal: 0, vigorous: 0, missing: 0, charging: 0 };
     if (month) {
       for (const state of Object.keys(tally)) {
-        tally[state] = month.totals[state];
-        totals[state] += month.totals[state];
+        tally[state] = month.totals[state] ?? 0;
+        totals[state] += month.totals[state] ?? 0;
       }
       for (const row of month.rows) ranges[row.state].push(...row.ranges);
       gaps.push(...month.gaps);

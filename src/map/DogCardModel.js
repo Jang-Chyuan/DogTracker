@@ -11,7 +11,7 @@ import { RANGE_STATUS, rangeLabel, rangeView } from '../tracking/ReceiverRange';
 import { LOW_BATTERY_PERCENT } from '../tracking/DogProblems';
 import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
-import { activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
+import { ACTIVITY_STATE, activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
 import { CARD_ACTIVITY_LOOKBACK_MS } from '../activity/DogCardReadings';
 import { listDuration, stayDuration } from '../history/HistoryText';
 
@@ -121,11 +121,16 @@ function indoorText(duration) {
  * @param activity { minutes: ActivityMinutes.activityMinutes(), newestAt }
  * @param options.reference the clock the dog is judged by (now, or the cloud
  *   clock for a cloud dog); options.positionAt its position (or packet) time;
- *   options.stale no new position: always 「—」
+ *   options.stale no new position: always 「—」; options.charging the dog's
+ *   newest packet says the collar is on USB power (the 電量 row's 充電中):
+ *   「充電中」, never 休息 (2026-10-16: a collar on its charger reports a
+ *   valid 0 and read as 「休息中・超過 6 小時」)
  */
-export function activityRow(activity, { reference, positionAt, stale }) {
+export function activityRow(activity, { reference, positionAt, stale, charging = false }) {
   const minutes = activity?.minutes || [];
-  if (stale || !minutes.length || !Number.isFinite(reference)) return { ...activityWords(null), at: null };
+  if (stale) return { ...activityWords(null), at: null };
+  if (charging) return { ...activityWords({ state: ACTIVITY_STATE.CHARGING }), at: null };
+  if (!minutes.length || !Number.isFinite(reference)) return { ...activityWords(null), at: null };
   const newestAt = Number.isFinite(activity.newestAt) ? activity.newestAt : minutes[minutes.length - 1].minute;
   // Readings older than the position by 10 minutes or more: say what they
   // said then, with their time, rather than 「—」 or a guess about now.
@@ -206,7 +211,7 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
       tone: null, detail: null, alert: null };
   }
   const rows = [place, batteryRow(dog, battery, positionAt, now)];
-  const words = activityRow(activity, { reference, positionAt, stale });
+  const words = activityRow(activity, { reference, positionAt, stale, charging: !!dog.charging });
   rows.push({ key: 'activity', label: t('c068'), value: words.word, detail: words.detail,
     speechDetail: words.speechDetail ?? null, at: words.at, tone: null, activityTone: words.tone, pressable: true });
   for (const row of rows) row.speech = rowSpeech(row);
