@@ -1,5 +1,5 @@
 import { logger } from '../logger';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CARD_ACTIVITY_LOOKBACK_MS,
   CARD_REST_MAX_LOOKBACK_MS,
@@ -76,6 +76,12 @@ export async function readCardReadings(read, slaveId, now) {
  */
 export function useDogCardReadings(read, slaveId, now, revision = 0) {
   const [state, setState] = useState({ read: null, slaveId: null, rows: null });
+  // The rows last read for each dog this card showed (this reader only):
+  // swiping back to a dog shows them at once, in the same render as its
+  // name, while they are read again (2026-10-16: every switch drew the card
+  // twice, the second time when the rows came).
+  const seen = useRef({ read: null, rows: new Map() });
+  if (seen.current.read !== read) seen.current = { read, rows: new Map() };
   // Each dog's older rows: { from, until, local, cloud, held } (this reader's).
   const older = useRef({ read: null, dogs: new Map() });
   if (older.current.read !== read) older.current = { read, dogs: new Map() };
@@ -104,7 +110,11 @@ export function useDogCardReadings(read, slaveId, now, revision = 0) {
         // An older read held back by a download is asked again now.
         const held = dogs.get(slaveId);
         if (held?.held) dogs.set(slaveId, { ...held, held: false });
-        if (alive) setState({ read, slaveId, rows });
+        if (alive) {
+          seen.current.rows.set(slaveId, rows);
+          // Not urgent: a swipe on to another dog goes first.
+          startTransition(() => setState({ read, slaveId, rows }));
+        }
       } catch (error) {
         // The rows say 「—」 rather than another dog's or an error text.
         logger.warn('[Dog card] read failed', error?.message);
@@ -118,19 +128,27 @@ export function useDogCardReadings(read, slaveId, now, revision = 0) {
     return () => { alive = false; clearTimeout(timer); };
   }, [read, slaveId, revision]);
   // Another dog's, account's or fixture's rows are never shown for this one.
-  const rows = state.slaveId === slaveId && state.read === read ? state.rows : null;
+  const rows = state.slaveId === slaveId && state.read === read ? state.rows
+    : read && slaveId != null ? seen.current.rows.get(slaveId) ?? null : null;
   const earlier = rows ? older.current.dogs.get(slaveId) ?? null : null;
   // The older rows join only where they meet these (see the gap read above).
   const usable = earlier && earlier.until >= (rows?.since ?? Infinity) ? earlier : null;
   // The minute buckets follow the clock (the running minute joins once it
   // ends), not only new reads.
   const minute = Math.floor(now / 60000);
-  const readings = useMemo(() => (rows
-    ? { loaded: true, ...dogCardReadings(joined(usable, rows), minute * 60000 + 59999) }
-    : { loaded: false, activity: null, battery: null }),
+  // Worked out once per read, older rows and minute (a dog swiped back to
+  // reuses it).
+  const worked = useRef(new WeakMap());
+  const readings = useMemo(() => {
+    if (!rows) return { loaded: false, activity: null, battery: null };
+    const known = worked.current.get(rows);
+    if (known?.minute === minute && known.usable === usable) return known.value;
+    const value = { loaded: true, ...dogCardReadings(joined(usable, rows), minute * 60000 + 59999) };
+    worked.current.set(rows, { minute, usable, value });
+    return value;
   // olderRevision: the older rows just read.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [rows, usable, minute, olderRevision]);
+  }, [rows, usable, minute, olderRevision]);
   // Follow the rest further back, a step at a time, while it reaches the
   // edge of what was read (and not past the limit).
   const reaches = readings.loaded && restReachesEdge(readings.activity);

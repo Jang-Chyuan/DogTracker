@@ -616,6 +616,12 @@ test.each(FIXTURE_NAMES)('%s: the rows read the same as the real CloudDatabase r
     expect(store.ranges()).toEqual(fixture.cloudDogs.ranges);
     // A card fixture's activity and battery readings, as the open card reads them.
     if (fixture.openDog != null) {
+      // A fixture whose card reads more hours than its map draws
+      // (card-switch-heavy): those rows instead.
+      if (fixture.raw.cardBle) {
+        await db.executeAsync('DELETE FROM dog_status');
+        for (const row of fixture.raw.cardBle) await insert('dog_status', row);
+      }
       const cardSince = fixture.now - CARD_ACTIVITY_LOOKBACK_MS;
       expect(dogCardReadings(await cloud.dogCardRows(owner, fixture.openDog, cardSince), fixture.now))
         .toEqual(dogCardReadings(await fixture.readCardRows(fixture.openDog, cardSince), fixture.now));
