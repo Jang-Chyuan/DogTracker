@@ -114,6 +114,15 @@ function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  // Internal: started by every open, not one of the database's methods.
+  const startMaintenance = database.startMaintenance;
+  delete database.startMaintenance;
+  const initializeOnce = database.initialize;
+  database.initialize = (...args) => {
+    const ready = initializeOnce(...args);
+    Promise.resolve(ready).then(() => startMaintenance?.(), () => {});
+    return ready;
+  };
   const latestConnection = options.latestConnection ?? connection;
   if (latestConnection !== connection && connection.lockKey && connection.lockKey === latestConnection.lockKey)
     throw new Error('Latest snapshot storage must use an independent native lock');
@@ -222,6 +231,12 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
   }
 
   return {
+    // The work after start (CloudRowCounters' backfill, the cap trim and the
+    // old JSON), started by every open of the database (createCloudDatabase)
+    // while none of it is running for this native owner: a headless sync's
+    // wrapper closes when its sync ends, its job then fails, and the next
+    // wrapper's open starts it again with itself (Codex review).
+    startMaintenance() { scheduleWifiBackfill(connection); scheduleCapTrim(); },
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
       return withConnectionLock(connection, async () => {
@@ -270,6 +285,11 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // UI/headless wrappers of one native owner share migration work.
       // A new owner/standalone handle migrates again; failed opens remain retryable.
       const key = connection.lockKey || connection;
+      // The work after start (CloudRowCounters' backfill, the cap trim and
+      // the old JSON) belongs to whichever wrapper opens the database while
+      // none of it is running: a headless sync's wrapper closes when its sync
+      // ends, its job then fails, and the next wrapper's open starts it again
+      // (Codex review).
       if (initialization.has(key)) return initialization.get(key);
       const ready = withConnectionLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
@@ -353,7 +373,6 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
-      ready.then(() => { scheduleWifiBackfill(connection); scheduleCapTrim(); }, () => {});
       initialization.set(key, ready);
       ready.catch(() => initialization.delete(key));
       return ready;

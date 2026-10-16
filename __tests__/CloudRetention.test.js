@@ -138,3 +138,27 @@ test('review: the background trim waits for a download job holding the cloud syn
     expect(sql.prepare('SELECT COUNT(*) AS n FROM supabase_dog_status').get().n).toBe(100);
   } finally { release?.(); connection.close(); jest.useRealTimers(); }
 });
+
+test('review: maintenance started by a headless wrapper that closed is started again by the next one', async () => {
+  jest.useFakeTimers();
+  const connection = createMemoryConnection();
+  const sql = connection.sqlite;
+  try {
+    connection.lockKey = {};
+    await createDogDatabase(connection).initialize();
+    // The headless sync's wrapper: same native owner (lock key), closed when its sync ends.
+    let closed = false;
+    const headless = { ...connection,
+      executeAsync: (...args) => (closed ? Promise.reject(new Error('closed')) : connection.executeAsync(...args)),
+      executeBatchAsync: (...args) => (closed ? Promise.reject(new Error('closed')) : connection.executeBatchAsync(...args)) };
+    await createCloudDatabase(headless).initialize();
+    sql.prepare(`INSERT INTO supabase_dog_status (received_at, owner_user_id, event_id, master_id, raw_payload)
+      VALUES (?, 'a', 'old', 5, '{}')`).run(Date.now() - 2 * CLOUD_PAYLOAD_MS);
+    closed = true;
+    await jest.advanceTimersByTimeAsync(TRIM_DELAY_MS + 10 * TRIM_PAUSE_MS);
+    // The App's own wrapper opens the database: the work starts again with it.
+    await createCloudDatabase({ ...connection }).initialize();
+    await jest.advanceTimersByTimeAsync(TRIM_DELAY_MS + 10 * TRIM_PAUSE_MS);
+    expect(sql.prepare("SELECT raw_payload FROM supabase_dog_status WHERE event_id = 'old'").get().raw_payload).toBeNull();
+  } finally { connection.close(); jest.useRealTimers(); }
+});
