@@ -4,15 +4,11 @@ import { createHoldStore } from '../src/placement/HoldStore';
 import { HOLD_CONFIG } from '../src/placement/IndoorHold';
 import { mergeDogMarkers } from '../src/map/DogMerge';
 import { dogCard } from '../src/map/DogCardModel';
-import { CARD_INDOOR_LOOKBACK_MS, CARD_INDOOR_RETRY_MS, historyHoldCandidates, indoorStayStart, useCardIndoorStay,
-  useHistoryHolds } from '../src/map/CardIndoorStay';
-import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory/HistoryDatabase';
+import { historyHoldCandidates, useHistoryHolds } from '../src/map/CardIndoorStay';
+import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
-import { historyTimeline } from '../src/history/HistoryTimeline';
-import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
-import { nodeTimes, nodePill } from '../src/history/HistoryText';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 
 // 2026-10-13 (dog 108 on the emulator): the card said 「室內・30 分」 while the
@@ -21,7 +17,6 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 // first row it holds is where that half hour begins. All data made up.
 const MINUTE = 60000;
 const NOW = new Date('2026-10-13T09:30:00+08:00').getTime();
-const MIDNIGHT = new Date('2026-10-13T00:00:00+08:00').getTime();
 const INSIDE = new Date('2026-10-12T21:00:00+08:00').getTime();
 const HOME = { latitude: 24.99, longitude: 121.31 };
 const fresh = { stale: false, basis: 'packet' };
@@ -50,86 +45,21 @@ async function coldStartDog(db) {
   return { hold: holds[6], dog: mergeDogMarkers({ packetRows: [packet], holds, now: NOW, windowMs: 180000 })[0] };
 }
 
-const position = (dog, indoorStay) => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑', indoorStay })
+const position = dog => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑' })
   .rows.find(row => row.key === 'position').value;
 
-async function stayOf(db, at) {
-  const start = at - CARD_INDOOR_LOOKBACK_MS;
-  const answer = await createHistoryDatabase(db).historyDayRows({ slaveId: 6, start, end: at });
-  return indoorStayStart(answer, { at, readFrom: start - HISTORY_DAY_CONTEXT_MS });
-}
-
 describe('a stay begun before the live rows', () => {
-  test('the live hold knows only that it began before its half hour', async () => {
+  // 2026-10-16: the card no longer times a stay (no history read for it); a
+  // hold the live rows only saw part of still says 「室內」.
+  test('the live hold knows only that it began before its half hour; the card says 「室內」', async () => {
     const db = await kennel();
     try {
       const { hold, dog } = await coldStartDog(db);
       expect(hold.fromClipped).toBe(true);
       expect(dog.heldFromClipped).toBe(true);
       expect(dog.heldFrom).toBeGreaterThanOrEqual(NOW - HOLD_LOOKBACK_MS);
-      // Before: 「室內・30 分」. Without the history it says only a lower bound.
-      expect(position(dog, null)).toBe('室內・超過 30 分');
-      // While the history is asked: no minutes rather than wrong ones.
-      expect(position(dog, { state: 'pending' })).toBe('室內');
+      expect(position(dog)).toBe('室內');
     } finally { db.close(); }
-  });
-
-  test('the card counts the whole stay from where the history begins it, over midnight too', async () => {
-    const db = await kennel();
-    try {
-      const { dog } = await coldStartDog(db);
-      const stay = await stayOf(db, dog.heldFrom);
-      expect(stay).toEqual({ from: INSIDE + 30000, clipped: false });
-      expect(position(dog, { state: 'found', ...stay })).toBe('室內・12 時 30 分');
-      // The history: the evening's row starts at the same packet; today's row
-      // starts at midnight 「接續前一天」 and runs on (the minutes of today only).
-      // As useHistoryScreen: the day's rows through a hold pass seeded with
-      // the good fixes before them.
-      const day = async (start, end, options) => {
-        const answer = await createHistoryDatabase(db).historyDayRows({ slaveId: 6, start, end });
-        return historyTimeline(answer.rows, { ...options, holdOptions: { seed: answer.seed } });
-      };
-      const evening = await day(MIDNIGHT - 24 * 60 * MINUTE, MIDNIGHT, {
-        dayStart: MIDNIGHT - 24 * 60 * MINUTE, dayEnd: MIDNIGHT });
-      expect(evening.nodes.find(node => node.type === 'indoor').start).toBe(stay.from);
-      const today = timelinePresentation((await day(MIDNIGHT, NOW, {
-        dayStart: MIDNIGHT, dayEnd: MIDNIGHT + 24 * 60 * MINUTE, today: true, now: NOW })).nodes);
-      expect(today[0].type).toBe('indoor');
-      expect(nodeTimes(today[0])[0]).toBe('00:00');
-      // 2026-10-15 (user): no 「接續前一天」 pill; the minutes from 00:00.
-      expect(nodePill(today[0]).text).toMatch(/^室內・/u);
-    } finally { db.close(); }
-  });
-
-  test('a stay older than the card looks back says how long at least', async () => {
-    const db = await kennel({ from: NOW - 30 * 60 * MINUTE - 10 * MINUTE });
-    try {
-      // The kennel rows here begin 30 hours ago: inside from then on.
-      await db.executeAsync('DELETE FROM dog_status WHERE received_at > ? AND received_at < ?',
-        [NOW - 30 * 60 * MINUTE, INSIDE + 30000]);
-      for (let time = NOW - 30 * 60 * MINUTE + 30000; time <= INSIDE; time += 30000) {
-        await db.executeAsync(`INSERT INTO dog_status(master_id,slave_id,received_at,slave_lat,slave_lon,satellites,hdop)
-          VALUES(7,6,?,0,0,0,655.35)`, [time]);
-      }
-      const { dog } = await coldStartDog(db);
-      const stay = await stayOf(db, dog.heldFrom);
-      expect(stay.clipped).toBe(true);
-      expect(position(dog, { state: 'found', ...stay })).toBe('室內・超過 25 時');
-    } finally { db.close(); }
-  });
-
-  test('history that does not hold the dog there leaves the lower bound', () => {
-    const at = NOW - 30 * MINUTE;
-    // Clear fixes only: no 室內 node reaches `at`.
-    const rows = [];
-    for (let time = at - 20 * MINUTE; time <= at; time += 30000) {
-      rows.push({ id: time, source: 'local', slave_id: 6, master_id: 7, time, packetTime: time, locationTime: time,
-        latitude: HOME.latitude, longitude: HOME.longitude, satellites: 9, hdop: 0.9 });
-    }
-    expect(indoorStayStart({ rows }, { at })).toBeNull();
-    const dog = { slaveId: 6, coordinate: HOME, heldReason: '室內', heldSource: 'good', heldFrom: at,
-      heldFromClipped: true, packetAt: NOW };
-    expect(position(dog, { state: 'unknown' })).toBe('室內・超過 30 分');
   });
 
   // Clear fixes from `from` to `to`: walking home from 450 m north, at the
@@ -195,71 +125,6 @@ describe('a stay begun before the live rows', () => {
   });
 });
 
-describe('useCardIndoorStay', () => {
-  let renderer;
-  afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = null; });
-  const dog = { slaveId: 6, heldFrom: NOW - 30 * MINUTE, heldFromClipped: true };
-  function Probe({ read, value, options, sink }) {
-    sink.push(useCardIndoorStay(read, value, options));
-    return null;
-  }
-
-  test('reads once per hold start, and not again after a download once found', async () => {
-    const db = await kennel();
-    try {
-      const history = createHistoryDatabase(db);
-      const read = jest.fn(request => history.historyDayRows(request));
-      const seen = [];
-      const at = (await coldStartDog(db)).dog.heldFrom;
-      const value = { ...dog, heldFrom: at };
-      await act(async () => {
-        renderer = Renderer.create(<Probe read={read} value={value} options={{ revision: 1 }} sink={seen} />);
-      });
-      expect(seen[0]).toEqual({ state: 'pending' });
-      expect(seen[seen.length - 1]).toEqual({ state: 'found', from: INSIDE + 30000, clipped: false });
-      expect(read).toHaveBeenCalledTimes(1);
-      expect(read.mock.calls[0][0]).toMatchObject({ subject: 'dog', slaveId: 6, start: at - CARD_INDOOR_LOOKBACK_MS, end: at });
-      await act(async () => renderer.update(<Probe read={read} value={value} options={{ revision: 2 }} sink={seen} />));
-      expect(read).toHaveBeenCalledTimes(1);
-    } finally { db.close(); }
-  });
-
-  test('nothing to ask for a hold the live rows saw begin, or while the download runs', async () => {
-    const read = jest.fn(async () => ({ rows: [], seed: [] }));
-    const seen = [];
-    await act(async () => {
-      renderer = Renderer.create(<Probe read={read} value={{ ...dog, heldFromClipped: false }} sink={seen} />);
-    });
-    expect(seen[seen.length - 1]).toBeNull();
-    await act(async () => renderer.update(<Probe read={read} value={dog} options={{ busy: true }} sink={seen} />));
-    expect(seen[seen.length - 1]).toEqual({ state: 'pending' });
-    expect(read).not.toHaveBeenCalled();
-    await act(async () => renderer.update(<Probe read={read} value={dog} options={{ busy: false }} sink={seen} />));
-    expect(read).toHaveBeenCalledTimes(1);
-    expect(seen[seen.length - 1]).toEqual({ state: 'unknown' });
-  });
-
-  test('a start not found is asked again after a download, at most every five minutes', async () => {
-    const read = jest.fn(async () => ({ rows: [], seed: [] }));
-    let clock = NOW;
-    const options = revision => ({ revision, now: () => clock });
-    await act(async () => {
-      renderer = Renderer.create(<Probe read={read} value={dog} options={options(1)} sink={[]} />);
-    });
-    await act(async () => renderer.update(<Probe read={read} value={dog} options={options(2)} sink={[]} />));
-    expect(read).toHaveBeenCalledTimes(1);
-    clock += CARD_INDOOR_RETRY_MS;
-    await act(async () => renderer.update(<Probe read={read} value={dog} options={options(3)} sink={[]} />));
-    expect(read).toHaveBeenCalledTimes(2);
-  });
-});
-
-// 2026-10-13 (dog 8 on the emulator): indoors 12+ hours by the history, but no
-// 位置 row on the card and no 「室內」 on the map. Its drift settled about
-// 120 m from the last good fix: the history, holding it since the evening,
-// keeps the hold (it lets go beyond 150 m); a cold start sees only the last
-// half hour and cannot start one (the weak fixes must lie within 100 m of the
-// good ones). All data made up.
 describe('a hold the live rows cannot start', () => {
   async function drifting() {
     const db = createMemoryConnection();
@@ -308,7 +173,7 @@ describe('a hold the live rows cannot start', () => {
         slave_lon: HOME.longitude, satellites: 3, hdop: 4.5, battery_percentage: 80, battery_valid: 1, source: 'ble' };
       const dog = mergeDogMarkers({ packetRows: [packet], holds: { ...seen.at(-1), ...holds }, now: NOW, windowMs: 180000 })[0];
       expect(dog).toMatchObject({ coordinate: HOME, heldFrom: INSIDE + 30000 });
-      expect(position(dog, null)).toBe('室內・12 時 30 分');
+      expect(position(dog)).toBe('室內');
     } finally { db.close(); }
   });
 

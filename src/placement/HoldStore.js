@@ -28,8 +28,9 @@ const HISTORY_DOG = configFor('dog');
  * the same rows say beside the hold: the receiver range, the battery
  * (BatteryPlausibility) and from which row the history would draw the hold.
  *
- * That row is where the card's 「室內・N 分」 starts, so it says what the
- * history's 「室內・N 分」 says (HistoryStops.historyIndoorNodes): not the
+ * That row is where the history's 「室內・N 分」 starts
+ * (HistoryStops.historyIndoorNodes; the live card no longer times a stay,
+ * 2026-10-16): not the
  * hold's `since` (the last good fix, a row the history does not draw held,
  * possibly long before the collar spoke again) but the first row the hold
  * covers (IndoorHold.holdFillStart), restarted after a break in the packets
@@ -95,8 +96,7 @@ function noteEarly(state, row) {
  * it there since long before (2026-10-15: indoor drift with five satellites
  * and a poor HDOP leaves a cold start no good seeds, and its hold anchored on
  * the window's own weak fixes read 「室內・25 分」 for a stay of two and a
- * half hours). The card then asks the history (CardIndoorStay), which says
- * the same start when the dog did arrive at `from`.
+ * half hours on the card, which no longer times a stay since 2026-10-16).
  */
 function mayBeginEarlier(state, since, from, anchor) {
   if (since < state.firstAt) return true;

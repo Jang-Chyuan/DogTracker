@@ -1,8 +1,6 @@
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
 import { mergeDogMarkers } from '../src/map/DogMerge';
 import { dogCard } from '../src/map/DogCardModel';
-import { CARD_INDOOR_LOOKBACK_MS, indoorStayStart } from '../src/map/CardIndoorStay';
-import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
@@ -57,17 +55,12 @@ async function coldStartDog(db) {
   return { hold: holds[6], dog: mergeDogMarkers({ packetRows: [packet], holds, now: NOW, windowMs: 180000 })[0] };
 }
 
-const position = (dog, indoorStay) => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑', indoorStay })
+const position = dog => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑' })
   .rows.find(row => row.key === 'position').value;
 
-async function stayOf(db, at) {
-  const start = at - CARD_INDOOR_LOOKBACK_MS;
-  const answer = await createHistoryDatabase(db).historyDayRows({ slaveId: 6, start, end: at });
-  return indoorStayStart(answer, { at, readFrom: start - HISTORY_DAY_CONTEXT_MS });
-}
-
 describe('a cold start inside a stay held on weak fixes', () => {
-  test('the live hold says it may have begun before its rows, and the card asks the history', async () => {
+  // 2026-10-16: the card no longer times a stay, so it asks the history nothing.
+  test('the live hold says it may have begun before its rows; the card says 「室內」', async () => {
     const db = await kennel();
     try {
       const { hold, dog } = await coldStartDog(db);
@@ -75,12 +68,7 @@ describe('a cold start inside a stay held on weak fixes', () => {
       expect(dog.heldFrom).toBeGreaterThanOrEqual(NOW - HOLD_LOOKBACK_MS);
       expect(hold.fromClipped).toBe(true);
       expect(dog.heldFromClipped).toBe(true);
-      // Never the window's minutes as if they were the whole stay.
-      expect(position(dog, null)).toMatch(/^室內・超過 /);
-      expect(position(dog, { state: 'pending' })).toBe('室內');
-      const stay = await stayOf(db, dog.heldFrom);
-      expect(stay).toEqual({ from: INSIDE + 30000, clipped: false });
-      expect(position(dog, { state: 'found', ...stay })).toBe('室內・2 時 29 分');
+      expect(position(dog)).toBe('室內');
     } finally { db.close(); }
   });
 
@@ -90,7 +78,7 @@ describe('a cold start inside a stay held on weak fixes', () => {
       const { hold, dog } = await coldStartDog(db);
       expect(hold).toBeTruthy();
       expect(hold.fromClipped).toBeUndefined();
-      expect(position(dog, null)).toMatch(/^室內・1[0-2] 分$/);
+      expect(position(dog)).toBe('室內');
     } finally { db.close(); }
   });
 });

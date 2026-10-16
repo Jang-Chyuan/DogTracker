@@ -266,8 +266,8 @@ describe('the card times a hold from where the history\'s 室內 node starts', (
     expect(result.node.start).toBe(T + 20 * 60000);
     expect(result.hold.from).toBe(result.node.start);
     expect(result.dog.heldFrom).toBe(result.node.start);
-    expect(result.value).toBe('室內・26 分');
-    expect(result.value).toBe(result.history);
+    // The card says 「室內」 only (2026-10-16); the history times the stay.
+    expect(result.value).toBe('室內');
   });
 
   test('drift right after the last good fix: from the first drifting row, as the history draws it', () => {
@@ -276,7 +276,6 @@ describe('the card times a hold from where the history\'s 室內 node starts', (
     const result = compare(rows.map(shift));
     expect(result.hold.from).toBe(result.node.start);
     expect(result.hold.from).toBeGreaterThan(result.hold.since);
-    expect(result.value).toBe(result.history);
   });
 
   test('a late row replays the window and keeps the same start', () => {
