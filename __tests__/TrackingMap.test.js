@@ -11,7 +11,7 @@ import MapView, {
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import TrackingMap from '../src/map/TrackingMap';
-import { savedCamera } from '../src/map/GoogleTrackingMap';
+import { savedCamera, compassTurned } from '../src/map/GoogleTrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -184,6 +184,54 @@ test('rotation is on; our compass replaces the native one (top left on Android) 
   expect(placed.length).toBeGreaterThan(0);
   await act(async () => compass()[0].props.onPress());
   expect(mockCamera.animateCamera).toHaveBeenCalledWith({ heading: 0 }, { duration: 300 });
+});
+// The needle's turn on screen, in degrees, as last drawn.
+const needleTurn = () => {
+  const needle = renderer.root.findAll(node => typeof node.type === 'string'
+    && node.props.testID === 'map-compass-needle')[0];
+  const rotate = StyleSheet.flatten(needle.props.style).transform.find(item => item.rotate).rotate;
+  return parseFloat(rotate);
+};
+test('the compass appears and turns with the map during a rotate gesture, not only after it ends', async () => {
+  await render({ compassTop: 120 });
+  await readyMap();
+  const map = () => renderer.root.findByType(MapView);
+  const compass = () => renderer.root.findAll(node => node.props.testID === 'map-compass'
+    && typeof node.props.onPress === 'function');
+  // Every camera frame of the gesture brings the bearing (patched
+  // react-native-maps, DOGTRACKER_CAMERA_HEADING); no getCamera round trip.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 20 }));
+  expect(compass().length).toBeGreaterThan(0);
+  expect(needleTurn()).toBeCloseTo(-20);
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 75 }));
+  expect(needleTurn()).toBeCloseTo(-75);
+  // Back to north mid-gesture: the compass goes away again.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 0.2 }));
+  expect(compass()).toHaveLength(0);
+});
+test('a camera read from before the latest frame does not turn the needle back', async () => {
+  await render({ compassTop: 120 });
+  await readyMap();
+  const map = () => renderer.root.findByType(MapView);
+  let answer;
+  mockCamera.getCamera.mockReturnValueOnce(new Promise(resolve => { answer = resolve; }));
+  await act(async () => map().props.onRegionChangeComplete({}, { isGesture: true, heading: 30 }));
+  expect(needleTurn()).toBeCloseTo(-30);
+  // The next gesture starts before the idle read answers.
+  await act(async () => map().props.onRegionChange({}, { isGesture: true, heading: 90 }));
+  await act(async () => answer({ center: master.coordinate, zoom: 15, pitch: 0, heading: 30 }));
+  expect(needleTurn()).toBeCloseTo(-90);
+});
+test('compass threshold: shows past 1° either side of north, hides within 0.5°', () => {
+  expect(compassTurned(0)).toBe(false);
+  expect(compassTurned(0.8)).toBe(false);
+  expect(compassTurned(1.5)).toBe(true);
+  expect(compassTurned(358.5)).toBe(true);
+  expect(compassTurned(359.5)).toBe(false);
+  expect(compassTurned(-2)).toBe(true);
+  // Once shown, it stays until within 0.5°.
+  expect(compassTurned(0.8, true)).toBe(true);
+  expect(compassTurned(359.7, true)).toBe(false);
 });
 test('provider draws the prepared visible segments; empty presentation removes every overlay', async () => {
   await render({
@@ -1019,6 +1067,64 @@ test('066: 我的位置 with a card open puts the phone in the middle of the map
   }
 });
 
+// 我的位置 as Google Maps: zoomed out further than the street view
+// (STREET_ZOOM 16) it zooms in to it; closer than that it keeps the zoom.
+const { STREET_ZOOM } = require('../src/map/GoogleTrackingMap');
+const pressMyLocation = async () => {
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'map-my-location'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+};
+const phoneAt = async coordinate => {
+  await act(async () => renderer.root.findByType(MapView).props.onUserLocationChange({
+    nativeEvent: { coordinate } }));
+};
+test('我的位置 zoomed out: moves to the phone and zooms in to the street view (16)', async () => {
+  await render({ phoneEnabled: true });
+  await readyMap();
+  await phoneAt({ latitude: 25.002, longitude: 121.002 });
+  mockCamera.animateCamera.mockClear();
+  mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom: 11, heading: 0, pitch: 0 });
+  await pressMyLocation();
+  expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({
+    center: { latitude: 25.002, longitude: 121.002 }, zoom: STREET_ZOOM });
+  expect(STREET_ZOOM).toBe(16);
+});
+test('我的位置 at or closer than the street view: only moves, keeping the zoom', async () => {
+  await render({ phoneEnabled: true });
+  await readyMap();
+  await phoneAt({ latitude: 25.002, longitude: 121.002 });
+  for (const zoom of [16, 18.5]) {
+    mockCamera.animateCamera.mockClear();
+    mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom, heading: 0, pitch: 0 });
+    await pressMyLocation();
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({
+      center: { latitude: 25.002, longitude: 121.002 } });
+  }
+});
+test('066 + zoom: zoomed out with a card open, the phone lands above the card at the street view', async () => {
+  // As the 066 test: at the current zoom the centre would be 140 units below
+  // the phone; zooming in 4 levels (12 → 16) shrinks that to 140 / 16.
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 200, y: 700 }));
+  mockCamera.coordinateForPoint = jest.fn(async ({ x, y }) => ({ latitude: y, longitude: x }));
+  try {
+    await render({ bottomInset: 80, coverBottom: 300, phoneEnabled: true });
+    await readyMap();
+    await phoneAt({ latitude: 700, longitude: 200 });
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    mockCamera.animateCamera.mockClear();
+    mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom: 12, heading: 0, pitch: 0 });
+    await pressMyLocation();
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 840 });
+    const [to] = mockCamera.animateCamera.mock.calls[0];
+    expect(to.zoom).toBe(16);
+    expect(to.center.latitude).toBeCloseTo(700 + 140 / 16);
+    expect(to.center.longitude).toBeCloseTo(200);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
 test('dog A then dog B within the hold: a map-only tap on B outside A\'s marker opens B', async () => {
   const { PixelRatio } = require('react-native');
   const { markerFrame } = require('../src/map/DogMarkerView');

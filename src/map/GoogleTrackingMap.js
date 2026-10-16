@@ -80,6 +80,12 @@ import {
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox, compassBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 
+/**
+ * The street view: one place in history (只有一筆) is shown at this zoom, and
+ * 我的位置 zooms in to it when the map is zoomed out further.
+ */
+export const STREET_ZOOM = 16;
+
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) =>
   hex +
@@ -555,6 +561,16 @@ const dottedPattern = width => [1, PixelRatio.getPixelSizeForLayoutSize(Math.rou
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
+/**
+ * Whether the compass shows for a camera bearing: once the map is more than
+ * 1° off north, and until it is back within 0.5° (so a bearing hovering at
+ * the threshold does not make it blink during a gesture).
+ */
+export function compassTurned(bearing, shown = false) {
+  const off = Math.abs((((bearing % 360) + 540) % 360) - 180);
+  return off > (shown ? 0.5 : 1);
+}
+
 const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics, labelBox = null, heading = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(
@@ -1159,7 +1175,7 @@ function GoogleTrackingMapRenderer({
     // the closest zoom.
     if (historyRoute && tinySpan(positions)) {
       mapRef.current?.animateCamera(
-        { center: positions[0], zoom: 16 },
+        { center: positions[0], zoom: STREET_ZOOM },
         { duration: 0 },
       );
     } else
@@ -1222,8 +1238,22 @@ function GoogleTrackingMapRenderer({
   // ---- the live map's own controls (A1) ----------------------------------
   const live = !historyMode;
   // The compass is a separate root overlay, not part of HistoryScreen's row.
+  // `heading` is the settled camera's (idle): the history's label maths and
+  // MapScreen read it. The compass needle follows every camera frame instead
+  // (`compassTurn`, set without a render), and whether the compass shows at
+  // all (`turned`) changes only when the map crosses north.
   const [heading, setHeading] = useState(0);
-  const turned = Math.abs((((heading % 360) + 540) % 360) - 180) > 1;
+  const compassTurn = useRef(new Animated.Value(0)).current;
+  const [turned, setTurned] = useState(false);
+  const turnedNow = useRef(false);
+  const followHeading = useCallback(value => {
+    if (!Number.isFinite(value)) return;
+    compassTurn.setValue(value);
+    const next = compassTurned(value, turnedNow.current);
+    if (next === turnedNow.current) return;
+    turnedNow.current = next;
+    setTurned(next);
+  }, [compassTurn]);
   const compassVisible = usable && foreground && compassTop != null && turned;
   const compassKey = `${source}:${instance}:${cursorLayout.width}:${cursorLayout.height}:${compassTop}:${compassVisible}`;
   const compassGeneration = useRef({ key: compassKey, value: 0 });
@@ -1765,22 +1795,39 @@ function GoogleTrackingMapRenderer({
     if (!usable) return;
     takeCamera();
     const map = mapRef.current;
-    const animate = to =>
-      map?.animateCamera(
-        { center: to },
-        { duration: moveDuration(motion.camera.duration) },
-      );
-    // With a card open the phone goes to the middle of the map left above
-    // it (as an opened dog does), not the middle of the screen (066).
-    if (!map?.pointForCoordinate || !map.coordinateForPoint) {
-      animate(position);
-      return;
-    }
-    map
-      .pointForCoordinate(position)
-      .then(point => (point ? centreInView(point) : null))
-      .then(to => animate(to || position))
-      .catch(() => animate(position));
+    // As Google Maps: zoomed out further than the street view, it zooms in to
+    // STREET_ZOOM on the way; at or closer than that it keeps the zoom.
+    const zoomNow = Promise.resolve(map?.getCamera?.())
+      .then(camera => (Number.isFinite(camera?.zoom) ? camera.zoom : null))
+      .catch(() => null);
+    zoomNow.then(zoom => {
+      const zoomIn = zoom != null && zoom < STREET_ZOOM;
+      const animate = to =>
+        map?.animateCamera(
+          zoomIn ? { center: to, zoom: STREET_ZOOM } : { center: to },
+          { duration: moveDuration(motion.camera.duration) },
+        );
+      // With a card open the phone goes to the middle of the map left above
+      // it (as an opened dog does), not the middle of the screen (066).
+      if (!map?.pointForCoordinate || !map.coordinateForPoint) {
+        animate(position);
+        return;
+      }
+      map
+        .pointForCoordinate(position)
+        .then(point => (point ? centreInView(point) : null))
+        .then(to => {
+          if (!to || !zoomIn) return animate(to || position);
+          // centreInView's offset from the phone is at today's zoom; the
+          // same offset on screen covers 2^(zoom − 16) as much ground at 16.
+          const scale = 2 ** (zoom - STREET_ZOOM);
+          return animate({
+            latitude: position.latitude + (to.latitude - position.latitude) * scale,
+            longitude: position.longitude + (to.longitude - position.longitude) * scale,
+          });
+        })
+        .catch(() => animate(position));
+    });
   };
   // A tap on a dog always opens that dog's card (no list of dogs, 066).
   // Google reports a map tap for a tap on a marker too while a card is open
@@ -1970,10 +2017,17 @@ function GoogleTrackingMapRenderer({
             startMoving();
           }}
           onRegionChangeStart={historyMode ? () => setHistoryCameraMoving(true) : undefined}
+          onRegionChange={(_, details) => {
+            if (activeInstance.current !== instance || !foreground) return;
+            // A camera read still on its way is from before this frame.
+            cameraRead.current += 1;
+            followHeading(details?.heading);
+          }}
           onRegionChangeComplete={(_, details) => {
             setHistoryCameraMoving(false);
             if (framed.current) releaseSplash();
             if (activeInstance.current !== instance || !foreground) return;
+            followHeading(details?.heading);
             setCursorRevision(value => value + 1);
             if (details?.isGesture) interacted.current = true;
             const request = ++cameraRead.current;
@@ -2004,6 +2058,7 @@ function GoogleTrackingMapRenderer({
                   if (Number.isFinite(camera.heading)) {
                     onHeading?.(camera.heading);
                     setHeading(camera.heading);
+                    followHeading(camera.heading);
                   }
                 }
               })
@@ -2274,7 +2329,7 @@ function GoogleTrackingMapRenderer({
           key={compassScope}
           onLayout={!live ? measureCompass : undefined}
           top={compassTop}
-          heading={heading}
+          turn={compassTurn}
           onPress={() =>
             mapRef.current?.animateCamera(
               { heading: 0 },

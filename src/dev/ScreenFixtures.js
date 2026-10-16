@@ -1153,8 +1153,8 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
-  // card-indoor 40 s after 小黑 went inside: its first minute reads 「室內・
-  // 不到 1 分」, never 「室內・0 分」 (2026-10-15).
+  // card-indoor 40 s after 小黑 went inside: the history's first minute reads
+  // 「室內・不到 1 分」, never 「室內・0 分」 (2026-10-15); the card 「室內」.
   'card-indoor-first-minute': now => ({ ...FIXTURES['card-indoor'](now),
     ble: inTimeOrder([
       ...dog4Ble(now),
@@ -1166,8 +1166,8 @@ const FIXTURES = {
     ]) }),
   // 小黑 indoors since 21:09 last night (clear fixes, then a packet without a
   // fix every 30 s), opened after a cold start: the live hold replays only
-  // the last half hour, so the card asks the history's rows where the stay
-  // began (CardIndoorStay): 「室內・12 時 20 分」, the whole stay over midnight.
+  // the last half hour; the card says 「室內」 and the address (no minutes
+  // since 2026-10-16), the history's day starts at 00:00.
   'card-indoor-overnight': now => ({
     geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1178,11 +1178,21 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 2026-10-16: six dogs indoors at their own places for 3 to 8 hours (a
+  // packet every 30 s), opened after a cold start: every live hold begins
+  // inside its stay. Tapping ‹ › fast through them must switch at once.
+  'card-switch-indoor': now => ({
+    geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([4, 5, 6, 8, 9, 12].flatMap((slave, index) => indoorBle(now, slave,
+      [-18 + 9 * index, 24 - 7 * index], { inside: (3 + index) * 60 * MINUTE, every: 30 * SECOND,
+        battery: 70 - 4 * index, activity: 0.02 }))),
+    cloudRows: [],
+  }),
   // 2026-10-15: 小黑 indoors since 07:01, its drift keeping five
   // satellites at a poor HDOP every minute, a packet without a fix between.
   // A cold start's seeds are then all weak: the live hold anchors on the half
-  // hour's own weak fixes and never saw the dog arrive, so the card asks the
-  // history where the stay began: 「室內・2 時 28 分」, not 「室內・29 分」.
+  // hour's own weak fixes and never saw the dog arrive (the card says 「室內」).
   'card-indoor-cold-drift': now => ({
     geocoder: { names: [{ line: '330台灣桃園市桃園區武陵里中正路1號' }] },
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1199,7 +1209,7 @@ const FIXTURES = {
   // the place is by Taoyuan station). Nothing is written to its cache.
   'card-indoor-geocoder': now => ({ ...FIXTURES['card-indoor'](now), geocoder: 'real' }),
   // ---- the first row's harder cases (2026-10-14, tried on a phone) --------
-  // card-indoor with a long fictional address: under 「室內・11 分」 and the
+  // card-indoor with a long fictional address: under 「室內」 and the
   // distance, across the row's whole width, wrapping to two lines.
   'card-indoor-long-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: LONG_PLACE }),
   // 小黑 went indoors at 09:03 and has sent nothing since 09:05: 「09:05 之後
@@ -1225,7 +1235,7 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // 小黑 walked out to 1.6 km (out of range) and went indoors there 12
-  // minutes ago: 「室內・N 分」, the address, and 「不在接收範圍・最後確認 HH:MM」
+  // minutes ago: 「室內」, the address, and 「不在接收範圍・最後確認 HH:MM」
   // in red — two things in one row, one red 「!」.
   'card-indoor-out': now => ({
     geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,

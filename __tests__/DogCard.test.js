@@ -420,7 +420,7 @@ test('a held dog\'s 位置 row is 56dp high (A7b); the address line shows once k
   expect(heights()).toContain(56);
 });
 
-test('held indoors: 位置 「室內・N 分」 and 活動量 「休息中・已 N 分鐘」, each saying what it counts', async () => {
+test('held indoors: 位置 「室內」 (no minutes) and 活動量 「休息中・已 N 分鐘」', async () => {
   const held = { heldReason: '室內', heldSource: 'good', heldFrom: NOW - 26 * 60000 - 5000, packetAt: NOW - 5000 };
   const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW }, range: null };
   const rows = [];
@@ -429,11 +429,11 @@ test('held indoors: 位置 「室內・N 分」 and 活動量 「休息中・已
   }
   const activity = dogCardReadings({ local: rows }, NOW).activity;
   await mount({ card: model(held, { ...fresh, activity, address: '桃園區中正路 1 號附近' }) });
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內・26 分850 m桃園區中正路 1 號附近');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m桃園區中正路 1 號附近');
   expect(flatten(byTestId('dog-card-row-activity')[0])).toContain('休息中・已 12 分鐘');
   const labels = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string', { deep: true })
     .map(node => node.props.accessibilityLabel);
-  expect(labels).toContain('位置，室內，26 分，桃園區中正路 1 號附近，東北方 850 公尺，離手機');
+  expect(labels).toContain('位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機');
   expect(labels).toContain('活動量，休息中，活動量低已 12 分鐘');
 });
 

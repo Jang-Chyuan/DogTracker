@@ -141,3 +141,20 @@ test('the installed avatar picker never requests WRITE_EXTERNAL_STORAGE', () => 
     /DogTracker: system picker[^\n]*\n\s*supportedPermissions\.remove\(Manifest\.permission\.WRITE_EXTERNAL_STORAGE\);/,
   );
 });
+
+// The compass follows a rotate gesture (DOGTRACKER_CAMERA_HEADING): every
+// camera-move and camera-idle event carries the bearing, and the JS wrapper
+// passes it on in onRegionChange's details.
+test('camera events carry the bearing to onRegionChange', () => {
+  const patch = fs.readFileSync(patchFile, 'utf8');
+  expect(patch).toContain('DOGTRACKER_CAMERA_HEADING');
+  const mapsRoot = path.dirname(require.resolve('react-native-maps/package.json'));
+  const java = fs.readFileSync(path.join(javaRoot, 'maps/MapView.java'), 'utf8');
+  const move = java.slice(java.indexOf('setOnCameraMoveListener'), java.indexOf('setOnCameraIdleListener'));
+  expect(move).toMatch(/payload\.putDouble\("heading", map\.getCameraPosition\(\)\.bearing\);\s*dispatchEvent\(payload, OnRegionChangeEvent::new\)/);
+  const idle = java.slice(java.indexOf('setOnCameraIdleListener'), java.indexOf('setOnCameraIdleListener') + 800);
+  expect(idle).toMatch(/payload\.putDouble\("heading", map\.getCameraPosition\(\)\.bearing\);/);
+  const source = fs.readFileSync(path.join(mapsRoot, 'src/MapView.tsx'), 'utf8');
+  const handler = source.slice(source.indexOf('private handleRegionChange ='), source.indexOf('private handleRegionChangeStarted'));
+  expect(handler).toMatch(/Number\.isFinite\(heading\) \? \{ heading \} : null/);
+});
