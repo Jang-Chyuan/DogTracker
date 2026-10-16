@@ -80,6 +80,12 @@ import {
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox, compassBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 
+/**
+ * The street view: one place in history (只有一筆) is shown at this zoom, and
+ * 我的位置 zooms in to it when the map is zoomed out further.
+ */
+export const STREET_ZOOM = 16;
+
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) =>
   hex +
@@ -555,12 +561,6 @@ const dottedPattern = width => [1, PixelRatio.getPixelSizeForLayoutSize(Math.rou
 
 // Live snapshot age still updates the map controls. Reuse unchanged history
 // geometry until its route, stop handler, zoom or theme context changes.
-/**
- * The street view: one place in history (只有一筆) is shown at this zoom, and
- * 我的位置 zooms in to it when the map is zoomed out further.
- */
-export const STREET_ZOOM = 16;
-
 const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metresPerDp = 0, cursorDragging = false, cursorLabelHidden = false, measurementKey, onLabelMetrics, labelBox = null, heading = 0 }) {
   const { colors, isDark } = useTheme();
   const dashed = useMemo(

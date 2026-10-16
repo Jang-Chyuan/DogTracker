@@ -11,7 +11,7 @@ import MapView, {
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import TrackingMap from '../src/map/TrackingMap';
-import { savedCamera, STREET_ZOOM } from '../src/map/GoogleTrackingMap';
+import { savedCamera } from '../src/map/GoogleTrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -1021,6 +1021,7 @@ test('066: 我的位置 with a card open puts the phone in the middle of the map
 
 // 我的位置 as Google Maps: zoomed out further than the street view
 // (STREET_ZOOM 16) it zooms in to it; closer than that it keeps the zoom.
+const { STREET_ZOOM } = require('../src/map/GoogleTrackingMap');
 const pressMyLocation = async () => {
   await act(async () => renderer.root.findAll(node => node.props.testID === 'map-my-location'
     && typeof node.props.onPress === 'function')[0].props.onPress());
