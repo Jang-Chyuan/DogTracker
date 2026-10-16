@@ -6,7 +6,7 @@ import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
@@ -35,7 +35,9 @@ import { cloudRowsOnPhoneClock, serverClock } from '../cloud/ServerClock';
 import { localReception } from '../alerts/LocalReception';
 import { cameraCoordinates } from '../map/TrackingGeometry';
 import { createRideDetector } from '../placement/RideAlong';
-import { useAddress } from '../placement/AddressLookup';
+import { cardAddressLine, useAddress, usePlaceNames } from '../placement/AddressLookup';
+// An indoor dog's address being asked: the room it may need.
+const ADDRESS_RESERVE_LINES = 2;
 import { useMapClock } from '../map/useMapClock';
 
 import { useReceiverState } from '../map/useReceiverState';
@@ -979,45 +981,92 @@ export default function MapScreen({
   // (on top of the others) and always brings the map to it: centred in the
   // map left above the card, the user's zoom kept (`always`); the order and
   // the card itself stay.
+  // The new dog's card and map are worked out as a transition (2026-10-16:
+  // a swipe paused before the row moved on): the row's slide, started on the
+  // native driver just before, is sent to the UI thread first, and a swipe
+  // on to the next dog interrupts the work for this one instead of waiting
+  // for it.
+  const switchState = useRef({});
+  switchState.current = { cardDogId, switchDogs };
   const selectDog = useCallback(
     to => {
-      if (to == null || to === cardDogId) return;
+      if (to == null || to === switchState.current.cardDogId) return;
       cardGeneration.current += 1;
-      setSelected({ kind: 'dog', slaveId: to });
-      setFocusRequest({ slaveId: to, key: Date.now(), always: true });
+      startTransition(() => {
+        setSelected({ kind: 'dog', slaveId: to });
+        setFocusRequest({ slaveId: to, key: Date.now(), always: true });
+      });
     },
-    [cardDogId],
+    [],
   );
   const stepDog = useCallback(
-    step => selectDog(switchTarget(switchDogs, cardDogId, step)),
-    [selectDog, switchDogs, cardDogId],
+    step => selectDog(switchTarget(switchState.current.switchDogs, switchState.current.cardDogId, step)),
+    [selectDog],
   );
   // The row of dogs (DogCarousel): every dog in the order, each once.
   const markerById = useMemo(
     () => Object.fromEntries(livePresentation.dogMarkers.map(marker => [marker.slaveId, marker])),
     [livePresentation.dogMarkers],
   );
-  // The row of dogs shows when there are others to switch to. The card keeps
-  // no room for the other dogs' rows (2026-10-16: it left a blank gap above
-  // 看軌跡); it is as tall as the open dog's own rows.
+  // The other dogs' first rows (2026-10-14: the card must not grow or shrink
+  // from dog to dog): what each would show, so the card is as tall as the
+  // tallest card among the dogs in the row (2026-10-16: the distance never
+  // goes under a row's words any more, so that is only the lines a dog really
+  // has). Their addresses are asked too (the history's cache), their battery
+  // and activity rows are one line each at the normal font.
   const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
+  const otherDogs = useMemo(() => (switching
+    ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))
+      .filter(Boolean) : []), [switching, switchDogs, cardDogId, dogs]);
+  const otherPlaces = usePlaceNames(otherDogs.map(dog => (isIndoorHold(dog) ? dog.coordinate : null)));
+  // An address still being asked gets the room of two lines (it may come
+  // back long), so its answer never makes the card taller; the open dog's
+  // own too.
+  const reserve = useMemo(() => {
+    const others = otherDogs.map((dog, index) => {
+      const freshness = judgedFreshness(dog, { now, cloud: cloudClockInput, pauses, catchUpSince,
+        previousStale: previousMarkerStale.current });
+      const place = otherPlaces[index];
+      const asking = isIndoorHold(dog) && place?.state === 'pending';
+      const model = dogCard(dog, {
+        freshness,
+        range: cloudDogs?.ranges?.[dog.slaveId] ?? null,
+        phone: phoneReading(livePhone, now) ?? (fixture ? null : nativePhoneReading(nativePhone, now)),
+        now,
+        name: dogName(dog.slaveId, dogAliases),
+        address: isIndoorHold(dog) && !asking
+          ? cardAddressLine(place?.state === 'found' ? place.text : null, dog.coordinate) : null,
+      });
+      const row = asking ? { ...model.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : model.rows[0];
+      return { key: dog.slaveId, row, headline: model.headline };
+    });
+    if (!cardModel) return others;
+    const asking = isIndoorHold(cardDog) && !address;
+    const own = asking ? { ...cardModel.rows[0], reserveLines: ADDRESS_RESERVE_LINES } : cardModel.rows[0];
+    return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
+  }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, catchUpSince, cloudDogs?.ranges, livePhone, nativePhone, fixture,
+    dogAliases, cardModel, cardDog, address]);
+  // The row's dogs stay the same objects while only the open dog changes
+  // (the markers are re-made then, for the selected one's layer), so the row
+  // of dogs keeps its faces and their animations from dog to dog.
+  const switchKey = JSON.stringify(switchDogs.map(id => [id, dogName(id, dogAliases),
+    !!markerById[id]?.problem, !!markerById[id]?.stale]));
+  const switchListDogs = useMemo(
+    () => JSON.parse(switchKey).map(([slaveId, name, problem, stale]) =>
+      ({ slaveId, name, avatar: avatars[slaveId] ?? null, problem, stale })),
+    [switchKey, avatars],
+  );
   const switcher = useMemo(() => {
     if (!switching) return null;
     return {
-      dogs: switchDogs.map(id => ({
-        slaveId: id,
-        name: dogName(id, dogAliases),
-        avatar: avatars[id] ?? null,
-        problem: !!markerById[id]?.problem,
-        stale: !!markerById[id]?.stale,
-      })),
+      dogs: switchListDogs,
       // No wrap-around: at either end there is nothing further that way.
       previous: switchTarget(switchDogs, cardDogId, -1),
       next: switchTarget(switchDogs, cardDogId, 1),
       onSelect: selectDog,
       onStep: stepDog,
     };
-  }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
+  }, [switching, cardDogId, switchDogs, switchListDogs, selectDog, stepDog]);
   // The history page opens at once (2026-10-15 audit): whom it shows travels
   // with the route (App's openTrackFrom), so it never waits for the old
   // history query (useMapHistory.save) to be stored. That query is written in
@@ -1395,6 +1444,7 @@ export default function MapScreen({
           onActivity={() => setCardPage('activity')}
           onTrack={openTrackHistory}
           switcher={switcher}
+          reserve={reserve}
         />
       )}
       </View>
