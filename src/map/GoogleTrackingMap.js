@@ -80,6 +80,12 @@ import {
 import { edgeHints, markerBox, boxesOverlap, mapControlBoxes, hintBox, compassBox } from './EdgeHints';
 import { CompassButton, EdgeHintView, MapButtons, MapTip } from './MapControls';
 
+/**
+ * The street view: one place in history (只有一筆) is shown at this zoom, and
+ * 我的位置 zooms in to it when the map is zoomed out further.
+ */
+export const STREET_ZOOM = 16;
+
 // '#RRGGBB' at an opacity, as '#RRGGBBAA' for the map SDK.
 const withOpacity = (hex, alpha) =>
   hex +
@@ -1169,7 +1175,7 @@ function GoogleTrackingMapRenderer({
     // the closest zoom.
     if (historyRoute && tinySpan(positions)) {
       mapRef.current?.animateCamera(
-        { center: positions[0], zoom: 16 },
+        { center: positions[0], zoom: STREET_ZOOM },
         { duration: 0 },
       );
     } else
@@ -1789,22 +1795,39 @@ function GoogleTrackingMapRenderer({
     if (!usable) return;
     takeCamera();
     const map = mapRef.current;
-    const animate = to =>
-      map?.animateCamera(
-        { center: to },
-        { duration: moveDuration(motion.camera.duration) },
-      );
-    // With a card open the phone goes to the middle of the map left above
-    // it (as an opened dog does), not the middle of the screen (066).
-    if (!map?.pointForCoordinate || !map.coordinateForPoint) {
-      animate(position);
-      return;
-    }
-    map
-      .pointForCoordinate(position)
-      .then(point => (point ? centreInView(point) : null))
-      .then(to => animate(to || position))
-      .catch(() => animate(position));
+    // As Google Maps: zoomed out further than the street view, it zooms in to
+    // STREET_ZOOM on the way; at or closer than that it keeps the zoom.
+    const zoomNow = Promise.resolve(map?.getCamera?.())
+      .then(camera => (Number.isFinite(camera?.zoom) ? camera.zoom : null))
+      .catch(() => null);
+    zoomNow.then(zoom => {
+      const zoomIn = zoom != null && zoom < STREET_ZOOM;
+      const animate = to =>
+        map?.animateCamera(
+          zoomIn ? { center: to, zoom: STREET_ZOOM } : { center: to },
+          { duration: moveDuration(motion.camera.duration) },
+        );
+      // With a card open the phone goes to the middle of the map left above
+      // it (as an opened dog does), not the middle of the screen (066).
+      if (!map?.pointForCoordinate || !map.coordinateForPoint) {
+        animate(position);
+        return;
+      }
+      map
+        .pointForCoordinate(position)
+        .then(point => (point ? centreInView(point) : null))
+        .then(to => {
+          if (!to || !zoomIn) return animate(to || position);
+          // centreInView's offset from the phone is at today's zoom; the
+          // same offset on screen covers 2^(zoom − 16) as much ground at 16.
+          const scale = 2 ** (zoom - STREET_ZOOM);
+          return animate({
+            latitude: position.latitude + (to.latitude - position.latitude) * scale,
+            longitude: position.longitude + (to.longitude - position.longitude) * scale,
+          });
+        })
+        .catch(() => animate(position));
+    });
   };
   // A tap on a dog always opens that dog's card (no list of dogs, 066).
   // Google reports a map tap for a tap on a marker too while a card is open
