@@ -1009,9 +1009,11 @@ export default function MapScreen({
     [livePresentation.dogMarkers],
   );
   // The other dogs' first rows (2026-10-14: the card must not grow or shrink
-  // from dog to dog): what each would show, so the card keeps room for the
-  // tallest. Their addresses are asked too (the history's cache), their
-  // battery and activity rows are one line each at the normal font.
+  // from dog to dog): what each would show, so the card is as tall as the
+  // tallest card among the dogs in the row (2026-10-16: the distance never
+  // goes under a row's words any more, so that is only the lines a dog really
+  // has). Their addresses are asked too (the history's cache), their battery
+  // and activity rows are one line each at the normal font.
   const switching = cardDogId != null && switchDogs.length > 1 && switchDogs.includes(cardDogId);
   const otherDogs = useMemo(() => (switching
     ? switchDogs.filter(id => id !== cardDogId).map(id => dogs.find(dog => dog.slaveId === id && dog.coordinate))

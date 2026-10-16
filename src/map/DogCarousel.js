@@ -27,6 +27,7 @@ import { t } from '../i18n';
 //   wrap-around. ‹ › at the two ends move one dog at a time.
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import DogAvatar from '../dogs/DogAvatar';
 import BangGlyph from '../components/BangGlyph';
 import Glyph from './Glyph';
@@ -339,6 +340,9 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
             );
           })}
         </Animated.View>
+        {/* The faces fade out at both edges of the window, into the card. */}
+        <EdgeFade side="left" color={colors.surface} height={rowHeight} />
+        <EdgeFade side="right" color={colors.surface} height={rowHeight} />
       </View>
       {/* ‹ › in their own zones at the two ends: one dog at a time, none past an end. */}
       {openIndex > 0 && (
@@ -350,6 +354,36 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     </View>
   );
 }
+
+/**
+ * The window's edge (2026-10-16): the card's own colour over the last
+ * `edgeFade` dp before a ‹ › zone, opaque at the edge and clear inwards, so a
+ * face cut off by the window fades out instead of ending at a hard line. It
+ * lets every touch through.
+ */
+function EdgeFade({ side, color, height }) {
+  const id = `dog-card-fade-${side}`;
+  const left = side === 'left';
+  return (
+    <View pointerEvents="none" testID={id}
+      style={[edgeFadeStyle.fade, left ? edgeFadeStyle.left : edgeFadeStyle.right, { height }]}>
+      <Svg width={carousel.edgeFade} height={height}>
+        <Defs>
+          <LinearGradient id={id} x1={left ? '0' : '1'} y1="0" x2={left ? '1' : '0'} y2="0">
+            <Stop offset="0" stopColor={color} stopOpacity="1" />
+            <Stop offset="1" stopColor={color} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width={carousel.edgeFade} height={height} fill={`url(#${id})`} />
+      </Svg>
+    </View>
+  );
+}
+const edgeFadeStyle = StyleSheet.create({
+  fade: { position: 'absolute', top: 0, width: carousel.edgeFade },
+  left: { left: 0 },
+  right: { right: 0 },
+});
 
 /**
  * One dog in the row: its face (with the 「!」 and, in the middle, the pencil

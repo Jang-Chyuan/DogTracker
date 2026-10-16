@@ -1073,6 +1073,20 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // The longest first row (2026-10-16, the distance always beside it): 豆豆
+  // silent since yesterday 21:09, 1.8 km away and out of range, the phone's
+  // own fix 3 minutes old — 「10/6 21:09 之後沒有新位置」 beside 「↗ 1.8 km」
+  // and 「手機位置 3 分鐘前」, 「不在接收範圍」 under it.
+  'card-status-longest': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 3 * MINUTE), openDog: 4,
+    ble: inTimeOrder([
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+      ...track(bleRow, now, { slave: 4, from: 12 * 60 * MINUTE + 40 * MINUTE, to: 12 * 60 * MINUTE + 21 * MINUTE,
+        battery: 15, dog: (progress, where) => awayFrom(where, 700 + 1100 * progress, progress, 30) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
   // A7b: 小黑 held indoors (clear fixes, then packets without a fix for 12
   // minutes), collar on USB at 62%, resting for 40 minutes. 位置 「室內」 with
   // the held place's address under it (053a) is the first row.

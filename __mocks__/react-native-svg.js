@@ -19,3 +19,5 @@ export const ClipPath = shape('clippath');
 export const Image = shape('image');
 export const Filter = shape('filter');
 export const FeColorMatrix = shape('fecolormatrix');
+export const LinearGradient = shape('lineargradient');
+export const Stop = shape('stop');

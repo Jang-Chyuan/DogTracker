@@ -343,8 +343,9 @@ export const size = {
     // name's width.
     carousel: { slot: 64, face: [52, 40, 32], opacity: [1, 0.5, 0.3], nameWidth: 200,
       // ‹ › (2026-10-14): a 48dp zone at each end, the track between them;
-      // a 32dp round face, a 16dp chevron.
-      stepZone: 48, stepFace: 32, stepIcon: 16 },
+      // a 32dp round face, a 16dp chevron. The faces fade out over the last
+      // 24dp before each zone (2026-10-16) instead of being cut off.
+      stepZone: 48, stepFace: 32, stepIcon: 16, edgeFade: 24 },
     maxRatio: 0.75,
   },
   activity: {
