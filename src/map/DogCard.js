@@ -180,11 +180,10 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
   // under it stay in the value's column. Label over value (the largest
   // fonts): the label and its 「!」 on top, the value under them.
   const scale = Math.max(1, fontScale);
-  const valueLine = type.value.lineHeight * scale;
   const label = (
     <View
       style={[styles.labelCell, stacked ? styles.labelCellStacked : {
-        width: labelColumn, marginTop: (valueLine - Math.max(type.caption.lineHeight * scale, sizes.card.labelMark)) / 2 }]}
+        width: labelColumn }]}
       testID="dog-card-label-cell"
     >
       <Text style={styles.rowLabel} accessible={false}>
@@ -265,13 +264,15 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
         </View>
       ) : (
         <View style={styles.rowBody}>
+          {/* The label and its 「!」 are centred against the whole value block
+              (first line plus the lines under it), 2026-10-17. */}
           <View style={styles.headLine}>
             {label}
-            <View style={styles.rowTexts}>{head}</View>
+            <View style={styles.rowTexts}>
+              {head}
+              {rest}
+            </View>
           </View>
-          {rest.length ? (
-            <View style={{ marginLeft: labelColumn }}>{rest}</View>
-          ) : null}
         </View>
       )}
       {row.pressable && (
@@ -789,13 +790,14 @@ const getStyles = makeStyles(theme => {
       flexShrink: 0,
       flexDirection: 'row',
       alignItems: 'center',
+      alignSelf: 'center',
     },
-    labelCellStacked: { paddingLeft: 0 },
+    labelCellStacked: { paddingLeft: 0, alignSelf: 'flex-start' },
     // The 「!」 follows the label text, 4dp after it (the cell is as wide as
     // the longest label plus a 「!」, so the value column never moves).
     markGap: { marginLeft: space.xs, flexShrink: 0 },
     rowBody: { flex: 1 },
-    headLine: { flexDirection: 'row', alignItems: 'flex-start' },
+    headLine: { flexDirection: 'row', alignItems: 'center' },
     // Label over value (the largest fonts), under the label.
     stack: { flex: 1, gap: space.xs },
     rowLabel: { ...type.caption, color: colors.textMuted },

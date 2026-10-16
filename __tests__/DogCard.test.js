@@ -212,9 +212,23 @@ test('two columns: left-aligned label with the 「!」 right after its text, the
   const position = jsonNode(renderer.toJSON(), node => node.props?.testID === 'dog-card-row-position');
   const alert = jsonNode(position, node => node.type === 'Text' && flatten(node) === i18nT('c078'));
   expect(alert).toBeTruthy();
-  const under = jsonNode(position, node => StyleSheet.flatten(node.props?.style)?.marginLeft
-    === sizes.card.labelWidth + sizes.card.markLane);
-  expect(jsonNode(under, node => node === alert)).toBe(alert);
+  // The label (with its 「!」) is centred against the whole value block: the
+  // first line and the lines under it share one column beside it.
+  for (const key of ['position', 'battery', 'activity']) {
+    const row = jsonNode(renderer.toJSON(), node => node.props?.testID === `dog-card-row-${key}`);
+    const head = jsonNode(row, node => Array.isArray(node.children)
+      && node.children.some(child => child?.props?.testID === 'dog-card-label-cell'));
+    expect(StyleSheet.flatten(head.props.style).alignItems).toBe('center');
+    const cell = head.children[0];
+    expect(StyleSheet.flatten(cell.props.style).alignSelf).toBe('center');
+    expect(StyleSheet.flatten(cell.props.style).marginTop).toBeUndefined();
+    expect(head.children).toHaveLength(2);
+  }
+  const column = jsonNode(position, node => Array.isArray(node.children)
+    && node.children.includes(alert));
+  expect(column).toBeTruthy();
+  const first = jsonNode(position, node => node.type === 'Text' && flatten(node).startsWith('09:05'));
+  expect(jsonNode(column, node => node === first)).toBe(first);
 });
 
 const jsonNode = (node, test) => {
