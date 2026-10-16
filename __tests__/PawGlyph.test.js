@@ -23,3 +23,15 @@ test('D19 option B uses separated circular toes and the same pad on screen and P
   expect(EXPORT_ICONS.paw).toEqual({ stroke: expected });
   act(() => renderer.unmount());
 });
+
+test('框住全部 icon keeps the four corner brackets and holds the paw instead of a dot', () => {
+  const { PAW_STROKE } = require('../src/map/PawGeometry');
+  const { Circle } = require('react-native-svg');
+  let renderer;
+  act(() => { renderer = Renderer.create(<Glyph name="frame" color="#123456" />); });
+  const paths = renderer.root.findAllByType(Path);
+  expect(paths.some(p => p.props.d === PAW_STROKE && p.props.stroke === '#123456')).toBe(true);
+  expect(paths.some(p => p.props.d === 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5')).toBe(true);
+  expect(renderer.root.findAllByType(Circle)).toHaveLength(0);
+  act(() => renderer.unmount());
+});
