@@ -15,7 +15,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { optimizeDatabase } from '../database/DatabaseStatistics';
 import { readPages } from '../database/PagedRead';
-import { CLOUD_ROWS, backfillWifiStep, cloudRowSetup, wifiLatestReady, WIFI_BACKFILL_PAUSE_MS } from './CloudRowCounters';
+import { CLOUD_ROWS, backfillWifiStep, cloudRowCountInit, cloudRowSetup, wifiLatestReady, WIFI_BACKFILL_PAUSE_MS } from './CloudRowCounters';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -77,6 +77,10 @@ const initialization = new WeakMap();
 // on the read lane, each write its own short transaction. A failed step stops; the next
 // start continues where the last one left off.
 export const WIFI_BACKFILL_DELAY_MS = 15000;
+export const TRIM_BATCH = 500;
+export const TRIM_DELAY_MS = 20000;
+export const TRIM_PAUSE_MS = 25;
+const capTrims = new WeakSet();
 const backfills = new WeakMap();
 /** Starts (or, `delayMs` 0, hurries) the backfill; resolves when it is done or failed. */
 function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
@@ -147,10 +151,19 @@ export function createCloudDatabase(connection, options = {}) {
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
-  const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
-    SELECT id FROM supabase_dog_status
-    ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
+  // The global cap: the oldest rows beyond `cap` (by reception time, then
+  // id — the same rows as keeping the newest `cap`), at most `most` of them.
+  // Counted by the trigger-kept counter (CLOUD_ROWS), it starts at the oldest
+  // row of the (received_at, id) index: a statement costs the rows it deletes.
+  // The former `ORDER BY received_at DESC … OFFSET cap` walked all 936,228
+  // kept index entries every time, deleting nothing as often as not: 4–11 s
+  // holding the write lock at every start and after every downloaded page
+  // (2026-10-16, a signed-in emulator).
+  const trimOldest = (most = null) => `DELETE FROM supabase_dog_status WHERE id IN (
+    SELECT id FROM supabase_dog_status ORDER BY received_at, id
+    LIMIT MAX(0, ${most == null ? `${CLOUD_ROWS} - ${cap}` : `MIN(${most}, ${CLOUD_ROWS} - ${cap})`})
   )`;
+  const trimHistory = trimOldest();
   const executeBatch = async commands => {
     if (!historyMaterialTracking) return connection.executeBatchAsync(commands);
     try {
@@ -170,6 +183,28 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
   const requireOwner = owner => {
     if (!owner) throw new Error(t("c572"));
   };
+  // Databases downloaded by older versions (or over a lowered cap) are brought
+  // to the cap after start, not inside initialize: TRIM_BATCH rows a
+  // statement, each its own transaction (the write lock only for those
+  // rows), a pause between, on the App's queue in turn with everything else.
+  // Without the counter (no page downloaded since the update) it waits: the
+  // next download's own trim brings the table to the cap anyway.
+  function scheduleCapTrim() {
+    const key = connection.lockKey || connection;
+    if (capTrims.has(key)) return;
+    capTrims.add(key);
+    const excess = async () => Number(rows(await connection.executeAsync(
+      `SELECT (SELECT n FROM cloud_row_count WHERE id = 1) - ${cap} AS excess`))[0]?.excess);
+    const step = () => withConnectionLock(connection, async () => {
+      const over = await excess();
+      if (!(over > 0)) return false;
+      const statement = trimOldest(TRIM_BATCH);
+      await executeBatch([{ query: invalidateEvictedCoverage(statement), params: [] }, { query: statement, params: [] }]);
+      return over > TRIM_BATCH;
+    }).then(more => { if (more) setTimeout(step, TRIM_PAUSE_MS); else capTrims.delete(key); }, () => capTrims.delete(key));
+    setTimeout(step, TRIM_DELAY_MS);
+  }
+
   return {
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
@@ -297,15 +332,13 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         verified_at INTEGER NOT NULL,
         PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
-      // Also apply retention to databases downloaded by older app versions.
       await initializeHistoryCoverage(connection);
       await fixRelayedFutureTimes();
-      await executeBatch([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
       await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
-      ready.then(() => scheduleWifiBackfill(connection), () => {});
+      ready.then(() => { scheduleWifiBackfill(connection); scheduleCapTrim(); }, () => {});
       initialization.set(key, ready);
       ready.catch(() => initialization.delete(key));
       return ready;
@@ -411,6 +444,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         }
         // Global cap across accounts/Masters. Keep newest reception times, not
         // newest download order, so manual historical downloads cannot evict newer rows.
+        // The counter the cap reads, counted once if missing (CloudRowCounters).
+        // Only on the published table: a staging core's statements are
+        // renamed to its own tables, and its trims are dropped (CloudStaging).
+        if (historyMaterialTracking) commands.unshift(...await cloudRowCountInit(connection));
         commands.push({ query: invalidateEvictedCoverage(trimHistory), params: [] });
         commands.push({ query: trimHistory, params: [] });
         pagesSaved += 1;
