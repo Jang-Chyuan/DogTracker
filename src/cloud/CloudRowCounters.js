@@ -25,27 +25,43 @@ export const CLOUD_ROW_TABLES = [
     next_id INTEGER NOT NULL, until_id INTEGER NOT NULL)`,
 ];
 
-const wifiUpsert = row => `INSERT OR REPLACE INTO cloud_wifi_latest(owner_user_id, master_id, received_at)
-      SELECT ${row}.owner_user_id, ${row}.master_id, MAX(${row}.received_at, COALESCE((SELECT received_at FROM cloud_wifi_latest
-        WHERE owner_user_id = ${row}.owner_user_id AND master_id = ${row}.master_id), 0))
-      WHERE ${row}.upload_source = 'wifi' AND ${row}.owner_user_id IS NOT NULL AND ${row}.master_id IS NOT NULL
-        AND ${row}.received_at IS NOT NULL`;
+// The newest Wi-Fi time of `row`'s Master, raised (never lowered). Two plain
+// statements, not an upsert: a trigger's statements take the outer statement's
+// conflict policy, and the publication inserts with OR IGNORE — an INSERT OR
+// REPLACE here was silently ignored once the Master had a row (Codex review).
+const wifiUpsert = row => {
+  const wifi = `${row}.upload_source = 'wifi' AND ${row}.owner_user_id IS NOT NULL AND ${row}.master_id IS NOT NULL
+      AND ${row}.received_at IS NOT NULL`;
+  const same = `owner_user_id = ${row}.owner_user_id AND master_id = ${row}.master_id`;
+  return `UPDATE cloud_wifi_latest SET received_at = ${row}.received_at
+      WHERE ${same} AND received_at < ${row}.received_at AND ${wifi};
+    INSERT INTO cloud_wifi_latest(owner_user_id, master_id, received_at)
+      SELECT ${row}.owner_user_id, ${row}.master_id, ${row}.received_at
+      WHERE ${wifi} AND NOT EXISTS (SELECT 1 FROM cloud_wifi_latest WHERE ${same})`;
+};
 
 export const CLOUD_ROW_TRIGGERS = [
-  `CREATE TRIGGER IF NOT EXISTS cloud_rows_inserted AFTER INSERT ON supabase_dog_status BEGIN
+  `CREATE TRIGGER IF NOT EXISTS cloud_rows_inserted_v2 AFTER INSERT ON supabase_dog_status BEGIN
     UPDATE cloud_row_count SET n = n + 1 WHERE id = 1;
     ${wifiUpsert('NEW')};
   END`,
-  `CREATE TRIGGER IF NOT EXISTS cloud_rows_deleted AFTER DELETE ON supabase_dog_status BEGIN
+  `CREATE TRIGGER IF NOT EXISTS cloud_rows_deleted_v2 AFTER DELETE ON supabase_dog_status BEGIN
     UPDATE cloud_row_count SET n = n - 1 WHERE id = 1;
   END`,
-  `CREATE TRIGGER IF NOT EXISTS cloud_rows_wifi_changed
+  // A Wi-Fi row the backfill has not reached yet keeps its time when deleted
+  // (the trim right after the update), as a row deleted after it did.
+  `CREATE TRIGGER IF NOT EXISTS cloud_rows_wifi_deleted_v2 AFTER DELETE ON supabase_dog_status
+    WHEN OLD.upload_source = 'wifi' AND EXISTS (SELECT 1 FROM cloud_wifi_backfill
+      WHERE id = 1 AND OLD.id > next_id AND OLD.id <= until_id) BEGIN
+    ${wifiUpsert('OLD')};
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS cloud_rows_wifi_changed_v2
     AFTER UPDATE OF upload_source, received_at, master_id, owner_user_id ON supabase_dog_status
     WHEN NEW.upload_source = 'wifi' BEGIN
     ${wifiUpsert('NEW')};
   END`,
 ];
-const TRIGGER_NAMES = ['cloud_rows_inserted', 'cloud_rows_deleted', 'cloud_rows_wifi_changed'];
+const TRIGGER_NAMES = ['cloud_rows_inserted_v2', 'cloud_rows_deleted_v2', 'cloud_rows_wifi_deleted_v2', 'cloud_rows_wifi_changed_v2'];
 
 /**
  * The tables and triggers (initialize, inside its lock). The backfill's
@@ -53,7 +69,15 @@ const TRIGGER_NAMES = ['cloud_rows_inserted', 'cloud_rows_deleted', 'cloud_rows_
  * transaction, so no row is in neither.
  */
 export function cloudRowSetup() {
-  return [...CLOUD_ROW_TABLES, ...CLOUD_ROW_TRIGGERS,
+  return [...CLOUD_ROW_TABLES,
+    // Never released; a development build had them with an upsert the
+    // publication's OR IGNORE defeated (the _v2 triggers replace them).
+    'DROP TRIGGER IF EXISTS cloud_rows_inserted', 'DROP TRIGGER IF EXISTS cloud_rows_deleted',
+    'DROP TRIGGER IF EXISTS cloud_rows_wifi_changed',
+    // An older version of the App emptied the table (刪除全部狗資料) without
+    // knowing these: nothing stored means nothing uploaded to show.
+    'DELETE FROM cloud_wifi_latest WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status)',
+    ...CLOUD_ROW_TRIGGERS,
     `INSERT OR IGNORE INTO cloud_wifi_backfill(id, next_id, until_id)
       SELECT 1, 0, COALESCE((SELECT MAX(id) FROM supabase_dog_status), 0)`].map(query => ({ query, params: [] }));
 }

@@ -76,15 +76,20 @@ const initialization = new WeakMap();
 // while after start, a step of ids at a time with a pause between, each its
 // own short transaction on the App's queue. A failed step stops; the next
 // start continues where the last one left off.
-export const WIFI_BACKFILL_DELAY_MS = 30000;
+export const WIFI_BACKFILL_DELAY_MS = 15000;
 const backfills = new WeakMap();
-function scheduleWifiBackfill(connection) {
+function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
   const key = connection.lockKey || connection;
-  if (backfills.has(key)) return;
-  backfills.set(key, true);
-  const step = () => withConnectionLock(connection, () => backfillWifiStep(connection))
-    .then(more => { if (more) setTimeout(step, WIFI_BACKFILL_PAUSE_MS); }, () => { backfills.delete(key); });
-  setTimeout(step, WIFI_BACKFILL_DELAY_MS);
+  const running = backfills.get(key);
+  // Asked for at once while waiting for the delayed start: start now.
+  if (running?.timer != null && delayMs === 0) { clearTimeout(running.timer); running.timer = null; running.step(); return; }
+  if (running) return;
+  const state = { timer: null, step: null };
+  state.step = () => withConnectionLock(connection, () => backfillWifiStep(connection))
+    .then(more => { if (more) state.timer = setTimeout(state.step, WIFI_BACKFILL_PAUSE_MS); else state.timer = null; },
+      () => { backfills.delete(key); });
+  backfills.set(key, state);
+  state.timer = setTimeout(() => { state.timer = null; state.step(); }, delayMs);
 }
 
 export function createCloudDatabase(connection, options = {}) {
@@ -314,17 +319,18 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
      *
      * The caller refreshes after successful downloads, route changes and
      * return to the foreground — never on the upload pass. Read from
-     * cloud_wifi_latest (CloudRowCounters, kept by a trigger); until its
-     * background backfill finished, from the table as before: `upload_source`
-     * is not indexed and that walks the account's rows (2.6–38 s on about
-     * 940,000 rows, on the queue every other read of the App waits behind).
+     * cloud_wifi_latest (CloudRowCounters, kept by a trigger), never from the
+     * table: `upload_source` is not indexed and a GROUP BY over the account's
+     * rows took 2.6–111 s on about 940,000 rows, on the queue every other read
+     * of the App waits behind. Right after the update, until the background
+     * backfill has added the rows stored before, a Master whose last Wi-Fi
+     * row is older than the update may show no time yet (it is started at
+     * once then, and takes seconds).
      */
     async wifiUploads(owner) {
       requireOwner(owner);
-      const query = await wifiLatestReady(connection)
-        ? 'SELECT master_id, received_at AS time FROM cloud_wifi_latest WHERE owner_user_id=?'
-        : `SELECT master_id, MAX(received_at) time FROM supabase_dog_status
-          WHERE owner_user_id=? AND upload_source='wifi' GROUP BY master_id`;
+      if (!await wifiLatestReady(connection)) scheduleWifiBackfill(connection, 0);
+      const query = 'SELECT master_id, received_at AS time FROM cloud_wifi_latest WHERE owner_user_id=?';
       return Object.fromEntries(rows(await connection.executeAsync(query, [owner]))
         .map(row => [Number(row.master_id), Number(row.time)])
         .filter(([master, time]) => Number.isInteger(master) && Number.isFinite(time) && time > 0));

@@ -51,7 +51,7 @@ test('the row counter: counted once, then exact through inserts, deletes and 刪
     expect(counter()).toBe(0);
     add('a', 9000, 3, 'wifi');
     expect(counter()).toBe(1);
-    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM sqlite_master WHERE type = \'trigger\' AND name LIKE \'cloud_rows_%\'').get().n).toBe(3);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM sqlite_master WHERE type = \'trigger\' AND name LIKE \'cloud_rows_%\'').get().n).toBe(4);
   } finally { db.close(); }
 });
 
@@ -62,7 +62,7 @@ test('each Master\'s newest Wi-Fi row: rows stored before come in the background
     // An older database: the rows were downloaded before the triggers existed.
     const cloud = createCloudDatabase(db);
     await cloud.initialize();
-    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted; DROP TRIGGER cloud_rows_wifi_changed; DROP TABLE cloud_wifi_backfill');
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TABLE cloud_wifi_backfill');
     const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
       VALUES (?, ?, ?, ?, 1, ?)`);
     db.sqlite.exec('BEGIN');
@@ -75,14 +75,14 @@ test('each Master\'s newest Wi-Fi row: rows stored before come in the background
     // The update (CloudDatabase.initialize): triggers and the range still to add.
     await db.executeBatchAsync(cloudRowSetup());
     expect(await wifiLatestReady(db)).toBe(false);
-    // Until the backfill finished, the old query answers.
-    expect(await cloud.wifiUploads('a')).toEqual(expected);
+    // Until the backfill finished: what the trigger has seen since (nothing
+    // yet), never a walk of the account's rows.
+    expect(await cloud.wifiUploads('a')).toEqual({});
     // Meanwhile a newer Wi-Fi row arrives (trigger) and an older one is deleted.
     insert.run('a', 'late', 99999999, 4, 'wifi');
     db.sqlite.exec("DELETE FROM supabase_dog_status WHERE event_id = 'e5'");
-    let steps = 0;
-    while (await backfillWifiStep(db)) steps += 1;
-    expect(steps).toBe(2);
+    // (wifiUploads started the backfill too: steps of WIFI_BACKFILL_IDS ids.)
+    while (await backfillWifiStep(db));
     expect(await wifiLatestReady(db)).toBe(true);
     const after = { ...expected, 4: 99999999 };
     expect(await cloud.wifiUploads('a')).toEqual(after);
@@ -95,5 +95,48 @@ test('each Master\'s newest Wi-Fi row: rows stored before come in the background
     const plan = db.sqlite.prepare("EXPLAIN QUERY PLAN SELECT master_id, received_at AS time FROM cloud_wifi_latest WHERE owner_user_id = 'a'")
       .all().map(row => row.detail).join(' | ');
     expect(plan).toMatch(/SEARCH cloud_wifi_latest USING (PRIMARY KEY|INDEX sqlite_autoindex)/);
+  } finally { db.close(); }
+});
+
+// Codex review (2026-10-16) of the first version of these triggers.
+test('review: an insert under OR IGNORE (the publication) still raises the Master\'s Wi-Fi time', async () => {
+  const { db, cloud } = await cloudDatabase();
+  try {
+    const insert = db.sqlite.prepare(`INSERT OR IGNORE INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
+      VALUES ('a', ?, ?, 3, 1, 'wifi')`);
+    insert.run('x1', 100);
+    insert.run('x2', 200);
+    insert.run('x1', 999); // the same event again: ignored, nothing raised
+    expect(await cloud.wifiUploads('a')).toEqual({ 3: 200 });
+  } finally { db.close(); }
+});
+
+test('review: a Wi-Fi row deleted before the backfill reached it keeps its time', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_backfill');
+    const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
+      VALUES ('a', ?, ?, 3, 1, 'wifi')`);
+    insert.run('old-new', 200);
+    insert.run('old-old', 100);
+    await db.executeBatchAsync(cloudRowSetup());
+    db.sqlite.exec("DELETE FROM supabase_dog_status WHERE event_id = 'old-new'");
+    while (await backfillWifiStep(db));
+    expect(await cloud.wifiUploads('a')).toEqual({ 3: 200 });
+  } finally { db.close(); }
+});
+
+test('review: a table an older App emptied leaves no Wi-Fi time behind after the update', async () => {
+  const { db, cloud, add } = await cloudDatabase();
+  try {
+    add('a', 100, 3, 'wifi');
+    expect(await cloud.wifiUploads('a')).toEqual({ 3: 100 });
+    // The older App's 刪除全部狗資料: the rows go, these tables stay.
+    db.sqlite.exec('DELETE FROM supabase_dog_status');
+    await db.executeBatchAsync(cloudRowSetup());
+    expect(await cloud.wifiUploads('a')).toEqual({});
   } finally { db.close(); }
 });
