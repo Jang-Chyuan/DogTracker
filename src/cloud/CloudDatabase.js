@@ -73,8 +73,8 @@ export const CLOUD_DATABASE_METHODS = ['initializeLatest', 'readArchivePublicati
 const initialization = new WeakMap();
 
 // cloud_wifi_latest's backfill (CloudRowCounters): once per open database, a
-// while after start, a step of ids at a time with a pause between, each its
-// own short transaction on the App's queue. A failed step stops; the next
+// while after start, a step of ids at a time with a pause between: each read
+// on the read lane, each write its own short transaction. A failed step stops; the next
 // start continues where the last one left off.
 export const WIFI_BACKFILL_DELAY_MS = 15000;
 const backfills = new WeakMap();
@@ -86,7 +86,7 @@ function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
     state = { started: false, wait: null, done: null };
     let finish;
     state.done = new Promise(resolve => { finish = resolve; });
-    const step = () => withConnectionLock(connection, () => backfillWifiStep(connection))
+    const step = () => backfillWifiStep(connection, work => withConnectionLock(connection, work))
       .then(more => { if (more) setTimeout(step, WIFI_BACKFILL_PAUSE_MS); else finish(true); },
         () => { backfills.delete(key); finish(false); });
     state.start = () => {

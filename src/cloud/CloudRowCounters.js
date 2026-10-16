@@ -100,26 +100,43 @@ export const cloudRowsAfterClear = () => [
   ...CLOUD_ROW_TRIGGERS,
 ].map(command => (typeof command === 'string' ? { query: command, params: [] } : { params: [], ...command }));
 
-export const WIFI_BACKFILL_IDS = 20000;
+// Ids a step reads. The read walks those rows of the table (upload_source
+// sits after the raw JSON, so each row is read whole): 20,000 ids took up to
+// 28 s on a signed-in emulator. It runs on the read lane, never inside the
+// write lock; only the few answers are written.
+export const WIFI_BACKFILL_IDS = 2000;
 export const WIFI_BACKFILL_PAUSE_MS = 250;
 
-/** One step of the backfill: the next WIFI_BACKFILL_IDS ids. Returns whether more remain. */
-export async function backfillWifiStep(connection) {
+/**
+ * One step of the backfill: the next WIFI_BACKFILL_IDS ids, read on
+ * `connection.reader` when there is one (no lock, not the App's queue), then
+ * written in one short transaction. `locked(work)` runs the write in the
+ * connection's JS order. Returns whether more remain.
+ */
+export async function backfillWifiStep(connection, locked = work => work()) {
   const rowsOf = result => result?.results || result?.rows?._array || [];
   const state = rowsOf(await connection.executeAsync('SELECT next_id, until_id FROM cloud_wifi_backfill WHERE id = 1'))[0];
   if (!state || Number(state.next_id) >= Number(state.until_id)) return false;
   const from = Number(state.next_id), to = Math.min(Number(state.until_id), from + WIFI_BACKFILL_IDS);
-  await connection.executeBatchAsync([
-    { query: `INSERT OR REPLACE INTO cloud_wifi_latest(owner_user_id, master_id, received_at)
-        SELECT s.owner_user_id, s.master_id, MAX(MAX(s.received_at), COALESCE((SELECT received_at FROM cloud_wifi_latest w
-          WHERE w.owner_user_id = s.owner_user_id AND w.master_id = s.master_id), 0))
-        FROM supabase_dog_status s
-        WHERE s.id > ? AND s.id <= ? AND s.upload_source = 'wifi' AND s.owner_user_id IS NOT NULL
-          AND s.master_id IS NOT NULL AND s.received_at IS NOT NULL
-        GROUP BY s.owner_user_id, s.master_id`, params: [from, to] },
+  const found = rowsOf(await (connection.reader || connection).executeAsync(
+    `SELECT owner_user_id, master_id, MAX(received_at) AS time FROM supabase_dog_status
+      WHERE id > CAST(? AS INTEGER) AND id <= CAST(? AS INTEGER) AND upload_source = 'wifi'
+        AND owner_user_id IS NOT NULL AND master_id IS NOT NULL AND received_at IS NOT NULL
+      GROUP BY owner_user_id, master_id`, [from, to]));
+  await locked(() => connection.executeBatchAsync([
+    ...found.flatMap(row => {
+      const key = [row.owner_user_id, Number(row.master_id)];
+      return [
+        { query: 'UPDATE cloud_wifi_latest SET received_at = ? WHERE owner_user_id = ? AND master_id = ? AND received_at < ?',
+          params: [Number(row.time), ...key, Number(row.time)] },
+        { query: `INSERT INTO cloud_wifi_latest(owner_user_id, master_id, received_at) SELECT ?, ?, ?
+            WHERE NOT EXISTS (SELECT 1 FROM cloud_wifi_latest WHERE owner_user_id = ? AND master_id = ?)`,
+        params: [...key, Number(row.time), ...key] },
+      ];
+    }),
     // Only forward, and never past a range a clear has reset meanwhile.
     { query: 'UPDATE cloud_wifi_backfill SET next_id = ? WHERE id = 1 AND next_id = ?', params: [to, from] },
-  ]);
+  ]));
   return to < Number(state.until_id);
 }
 
