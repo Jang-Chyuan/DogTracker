@@ -15,6 +15,8 @@ import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
 import { applyScreenFixture, buildFixture, FIXTURE_NOW } from '../src/dev/ScreenFixtures';
 import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/TodayDistance';
 import { historyTargetOf, useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
+import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
+import { listedMetres } from '../test-support/TimelineClocks';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 
 const MINUTE = 60000;
@@ -111,14 +113,20 @@ describe('words (copy deck)', () => {
     expect(km(1449)).toBe('1.4 km'); expect(km(1450)).toBe('1.5 km');
     expect(clock(new Date(2026, 9, 3, 8, 3).getTime())).toBe('08:03');
   });
-  test('movement rows: 走路／開車 for my route, 移動／坐車 for a dog, 沒有資料', () => {
+  test('movement rows: 走路／開車 for my route, 移動／坐車 for a dog, 沒有位置 (my route\'s breaks)', () => {
     const base = { type: 'movement', durationMs: 28 * MINUTE, distanceM: 6300, countedDistanceM: 1400 };
     expect(sectionText({ ...base, mode: 'walking' })).toEqual({ icon: 'walk', lead: i18nT('c134'), time: '28 分', rest: '・1.4 km' });
     expect(sectionText({ ...base, mode: 'driving' })).toMatchObject({ icon: 'car', lead: i18nT('c135'), rest: '・6.3 km' });
     expect(sectionText({ ...base, mode: 'moving' })).toMatchObject({ icon: 'paw', lead: i18nT('c125') });
     expect(sectionText({ ...base, mode: 'ride' })).toMatchObject({ icon: 'car', lead: i18nT('c128'), rest: '・6.3 km' });
+    // 2026-10-15 (user): my route's breaks are 「沒有位置 N 分」, whatever
+    // their cause (no fix saved, or weak GPS); a dog's keep their reason.
     const gap = sectionText({ type: 'gap', start: new Date(2026, 9, 3, 10, 21).getTime(), end: new Date(2026, 9, 3, 10, 40).getTime() });
-    expect(`${gap.lead}${gap.rest}`).toBe('沒有資料 10:21–10:40');
+    expect(`${gap.lead} ${gap.time}${gap.rest}`).toBe('沒有位置 19 分');
+    const weak = sectionText({ type: 'gap', reason: 'uncertain', start: new Date(2026, 9, 3, 10, 21).getTime(), end: new Date(2026, 9, 3, 10, 23).getTime() });
+    expect(`${weak.lead} ${weak.time}`).toBe('沒有位置 2 分');
+    const noGps = sectionText({ type: 'gap', reason: 'no-gps', start: new Date(2026, 9, 3, 10, 21).getTime(), end: new Date(2026, 9, 3, 10, 40).getTime() });
+    expect(`${noGps.lead}${noGps.rest}`).toBe('收不到 GPS 10:21–10:40');
   });
   test('pills', () => {
     // 2026-10-14 (user): no 「出發」 — the start row has no capsule.
@@ -126,14 +134,18 @@ describe('words (copy deck)', () => {
     expect(nodePill({ type: 'departure', manual: true })).toBeNull();
     expect(nodePill({ type: 'departure', continuesPreviousDay: true })).toBeNull();
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
-    expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('接續前一天');
+    // 2026-10-15 (user): no 「接續前一天」 — the row's 00:00 says it.
+    expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('停 17 分');
     expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
     expect(nodePill({ type: 'resume' }).text).toBe(i18nT('c335'));
     expect(nodePill({ type: 'switch' })).toBeNull();
     expect(nodePill({ type: 'end', label: i18nT('c130') }).text).toBe(i18nT('c130'));
     // 2026-10-14 (user): no 「結束」 — a plain end has no capsule.
     expect(nodePill({ type: 'end', label: i18nT('c330') })).toBeNull();
-    expect(nodePill({ type: 'end', label: i18nT("c660"), end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('最後 12:05');
+    // 2026-10-15 (user): never 「最後 12:05」.
+    expect(nodePill({ type: 'end', endState: 'no-fix', end: new Date(2026, 9, 3, 12, 5).getTime() }).text).toBe('12:05 之後沒有位置');
+    expect(nodePill({ type: 'end', endState: 'interrupted', closedAt: new Date(2026, 9, 3, 12, 5).getTime() }))
+      .toEqual({ text: '記錄中斷・12:05', tone: 'closed' });
     expect(nodePill({ type: 'end', label: i18nT("c656"), closedAt: new Date(2026, 9, 3, 10, 20).getTime() }))
       .toEqual({ text: '記錄已關閉 10:20', tone: 'closed' });
     // 2026-10-13: an end running on past midnight has no capsule (no 「接續隔天」).
@@ -171,6 +183,36 @@ describe('fixtures', () => {
     // (historyStops): its two parts are the range's first and last rows.
     expect(kinds).toEqual(['departure', 'stop', 'walking', 'stop', 'end']);
     expect(model.nodes.filter(n => n.type === 'stop').map(n => n.number)).toEqual([null, null]);
+  });
+  // 2026-10-15 (#200): the walk stops to sniff again and again; the range
+  // starts where it left home (09:00), and 「今天 x km」 is the list's total.
+  test('history-stop-and-go: the range starts where the walk left home', async () => {
+    const { fixture, model, kinds } = await fixtureList('history-stop-and-go');
+    const left = fixture.now - 30 * MINUTE;
+    expect(model.departure.status).toBe('confirmed');
+    expect(model.range.start).toBeGreaterThanOrEqual(left - MINUTE);
+    expect(model.range.start).toBeLessThanOrEqual(left);
+    expect(kinds[0]).toBe('departure');
+    expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
+  });
+  // 2026-10-15 (#200): a speed lost in its uncertainty is no speed: the
+  // break that ends on 0 km/h ± 2 m/s fixes 45 m off is at the same place,
+  // one stay (before: a stay, 「沒有資料」 and another stay).
+  test('history-uncertain-speed: one stay at home across the break', async () => {
+    const { model, kinds } = await fixtureList('history-uncertain-speed');
+    expect(kinds.filter(kind => kind !== 'departure' && kind !== 'end')).toEqual(['stop']);
+    expect(model.distanceM).toBe(0);
+  });
+  // 2026-10-15 (#200): a walk round a small park is 「在附近走動」 with its
+  // metres; a stay with a few steps 「停 N 分・M m」; rows add up.
+  test('history-wandering: 在附近走動 and a stay with its own metres', async () => {
+    const { fixture, model } = await fixtureList('history-wandering');
+    const shown = timelinePresentation(model.nodes).map(n => n.terminalStay ?? n.departureStay ?? n);
+    const pills = shown.filter(n => n.type === 'stop').map(n => nodePill(n).text);
+    expect(pills.some(text => /^在附近走動 .+・\d+\u00A0m$/u.test(text))).toBe(true);
+    expect(pills.some(text => /^停 .+・\d+\u00A0m$/u.test(text))).toBe(true);
+    expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);
+    expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
   });
   test('history-mode-switch: walk → drive → walk with a numbered switch point at each change', async () => {
     const { model, kinds } = await fixtureList('history-mode-switch');

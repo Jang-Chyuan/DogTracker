@@ -41,8 +41,8 @@ export function exportPlaces(model) {
 }
 
 /**
- * The end of an export: the newest packet in the range (判定表「「現在」和
- * 「最後 12:05」」: 匯出的檔案一律寫實際時刻), never a moving 「現在」.
+ * The end of an export: the newest packet in the range (匯出的檔案一律寫實際
+ * 時刻), never a moving 「現在」.
  */
 function lastPacket(models, range) {
   // A loop, not Math.max(...): a day of several dogs is 100 000+ packets.
@@ -73,8 +73,8 @@ export function exportTimelineRows(nodes, addressOf) {
     const lines = placeLines(node, found ? { state: 'found', text: found } : { state: 'none' });
     let pill = nodePill(node);
     // 匯出的檔案一律寫實際時刻: the end is its time (the left column), with no
-    // 「現在」／「最後」 and, as on screen, no 「結束」 (2026-10-14).
-    if (node.type === 'end' && (node.label === t('c130') || node.label === t("c660"))) pill = nodePill({ ...node, label: t('c330') });
+    // 「現在」／「之後沒有位置」 and, as on screen, no 「結束」 (2026-10-14).
+    if (node.type === 'end' && ['now', 'no-fix'].includes(node.endState)) pill = nodePill({ ...node, endState: 'fixed', label: t('c330') });
     const next = shown[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
       title: lines.title, coordinates: '', missing: lines.missing, pill,
@@ -157,6 +157,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       // the list numbers it (a stationary stay in the middle, 2026-10-14):
       // every number the list shows is a waypoint.
       stays: nodes.filter(n => n.type === 'stop' && (!n.presentationOnly || n.number != null)).map(n => ({ start: n.start, end: n.end, number: n.number,
+        ...(n.wandering ? { wandering: true } : {}),
         ...(n.originalRepresentative ? { gpxCoordinate: n.originalRepresentative,
           gpxAddress: addressOf(n.originalRepresentative) } : {}),
         latitude: n.latitude, longitude: n.longitude, address: addressOf(n), excludedMs: n.interruptionMs || 0 })),

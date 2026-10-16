@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { distanceText } from '../utils/distanceText';
 // The words of the H1/H2 time-line list and its summary (copy deck c120,
-// c121, c127, c130, c137, c140, c159, c306–c308, c315, c316, c331–c341,
+// c121, c127, c130, c137, c140, c159, c306–c308, c316, c331–c341, c1410, c1411,
 // c344, c1276). Pure: the list component draws them, tests read them.
 
 const MINUTE = 60000;
@@ -57,17 +57,24 @@ export const movementGlyph = mode => (mode === 'driving' || mode === 'ride' ? 'c
 /**
  * A movement row (判定表「移動段的文字」): { icon, lead, time, rest } —
  * 「走路 28 分・1.4 km」, 「開車 12 分・6.3 km」, 「移動 …」,
- * 「坐車 9 分・4.1 km」, 「沒有資料 10:21–10:40」. `time` is bold.
+ * 「坐車 9 分・4.1 km」, 「沒有位置 19 分」 (my route), 「收不到 GPS 10:21–10:40」
+ * (a dog). `time` is bold.
  */
 export function sectionText(section) {
   if (section.type === 'gap') {
     // 067: a dog's break — 「收不到 GPS」 (packets without a fix) or
-    // 「沒收到訊號」 (no packet); otherwise 「沒有資料」.
-    const lead = section.reason === 'uncertain' ? t('c883') : section.reason === 'no-gps'
-      ? t('c1169') : section.reason === 'no-signal' ? t('c1170') : t('c089');
-    // A day's trailing 「沒有資料」 (2026-10-13) ends at midnight: 24:00.
-    const end = section.dayBoundary === 'end' ? '24:00' : clock(section.end);
-    return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${end}` };
+    // 「沒收到訊號」 (no packet), with its two clocks.
+    if (section.reason === 'no-gps' || section.reason === 'no-signal') {
+      const lead = section.reason === 'no-gps' ? t('c1169') : t('c1170');
+      return { icon: 'dots', lead, time: '', rest: ` ${clock(section.start)}–${clock(section.end)}` };
+    }
+    // 2026-10-15 (user): my route's breaks — no fix saved, or only weak GPS —
+    // are one row, 「沒有位置 N 分」 (was 「沒有資料 10:21–10:40」 /
+    // 「GPS 訊號弱 …」); when such a row exists is unchanged.
+    // Its minutes are its two clocks' (the times add up, as every row's).
+    const duration = (Math.floor(section.end / MINUTE) - Math.floor(section.start / MINUTE)) * MINUTE;
+    const minutes = duration <= 0 ? t('c1276') : listDuration(duration);
+    return { icon: 'dots', lead: t('c1414'), time: minutes, rest: '' };
   }
   const vehicle = section.mode === 'driving' || section.mode === 'ride';
   const metres = vehicle ? section.distanceM : section.countedDistanceM;
@@ -96,6 +103,16 @@ export function sectionText(section) {
 const noMinutes = stay => stay.type === 'stop' && !stay.continuesPreviousDay
   && Math.round(Math.max(0, stay.displayDurationMs ?? stay.durationMs ?? 0) / MINUTE) === 0;
 
+// 2026-10-15 (user, #200): a stay's own moves are its own — 「停 25 分・45 m」
+// — never a walk's hours later; a stay that did not move (rounded to 0 m)
+// reads as ever.
+// The number and its unit never part when a large font wraps the pill
+// (「660」 on one line, 「m」 on the next): a no-break space between them.
+const withStayMetres = (text, stay) => {
+  const distance = distanceText(stay?.countedDistanceM || 0);
+  return distance === distanceText(0) ? text : `${text}・${distance.replace(' ', '\u00A0')}`;
+};
+
 export function nodePill(node) {
   if (node.terminalStay) {
     const endpoint = nodePill({ ...node, terminalStay: null });
@@ -112,14 +129,17 @@ export function nodePill(node) {
       return null;
     case 'stop': {
       // Under half a minute shown on its own: 「停 不到 1 分」 (as c1276 on rows).
-      const stay = t('c127', { duration: noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs) });
-      return { text: node.continuesPreviousDay ? t('c332') : stay, tone: 'stay' };
+      const duration = noMinutes(node) ? t('c1276') : listDuration(node.displayDurationMs ?? node.durationMs);
+      // 2026-10-15 (user, #200): a walk round one place is 「在附近走動 1 時 49 分」.
+      const stay = node.wandering ? t('c1405', { duration }) : t('c127', { duration });
+      // 2026-10-15 (user): no 「接續前一天」 — its 00:00 says it.
+      return { text: withStayMetres(stay, node), tone: 'stay' };
     }
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
       // runs on into the next day keeps its minutes (2026-10-13: no 「接續隔天」).
       const inside = t('c344', { duration: stayDuration(node.displayDurationMs ?? node.end - node.start) });
-      const text = node.continuesPreviousDay ? t('c332') : inside;
+      const text = inside;
       return { text, tone: 'indoor' };
     }
     case 'resume':
@@ -129,9 +149,13 @@ export function nodePill(node) {
       // onto many lines. The row's time and the next day's own 「接續前一天」
       // already say it; the end row has no capsule.
       if (node.continuesNextDay) return null;
-      if (node.label === t("c656")) return { text: t('c331', { time: clock(node.closedAt) }), tone: 'closed' };
-      if (node.label === t("c660")) return { text: t('c315', { time: clock(node.end) }), tone: 'plain' };
-      if (node.label === t('c130')) return { text: node.label, tone: 'plain' };
+      // 2026-10-15 (user): never 「最後 HH:MM」 — 「現在」, 「20:49 之後沒有位置」
+      // (no fix since, following now), 「記錄已關閉 10:20」 (switched off) or
+      // 「記錄中斷・20:49」 (the recording service stopped on its own).
+      if (node.endState === 'closed' || node.label === t("c656")) return { text: t('c331', { time: clock(node.closedAt) }), tone: 'closed' };
+      if (node.endState === 'interrupted') return { text: t('c1411', { time: clock(node.closedAt ?? node.end) }), tone: 'closed' };
+      if (node.endState === 'no-fix') return { text: t('c1410', { time: clock(node.end) }), tone: 'plain' };
+      if (node.endState === 'now' || node.label === t('c130')) return { text: t('c130'), tone: 'plain' };
       // 2026-10-14 (user): no 「結束」 anywhere — the end row of a range that
       // ends moving is its time, its solid node and its address only.
       return null;
@@ -187,11 +211,9 @@ export function summaryText(model, { subject }) {
   const first = model.points[0], last = model.points[model.points.length - 1];
   const end = model.nodes[model.nodes.length - 1];
   const startTime = clock(first.time), endTime = clock(last.time);
-  const span = end?.type === 'end' && end.label === t('c130')
-    ? t('c120', { time: startTime })
-    : end?.type === 'end' && end.label === t("c660")
-      ? t('c1154', { time: startTime, time2: endTime })
-      : t('c432', { time: startTime, time2: endTime });
+  // Following now (現在, or no position since the last fix): 「08:30 – 現在」.
+  const following = end?.type === 'end' && (['now', 'no-fix'].includes(end.endState) || end.label === t('c130'));
+  const span = following ? t('c120', { time: startTime }) : t('c432', { time: startTime, time2: endTime });
   const moved = movementSummary(model, subject);
   return { title: span, detail: moved };
 }
@@ -208,6 +230,7 @@ export function emptyText({ subject, today, name }) {
 // 「1.7 公里」, 「・」→「，」.
 export const spoken = text =>
   text
+    .replace(/\u00A0/gu, ' ')
     .replace(/(\d+) 分(?!鐘)/gu, t("c665"))
     .replace(/(\d) km/gu, t("c666"))
     .replace(/(\d) m(?![a-z])/gu, t("c667"))
@@ -249,7 +272,7 @@ export function placeSpeech(node, title) {
   const pill = nodePill(node);
   const lead =
     node.type === 'stop'
-      ? t('c136', { duration: node.number ?? '' })
+      ? (node.wandering ? t('c1406', { number: node.number ?? '' }) : t('c136', { duration: node.number ?? '' })).trim()
       : node.type === 'switch'
       ? t("c663", { number: node.number })
       : node.type === 'indoor'
@@ -263,8 +286,12 @@ export function placeSpeech(node, title) {
   // A stay of under a minute is read 「不到 1 分鐘」, as its pill (2026-10-15:
   // TalkBack said 「0 分鐘」 under 「停 不到 1 分」).
   const minutes = !end ? '' : noMinutes(node) ? t('c1276') : t("c664", { value: Math.round(length / 60000) });
+  // A stay's own metres (#200), as its pill.
+  const stay = node.terminalStay ?? (node.type === 'stop' ? node : null);
+  const metres = stay && distanceText(stay.countedDistanceM || 0) !== distanceText(0)
+    ? distanceText(stay.countedDistanceM) : '';
   return spoken(
-    [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, interruptionText(node)]
+    [lead, title, end ? t("c662", { start: start, end: end }) : start, minutes, metres, interruptionText(node)]
       .filter(Boolean)
       .join('，'),
   );

@@ -9,7 +9,12 @@ const row = (seconds, metres, extra = {}) => {
     session_id: 'anonymous-session', slave_id: 'phone', ...extra };
   return { ...p, raw_latitude: p.latitude, raw_longitude: p.longitude };
 };
-const uncertain = { raw_speed_kmh: 3.6, speed_kmh: 3.6, speed_accuracy_mps: 5,
+// Fixes the rules cannot place: 1 m/s without its accuracy on 20 m fixes
+// (no usable speed for the detector, not measured standing still).
+// 2026-10-15 (#200): they were 1 m/s ± 5 m/s, which is now no speed at all
+// — quiet fixes within stillPlaceM are the stay itself (quietFix), so the
+// visit would not split and the reconciliation below would not be tested.
+const uncertain = { raw_speed_kmh: 3.6, speed_kmh: 3.6, speed_accuracy_mps: null,
   phoneMotionState: 'unknown', phoneStationary: false };
 function fixture() {
   // Previously judged anchor differs from its retained raw observations;

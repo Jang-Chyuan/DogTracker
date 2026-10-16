@@ -56,7 +56,7 @@ test.each([3600, 300, 200])('(a) a stay across a session change (break %i s) is 
   const gap = model.nodes.find(n => n.type === 'gap');
   expect(gap).toMatchObject({ start: point(lastBefore).time, end: point(resume).time, countedDistanceM: 0,
     sessionChange: true });
-  expect(sectionText(gap).lead).toBe('沒有資料');
+  expect(sectionText(gap).lead).toBe('沒有位置');
   expect([first.number, second.number]).toEqual([1, 2]);
   // The row sits exactly between the two stays: one ends where it starts.
   expect([first.end, second.start]).toEqual([gap.start, gap.end]);

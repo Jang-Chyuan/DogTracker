@@ -83,7 +83,9 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
 });
 
 
-test.each([1, 2])('a leading stay pill and marker are centered on the first wrapping address line at font scale %s', async scale => {
+// 2026-10-15 (user, layout A): the address (or coordinates) on its own
+// line at full width, level with the marker; the pill on the line under it.
+test.each([1, 2])('the address is the first line, level with the marker; the pill under it, at font scale %s', async scale => {
   const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 393, height: 851, fontScale: scale });
   const lookup = { lookup: () => '虛構桃園長地址第一行第二行第三行', subscribe: () => () => {} };
   let renderer;
@@ -93,15 +95,21 @@ test.each([1, 2])('a leading stay pill and marker are centered on the first wrap
   </AddressLookupContext.Provider>); });
   const title = renderer.root.findAll(node => typeof node.type === 'string' && node.props.testID === 'place-title')[0];
   let host = title.parent;
-  while (host && StyleSheet.flatten(host.props.style)?.flexDirection !== 'row') host = host.parent;
+  while (host && StyleSheet.flatten(host.props.style)?.flexDirection !== 'column') host = host.parent;
   const heading = StyleSheet.flatten(host.props.style);
-  expect(heading).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' });
-  expect(host.children).toHaveLength(2);
+  expect(heading).toMatchObject({ flexDirection: 'column', alignItems: 'stretch' });
   expect(title.props.children).toBe('虛構桃園長地址第一行第二行第三行'); // real lookup returns a string
-  const pillBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-pill-first-line')[0];
+  // Full width: nothing beside the address squeezes it.
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({ alignSelf: 'stretch' });
+  expect(StyleSheet.flatten(title.props.style).flexBasis).toBeUndefined();
+  const pillLine = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-pill-line')[0];
+  const order = host.findAll(node => node.props?.testID === 'place-title' || node.props?.testID === 'place-pill-line', { deep: true })
+    .map(node => node.props.testID);
+  expect(order.indexOf('place-title')).toBeLessThan(order.indexOf('place-pill-line'));
+  expect(pillLine).toBeDefined();
+  // The marker is centred on the address's first line (20dp × font scale).
   const markerBox = renderer.root.findAll(node => node.type === 'View' && node.props.testID === 'place-node-first-line')[0];
-  expect(StyleSheet.flatten(pillBox.props.style)).toMatchObject({ height: 20 * scale, justifyContent: 'center' });
-  expect(StyleSheet.flatten(markerBox.props.style)).toEqual(StyleSheet.flatten(pillBox.props.style));
+  expect(StyleSheet.flatten(markerBox.props.style)).toMatchObject({ height: 20 * scale, justifyContent: 'center' });
   } finally {
     await act(async () => renderer?.unmount());
     dimensions.mockRestore();

@@ -1,3 +1,4 @@
+import { downloadCloudLatest, downloadCloudLatestContext } from './CloudLatest';
 import { t } from '../i18n';
 import { cloudSyncDiagnostic } from '../logger';
 import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental';
@@ -27,7 +28,8 @@ const serverTrouble = status => status === 429 || status >= 500;
 // Requires a genuinely independent latest native file, worker, monitor and JS
 // lock. An archive operation already inside native SQL remains owned/draining;
 // it can no longer prevent the next foreground latest attempt from starting.
-export function createIndependentCloudSync({ client, database, onChange, now, downloadLatest, downloadContext }) {
+export function createIndependentCloudSync({ client, database, onChange = () => {}, now = Date.now, downloadLatest = downloadCloudLatest,
+  downloadContext = downloadCloudLatestContext }) {
   if (!database.latestStorageIsolated) throw new Error('Independent latest storage is required');
   const scope = {};
   let owner = null, foreground = false, sessionKnown = false, disposed = false, generation = 0;
@@ -413,18 +415,22 @@ export function createIndependentCloudSync({ client, database, onChange, now, do
       archiveAbort?.abort(); archiveRequest = null; manualAbort = abort;
       // Assign immediately to reserve the manual lane while its old native
       // archive drains. Latest work never borrows this promise or slot.
+      // The lease's own commands skip the session's archive-priority gate
+      // (useTrackingSession.leasedCommands): admitted above, they keep going
+      // in the background, where that gate is never ready.
+      const leased = database.leasedCommands?.(current) ?? database;
       manualRunning = (async () => {
         await archiveRunning;
         if (!current()) throw new Error(t('c576'));
         publish({ archivePending: true, busy: true, mode: 'manual' });
         return withCloudSyncSlot(async () => {
           if (!current()) throw new Error(t('c576'));
-          await database.beginDownload?.(owner, 'manual');
+          await leased.beginDownload?.(owner, 'manual');
           if (!current()) throw new Error(t('c576'));
-          const count = await work(current, commit => publishScoped(current, commit));
+          const count = await work(current, commit => publishScoped(current, commit), leased);
           if (!current()) throw new Error(t('c576'));
           // Re-checked inside the native lock, like the automatic publication.
-          await publishScoped(current, () => database.publishDownload(owner, 'manual', null, current)); return count;
+          await publishScoped(current, () => leased.publishDownload(owner, 'manual', null, current)); return count;
         });
       })();
       try { return await manualRunning; }

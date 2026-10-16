@@ -10,6 +10,7 @@ import { createTodayRouteEngine } from '../src/tracking/TodayRouteEngine';
 import { todayRouteDistance } from '../src/tracking/TodayDistance';
 import { t } from '../src/i18n';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
+import { listedMetres } from '../test-support/TimelineClocks';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 
 // 2026-10-13 (user): stays of my route the list cut into pieces. Invented
@@ -62,7 +63,8 @@ const listed = model => timelinePresentation(model.nodes);
 const stays = model => model.nodes.filter(n => n.type === 'stop' && !n.presentationOnly);
 const shownTypes = model => listed(model).map(n => n.departureStay ? 'departure+stay'
   : n.terminalStay ? 'end+stay' : n.type);
-const rowSum = model => model.sections.reduce((sum, n) => sum + n.countedDistanceM, 0);
+// The rows' metres (#200: a stay's own moves are on its row).
+const rowSum = model => listedMetres(model.nodes);
 
 // Rows with a length tile [from, to]: no hole, no overlap (the #132 rule).
 function expectTiled(model, from, to) {
@@ -155,6 +157,10 @@ describe('2. drift inside a stay is no walk', () => {
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
     // The walk in keeps only its own metres (about 300 s at 4 km/h).
     expect(walks[0].countedDistanceM).toBeLessThan(340);
+    // 2026-10-15 (user, #200): so does the walk out, an hour later; the
+    // moves are the stay's own row (「停 N 分・M m」).
+    expect(walks.at(-1).countedDistanceM).toBeLessThan(340);
+    expect(listed(model).some(n => n.type === 'stop' && n.countedDistanceM > 0)).toBe(true);
   });
 
   test('the drift across a same-place break never counts once the walk goes on', () => {
@@ -183,12 +189,13 @@ describe('3. the hours around midnight are rows too', () => {
   const lastBefore = (east, extra = {}) => rows([['still', 30]], { from: dayStart - 2 * 3600000, ...extra })
     .map(r => ({ ...r, longitude: 1 + east * METRE, raw_longitude: 1 + east * METRE }));
 
-  test('a recording restart before the first fix: 「沒有資料 00:00–first」, its own row', () => {
+  test('a recording restart before the first fix: 「沒有位置 40 分」 from 00:00, its own row', () => {
     const today = rows([['still', 2400], ['walk', 300]], { from: dayStart + 40 * MINUTE, session: 'fiction-session-2' });
     const model = timeline([...lastBefore(0), ...today]);
     const shown = listed(model);
     expect(shown[0]).toMatchObject({ type: 'gap', start: dayStart, end: today[0].time, sessionChange: true });
-    expect(sectionText(shown[0]).rest).toBe(' 00:00–00:40');
+    // 2026-10-15 (user): 「沒有位置 N 分」, its 00:00 in the time column.
+    expect(sectionText(shown[0])).toMatchObject({ lead: '沒有位置', time: '40 分' });
     expect(shown[1]).toMatchObject({ type: 'stop', number: null, start: today[0].time });
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
@@ -205,13 +212,15 @@ describe('3. the hours around midnight are rows too', () => {
     expectTiled(model, dayStart, model.points.at(-1).time);
   });
 
-  test('a past day ending with a long break: 「沒有資料 last–24:00」 after the last row', () => {
+  test('a past day ending with a long break: 「沒有位置 N 分」 to midnight after the last row', () => {
     const day = rows([['walk', 300], ['still', 2400]], { from: dayEnd - 3 * 3600000 });
     const next = rows([['still', 30]], { from: dayEnd + 6 * 3600000, session: 'fiction-session-2' });
     const model = timeline([...day, ...next]);
     const shown = listed(model);
     expect(shown.at(-1)).toMatchObject({ type: 'gap', start: day.at(-1).time, end: dayEnd, sessionChange: true });
-    expect(sectionText(shown.at(-1)).rest).toBe(` ${sectionText(shown.at(-1)).rest.slice(1, 6)}–24:00`);
+    const tail = shown.at(-1);
+    expect(sectionText(tail)).toMatchObject({ lead: '沒有位置',
+      time: listDuration((Math.floor(dayEnd / MINUTE) - Math.floor(tail.start / MINUTE)) * MINUTE) });
     // 2026-10-14: the range ends in the stay, so the stay is the row before
     // it, the end circle (no number).
     expect(shown.at(-2)).toMatchObject({ type: 'stop', number: null });
@@ -233,13 +242,14 @@ describe('3. the hours around midnight are rows too', () => {
     expect(last).toMatchObject({ type: 'stop', start: home.time, end: dayEnd, continuesNextDay: true });
     expect(nodePill(last).text).toBe(t('c127', { duration: listDuration(presentationDurationMs(last)) }));
     expectTiled(before, before.points[0].time, dayEnd);
-    // The next day begins with that stay, 「接續前一天」, from 00:00.
+    // The next day begins with that stay from 00:00 (2026-10-15: no 「接續前一天」
+    // pill; its minutes from midnight).
     const next = historyTimeline([...evening, ...morning], { subject: 'phone', dayStart: dayEnd, dayEnd: dayEnd + 86400000,
       range: { start: morning[0].time, end: morning.at(-1).time } });
     const first = listed(next)[0];
     expect(listed(next).some(n => n.type === 'gap')).toBe(false);
     expect(first).toMatchObject({ type: 'stop', start: dayEnd, continuesPreviousDay: true, number: null });
-    expect(nodePill(first).text).toBe(t('c332'));
+    expect(nodePill(first).text).toMatch(/^停 /u);
     expectTiled(next, dayEnd, next.points.at(-1).time);
     // Back within gapMs of midnight there is no row of no data, and the
     // carried-over stay starts at 00:00 all the same (#146).
@@ -334,6 +344,11 @@ describe('5. a short real walk between two stays at one place', () => {
     expect(stays(model).map(n => n.number)).toEqual([null]);
     expect(shownTypes(model)).toEqual(['stop', 'movement', 'end']);
     expect(rowSum(model)).toBeCloseTo(model.distanceM, 6);
+    // 2026-10-15 (user, #200): the excursion's metres are the stay's row
+    // (「停 N 分・M m」), not the walk's after it.
+    const [stay] = listed(model);
+    expect(stay.countedDistanceM).toBeGreaterThan(30);
+    expect(nodePill(stay).text).toMatch(/^停 .+・\d+\u00A0m$/u);
     expectTiled(model, model.points[0].time, model.points.at(-1).time);
   });
 

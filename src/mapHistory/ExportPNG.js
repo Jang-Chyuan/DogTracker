@@ -76,14 +76,17 @@ export function pngTitle(snapshot, subjects) {
 // under its node (ExportDraw leaveChevron): the node, the line, the chevron
 // and the line again before the row ends (3 × the screen's). On dots the
 // chevron sits on the page's dot grid, so up to one dot step more.
-function leavingRowHeight(kind) {
+function leavingRowHeight(kind, contentHeight = 0) {
   const e = tokenSize.export;
   const lineTop = e.rowInset + S.addressLine / 2 + S.nodeSize / 2 + e.leaveGap;
   const chevron = (e.leaveGlyph * (LEAVE_SHAPE.to - LEAVE_SHAPE.from)) / 24;
   const step = S.dottedLine.diameter + S.dottedLine.gap;
   // The chevron's centre at the latest: two dots and the grid's next one (dots), or the car's line.
-  const center = kind === 'dots' ? S.dottedLine.diameter / 2 + 3 * step : e.leaveLine + e.leaveGap + chevron / 2;
-  return Math.ceil(lineTop + center + chevron / 2 + e.leaveGap + e.leaveBelow);
+  const center = lineTop + (kind === 'dots' ? S.dottedLine.diameter / 2 + 3 * step : e.leaveLine + e.leaveGap + chevron / 2);
+  // 2026-10-15 (user, layout A): never beside the address or the pill — below
+  // the place's last line (on dots, the grid's next dot after it).
+  const below = e.rowInset + contentHeight + e.leaveGap + chevron / 2 + (kind === 'dots' ? step : 0);
+  return Math.ceil(Math.max(center, below) + chevron / 2 + e.leaveGap + e.leaveBelow);
 }
 
 /** One list row laid out: its height and lines (判定表「時間軸清單（匯出 PNG）」). */
@@ -95,27 +98,28 @@ export function layoutRow(row, measure, { truncate = false } = {}) {
   }
   const pill = row.pill ? { kind: 'pill', text: row.pill.text, tone: row.pill.tone,
     width: measure(row.pill.text, S.detailFont, true) + S.pillPadding * 2, x: 0, line: 0, y: 0 } : null;
-  // A leading pill shares the address line. If it leaves fewer than two
-  // address glyphs, the address wraps below it rather than overflowing.
-  const leading = pill ? pill.width + tokenSize.export.itemGap : 0;
-  const inline = PLACE_WIDTH - leading >= S.addressFont * 2;
-  const titleX = inline ? leading : 0;
-  const titleY = inline ? 0 : S.secondLine;
-  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH - titleX, measure,
+  // 2026-10-15 (user, layout A, as on screen): the address on its own lines
+  // at full width, level with the time and the node; the pill under it.
+  const titleX = 0, titleY = 0;
+  const titleLines = wrap(row.title, S.addressFont, PLACE_WIDTH, measure,
     { bold: true, maxLines: truncate ? 2 : Infinity });
-  let contentHeight = Math.max(pill ? S.pillHeight : 0, titleY + titleLines.length * S.addressLine);
+  let contentHeight = titleLines.length * S.addressLine;
+  if (pill) {
+    pill.y = contentHeight + tokenSize.export.pillGap;
+    contentHeight = pill.y + S.pillHeight;
+  }
   const placed = pill ? [pill] : [];
   for (const value of [row.coordinates, row.note].filter(Boolean)) {
     for (const text of wrap(value, S.detailFont, PLACE_WIDTH, measure)) {
-      placed.push({ kind: 'note', text, x: 0, line: placed.length, y: contentHeight,
+      placed.push({ kind: 'note', text, x: 0, line: placed.length, y: contentHeight + tokenSize.export.pillGap,
         width: Math.min(PLACE_WIDTH, measure(text, S.detailFont, false)) });
-      contentHeight += S.secondLine;
+      contentHeight += tokenSize.export.pillGap + S.pillHeight;
     }
   }
   const secondLines = placed.length;
   const height = Math.max(S.placeMin, tokenSize.export.rowInset * 2 + contentHeight + S.rowGap,
-    row.leave ? leavingRowHeight(row.line) : 0);
-  return { titleLines, titleX, titleY, items: placed, secondLines, height };
+    row.leave ? leavingRowHeight(row.line, contentHeight) : 0);
+  return { titleLines, titleX, titleY, items: placed, secondLines, height, contentHeight };
 }
 
 /**

@@ -329,7 +329,7 @@ function legsPath(now, fromAgo, from, legs, every = 10 * SECOND) {
 // The phone's inputs for a route of myLocationTracker rows (a fix every 10 s):
 // recording, the newest fix `age` old; today = the whole path.
 function routePhone(path, now) {
-  const today = path.filter(row => row.fix).map(row => ({ ...row.fix, time: row.time, accuracy: 6 }));
+  const today = path.filter(row => row.fix).map(row => ({ ...row.fix, time: row.time, accuracy: row.fix.accuracy ?? 6 }));
   const route = today.slice(-60).map(point => ({ latitude: point.latitude, longitude: point.longitude,
     timestamp: point.time, accuracy: 6, speedKmh: 3, rawSpeedKmh: 3, motionState: 'moving' }));
   return { route, position: route[route.length - 1] ?? null, today };
@@ -439,6 +439,30 @@ const endsInStay = now => legsPath(now, 100 * MINUTE, at(-10, -100), [
   { stay: 10 }, { walk: 20, bearing: 35, speed: 0.6 }, { stay: 15 }, { walk: 20, bearing: 95, speed: 0.6 },
   { stay: 35 },
 ]);
+// A recording of `fromAgo` ms before `now` with the recorder's own readings
+// (2026-10-15): [['still', minutes], ['walk', minutes, bearing]], a fix every
+// 5 s (still: 0.2 km/h ± 0.3 at one spot; walk: 4.3 km/h, 6 m a fix); the
+// rest up to now saved nothing.
+function recorderPath(now, fromAgo, legs) {
+  const out = [];
+  let time = now - fromAgo, here = at(-10, -100);
+  const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+  const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.3, motion_state: 'moving' };
+  for (const [kind, minutes, bearing = 0, metres = 0] of legs) {
+    const turn = (bearing * Math.PI) / 180;
+    // 'none': nothing saved for that long; the phone turns up `metres` away.
+    if (kind === 'none') {
+      time += minutes * MINUTE;
+      here = offset(here, Math.cos(turn) * metres, Math.sin(turn) * metres);
+      continue;
+    }
+    for (const until = time + minutes * MINUTE; time < until && time <= now - 5 * SECOND; time += 5 * SECOND) {
+      if (kind === 'walk') here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
+      out.push({ time, fix: { ...here, accuracy: 5, recorder: kind === 'walk' ? walking : still } });
+    }
+  }
+  return out;
+}
 // A day like 10/13 (2026-10-14): at home from 00:00 until 07:00, a walk, a
 // short stay, the walk home, at home again until about 09:25.
 const homeDay = now => legsPath(now, 570 * MINUTE, at(-10, -100), [
@@ -1099,8 +1123,8 @@ const FIXTURES = {
   // card-indoor with a long fictional address: under 「室內・11 分」 and the
   // distance, across the row's whole width, wrapping to two lines.
   'card-indoor-long-address': now => ({ ...FIXTURES['card-indoor'](now), geocoder: LONG_PLACE }),
-  // 小黑 went indoors at 09:03 and has sent nothing since 09:05: 「沒有新資料・
-  // 最後 09:05」 in red over the address.
+  // 小黑 went indoors at 09:03 and has sent nothing since 09:05: 「09:05 之後
+  // 沒有新資料」 in red over the address.
   'card-indoor-silent': now => ({
     geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
     ble: inTimeOrder([...dog4Ble(now),
@@ -1129,7 +1153,7 @@ const FIXTURES = {
     ble: inTimeOrder([...dog4Ble(now), ...heldFarAway(now, 12 * MINUTE, 8 * SECOND)]),
     cloudRows: dog8Cloud(now),
   }),
-  // The same, silent since 09:05: 「沒有新資料・最後 09:05」, the address and
+  // The same, silent since 09:05: 「09:05 之後沒有新資料」, the address and
   // 不在接收範圍 — three lines in the first row.
   'card-indoor-silent-out': now => ({
     geocoder: LONG_PLACE, receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1137,7 +1161,7 @@ const FIXTURES = {
     cloudRows: dog8Cloud(now),
   }),
   // 小黑 only from the cloud (receiver 9's upload): no 接收範圍 to write, so
-  // the first row is 位置 「最後 HH:MM」; running hard for the last few
+  // the first row is 位置 「HH:MM 更新」; running hard for the last few
   // minutes (劇烈活動).
   'card-cloud-dog': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 6,
@@ -1489,6 +1513,113 @@ const FIXTURES = {
       { stay: 60 }]), now);
     return { ...FIXTURES['all-good'](now), phone, openRoute: 'history', history: historyPage(now) };
   },
+  // 2026-10-15 (#200): at home from 08:30, then from 09:00 a dog walk that
+  // keeps stopping to sniff (walk 25–55 s, stand 1–2.5 min); the range starts
+  // where the walk left home (09:00), not minutes into it.
+  'history-stop-and-go': now => {
+    const path = [];
+    const home = at(-40, -60);
+    let time = now - 60 * MINUTE, here = home, k = 0;
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.4, motion_state: 'moving' };
+    const stand = seconds => {
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND, k += 1) {
+        const wobble = ((k % 3) - 1) * 0.3;
+        path.push({ time, fix: { ...offset(here, wobble, -wobble), recorder: still } });
+      }
+    };
+    const walk = (seconds, bearing) => {
+      const turn = (bearing * Math.PI) / 180;
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND) {
+        here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
+        path.push({ time, fix: { ...here, recorder: walking } });
+      }
+    };
+    stand(30 * 60);
+    const rhythm = [[25, 135], [30, 60], [25, 100], [45, 95], [55, 145]];
+    for (let i = 0; time < now - 6 * MINUTE; i += 1) {
+      walk(rhythm[i % rhythm.length][0], 20 + i * 25);
+      stand(rhythm[i % rhythm.length][1]);
+    }
+    walk(6 * 60, 200);
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now) };
+  },
+  // 2026-10-15 (#200 速度不確定性): at home since 08:00; the recording
+  // pauses 08:40–08:50 (battery saving) and comes back on Wi-Fi fixes 45 m
+  // off reading 0 km/h ± 2 m/s (no speed at all), then still: the same
+  // place, one stay — not two stays.
+  'history-uncertain-speed': now => {
+    const path = [];
+    const home = at(-40, -60);
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    let k = 0, time = now - 90 * MINUTE;
+    const stay = (place, minutes, recorder = still, accuracy = 6) => {
+      for (const until = time + minutes * MINUTE; time < until && time <= now - 5 * SECOND; time += 5 * SECOND, k += 1) {
+        const wobble = ((k % 3) - 1) * 0.3;
+        path.push({ time, fix: { ...offset(place, wobble, -wobble), accuracy, recorder } });
+      }
+    };
+    stay(home, 40);
+    time += 10 * MINUTE;
+    stay(offset(home, 45, 0), 1, { raw_speed_kmh: 0, speed_kmh: 0, speed_accuracy_mps: 2, motion_state: 'unknown' }, 14);
+    stay(offset(home, 45, 0), 40);
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now) };
+  },
+  // 2026-10-15 (#200, user option D + C): a walk to a small park, 20 minutes
+  // round it with the dog (20 s on foot, 40 s sniffing), a stop with a few
+  // steps in it, walking on: 「在附近走動 N 分・M m」 and 「停 N 分・M m」 rows,
+  // the walks keeping their own metres.
+  'history-wandering': now => {
+    const path = [];
+    let time = now - 60 * MINUTE, here = at(-40, -60), k = 0;
+    const still = { raw_speed_kmh: 0.2, speed_kmh: 0.2, speed_accuracy_mps: 0.3, motion_state: 'stationary' };
+    const walking = { raw_speed_kmh: 4.3, speed_kmh: 4.3, speed_accuracy_mps: 0.3, motion_state: 'moving' };
+    const stand = seconds => {
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5, time += 5 * SECOND) {
+        path.push({ time, fix: { ...here, accuracy: 4, recorder: still } });
+      }
+    };
+    const walk = (seconds, bearing) => {
+      const turn = (bearing * Math.PI) / 180;
+      for (let s = 0; s < seconds && time <= now - 5 * SECOND; s += 5) {
+        time += 5 * SECOND;
+        here = offset(here, Math.cos(turn) * 6, Math.sin(turn) * 6);
+        path.push({ time, fix: { ...here, accuracy: 4, recorder: walking } });
+      }
+    };
+    const round = (laps, pause) => {
+      for (let lap = 0; lap < laps; lap += 1) {
+        for (let q = 1; q <= 4; q += 1, k += 1) {
+          time += 5 * SECOND;
+          const angle = (k + 1) * Math.PI / 2;
+          path.push({ time, fix: { ...offset(here, 6 * Math.sin(angle), 6 * Math.cos(angle) - 6), accuracy: 4,
+            recorder: walking } });
+        }
+        stand(pause);
+      }
+    };
+    walk(5 * 60, 30);
+    const park = here;
+    stand(60);
+    round(20, 40);
+    stand(5 * 60);
+    walk(4 * 60, 120);
+    const corner = here;
+    stand(4 * 60);
+    round(2, 30);
+    stand(4 * 60);
+    walk(6 * 60, 200);
+    // Made-up addresses (示範路 is no real road), by place: the park's long
+    // enough to wrap to two lines, the corner's one line, the others short
+    // (layout A: a one-line and a two-line stay, whatever order they load).
+    return { ...FIXTURES['all-good'](now), phone: routePhone(path, now), openRoute: 'history',
+      history: historyPage(now), geocoder: { places: [
+        { ...park, name: LONG_PLACE.names[0] },
+        { ...corner, name: { line: '330台灣桃園市桃園區民生路120號' } }],
+      names: [{ line: '330台灣桃園市桃園區中正路50號' }, { line: '330台灣桃園市桃園區成功路三段16號' }] } };
+  },
   // A candidate after staying home: show its tentative start, without status copy.
   'history-confirming': now => ({ ...FIXTURES['all-good'](now),
     phone: routePhone(legsPath(now, 20 * MINUTE, at(-40, -60),
@@ -1603,7 +1734,7 @@ const FIXTURES = {
   },
   // ---- the list's last node (057a): every way a day's list can end -------
   // 小黑 today, its last fix at 09:13 (17 minutes ago), the end following now:
-  // 「最後 09:13」 (判定表「「現在」和「最後 12:05」」).
+  // 「09:13 之後沒有位置」 (2026-10-15: no 「最後」).
   'history-dog-stale': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 6, ble: dogMorning(now).filter(row => row.received_at <= now - 17 * MINUTE) }),
     geocoder: { names: HISTORY_NAMES } }),
@@ -1613,6 +1744,31 @@ const FIXTURES = {
   // 08:50」; the start stays the automatic departure (07:02:20), 「出發」.
   'history-manual-end': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { manual: { start: now - 8860 * SECOND, end: now - 40 * MINUTE, following: false } } }),
+  // 2026-10-15 (user, no 「最後」): today following now, three ways the fixes
+  // stop. My route with the recorder's own readings: standing still (0.2 km/h)
+  // or walking (4.3 km/h), 5 s apart.
+  // Still at the café since 08:25; from 08:50 the phone saved nothing (the
+  // system stopped GPS), recording on: the stay goes on to now, 「現在」.
+  'history-recording-still': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+    phone: routePhone(recorderPath(now, 90 * MINUTE, [['still', 10], ['walk', 15, 40], ['still', 25]]), now),
+    geocoder: { names: HISTORY_NAMES } }),
+  // On foot until 09:17, then nothing (a tunnel, an underpass), recording on:
+  // 「09:17 之後沒有位置」.
+  'history-recording-no-fix': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+    phone: routePhone(recorderPath(now, 60 * MINUTE, [['still', 10], ['walk', 38, 60]]), now),
+    geocoder: { names: HISTORY_NAMES } }),
+  // A walk, 40 minutes with nothing saved, the walk on: one row
+  // 「沒有位置 40 分」 (it was 「沒有資料 08:15–08:55」 or 「GPS 訊號弱」).
+  'history-recording-break': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+    phone: routePhone(recorderPath(now, 90 * MINUTE, [['still', 10], ['walk', 15, 40], ['none', 40, 80, 1200],
+      ['walk', 15, 120]]), now), geocoder: { names: HISTORY_NAMES } }),
+  // The recording switch on, but its service not running since 09:05 (the
+  // system stopped it): 「記錄中斷・09:05」 and the hint to open the app.
+  'history-recording-interrupted': now => {
+    const path = myRouteMorning(now).filter(row => row.time <= now - 25 * MINUTE);
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now),
+      phone: { ...routePhone(path, now), recording: false, interrupted: true }, geocoder: { names: HISTORY_NAMES } };
+  },
   // My route with last fix at 09:05 and recording stopped at 09:30: 「記錄已關閉 09:05」.
   'history-recording-off': now => {
     const path = myRouteMorning(now).filter(row => row.time <= now - 25 * MINUTE);
@@ -1929,7 +2085,10 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       running: true, status: '記錄中',
       position: phone.position,
       ageSeconds: Math.max(0, Math.round((now - phone.position.timestamp) / SECOND)),
-    } : { running: false, stoppedAt: phone?.stoppedAt ?? null, status: '未記錄' },
+      enabled: true,
+    } : { running: false, stoppedAt: phone?.stoppedAt ?? null, status: '未記錄',
+      // The 位置記錄 switch: still on when the service stopped on its own.
+      enabled: !!phone?.interrupted },
     phoneRoute: phone?.recording === false ? [] : phone?.route || [],
     // usePhoneLocation's answer: precise and on unless the state says not.
     phonePermission: { permission: phone?.permission ?? 'precise', services: phone?.services ?? true },
@@ -1961,7 +2120,7 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
       // The same made-up recorder columns as the history's rows (phoneRouteSince
       // reads them too): one route, one distance.
       const { count, metres, status } = todayRouteDistance((phone?.today || [])
-        .map(row => ({ ...FIXTURE_RECORDER, ...row })), { now,
+        .map(({ recorder, ...row }) => ({ ...FIXTURE_RECORDER, ...row, ...(recorder || {}) })), { now,
         recording: phone?.recording !== false });
       return { count, metres, status };
     })(),
@@ -2025,7 +2184,9 @@ function historyFixture({ preferences, ble = [], cloudRows = [] }, today) {
     longitude: point.longitude, accuracy: point.accuracy ?? 6, location_at: point.time - 400,
     accuracy_meters: point.accuracy ?? 6, altitude_meters: 112, speed_kmh: 3.6, heading_degrees: 40,
     raw_latitude: point.latitude, raw_longitude: point.longitude, ...FIXTURE_RECORDER,
-    motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400 }));
+    motion_state: 'moving', display_source: 'pipeline', display_location_at: point.time - 400,
+    // A fixture may give a fix its own recorder readings (history-stop-and-go).
+    ...(point.recorder || {}) }));
   const readDay = async ({ subject, slaveId, start, end, owner = null, after = {} }) => {
     if (after.fixture) return { rows: [], seed: [], after };
     // As HistoryDatabase.historyDayRows: half an hour before, and 3 minutes
@@ -2138,8 +2299,8 @@ const FIXTURE_PREFERENCES = Object.freeze({ showMasterMarker: true, showSlaveMar
 
 const ignoreWrite = () => Promise.resolve();
 
-// What a fixture's CloudSync is before the fixture's own fields: idle, as
-// the engine starts (CloudSync's initial state), with nothing of the live
+// What a fixture's cloud sync is before the fixture's own fields: idle, as
+// the engine starts (IndependentCloudSync's initial state), with nothing of the live
 // one. Spreading the live state let its latest-first publication, revisions,
 // mode, offline and auth flags reach the fixture's map, cards, S3 and
 // 本機／雲端資料 (audit L9).
@@ -2212,7 +2373,7 @@ export function applyScreenFixture(fixture, live, edits = null) {
     permissions: fixture.permissions,
     recording: fixture.recording,
     account: fixture.account,
-    // On a signed-in phone nothing of the live CloudSync may leak into a
+    // On a signed-in phone nothing of the live cloud sync may leak into a
     // fixture: its latest-first state kept the fixture's dogs off the map,
     // its changing revision restarted the card's readings so 活動量 stayed
     // 「—」, and its offline/mode/failure fields changed S3 and the alerts.

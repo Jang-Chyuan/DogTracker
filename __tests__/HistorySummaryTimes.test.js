@@ -25,14 +25,16 @@ test('a failed tentative departure returns the title to the whole-day range', ()
   expect(summary(tentative).title).toBe(`${clock(tentative.departure.range.start)} – 現在`);
   const failed = historyTimeline(rows, { subject: 'phone', today: true, now: 960000 });
   expect(failed.departure.status).toBe('not-departed');
-  expect(summary(failed).title).toBe(`${clock(rows[0].time)} – 最後 ${clock(rows[48].time)}`);
+  // 2026-10-15 (user): following now, never 「– 最後 HH:MM」 (the end row says
+  // 「HH:MM 之後沒有位置」).
+  expect(summary(failed).title).toBe(`${clock(rows[0].time)} – 現在`);
 });
 
 test('today without departure keeps the stale-last-record ending', () => {
   const rows = [point(0), point(60)];
   const model = historyTimeline(rows, { subject: 'phone', today: true, now: 240000 });
   expect(model.departure.status).toBe('not-departed');
-  expect(summary(model).title).toBe(`${clock(rows[0].time)} – 最後 ${clock(rows[1].time)}`);
+  expect(summary(model).title).toBe(`${clock(rows[0].time)} – 現在`);
 });
 
 test('PNG title for a day without departure uses actual record times', () => {

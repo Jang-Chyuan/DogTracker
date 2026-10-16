@@ -31,7 +31,7 @@ test('every problem draws the same red "!" and the 48dp face; selection adds 8dp
   const stale = one(dog(6, { fixAt: NOW - 12 * MINUTE }));
   expect(stale).toMatchObject({ size: 48, problem: true, stale: true });
   const all = one(dog(6, { batteryPercentage: 15, fixAt: NOW - 12 * MINUTE }), { ranges: { 6: { status: 'out' } } });
-  expect(all.label).toBe('小黑，電量 15%，偏低，不在接收範圍，沒有新位置，最後 09:18');
+  expect(all.label).toBe('小黑，電量 15%，偏低，不在接收範圍，09:18 之後沒有新位置');
   expect(one(dog(6), { selectedId: 6 }).size).toBe(48);
   expect(one(dog(6, { batteryPercentage: 15 }), { selectedId: 6 }).size).toBe(56);
   // Amber 快離開 is a card matter, not a map problem.
@@ -54,7 +54,7 @@ test('held indoors: house, 「小黑・室內」 whatever held it, and the full 
   const worst = one(dog(6, { heldReason: '充電中', heldSource: 'good', batteryPercentage: 62, charging: true,
     packetAt: new Date(2026, 9, 7, 9, 5).getTime() }), { ranges: { 6: { status: 'out' } } });
   // The design's example sentence, word for word.
-  expect(worst.label).toBe('小黑・室內，充電中 62%，不在接收範圍，沒有新資料，最後 09:05');
+  expect(worst.label).toBe('小黑・室內，充電中 62%，不在接收範圍，09:05 之後沒有新資料');
   expect(worst).toMatchObject({ indoor: true, stale: true, problem: true, size: 48, tag: '小黑・室內' });
   // Riding along is drawn like any other dog.
   expect(one(dog(6, { heldReason: null, heldSource: 'ride' })).indoor).toBe(false);

@@ -195,7 +195,7 @@ test('a dog last seen 35 minutes ago stays on the map, grey and marked (v3)', as
     .find(node => node.props.identifier === 'real-dog-7');
   // v3 §6: an old position stays on the map, as 「沒有新位置」 (grey, red "!").
   const label = dog.findAll(child => typeof child.props.accessibilityLabel === 'string')[0].props.accessibilityLabel;
-  expect(label).toMatch(/^狗 7，沒有新位置，最後 \d\d:\d\d$/);
+  expect(label).toMatch(/^狗 7，\d\d:\d\d 之後沒有新位置$/);
   expect(dog.findAll(node => node.props.testID === 'dog-badge-problem').length).toBeGreaterThan(0);
   // Nothing inside the window, so no line is drawn for it.
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
@@ -239,11 +239,11 @@ test('the home map keeps ageing while the collar is silent', async () => {
   await act(async () => jest.advanceTimersByTime(10 * MINUTE));
   expect(label(dog())).toBe('狗 7');
   await act(async () => jest.advanceTimersByTime(10000));
-  expect(label(dog())).toMatch(/^狗 7，沒有新位置，最後 \d\d:\d\d$/);
+  expect(label(dog())).toMatch(/^狗 7，\d\d:\d\d 之後沒有新位置$/);
   expect(renderer.root.findAllByType(Polyline)).toHaveLength(0);
   // A day later it is still on the map, the time now with its date.
   await act(async () => jest.advanceTimersByTime(MAX_AGE_MS));
-  expect(label(dog())).toMatch(/^狗 7，沒有新位置，最後 9\/18 \d\d:\d\d$/);
+  expect(label(dog())).toMatch(/^狗 7，9\/18 \d\d:\d\d 之後沒有新位置$/);
   expect(renderer.root.findAllByType(Marker)
     .some(node => node.props.identifier === 'real-slave')).toBe(false);
   await act(async () => { renderer.unmount(); });

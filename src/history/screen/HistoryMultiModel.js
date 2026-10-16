@@ -40,6 +40,7 @@ export function multiDayModel(subjects, options) {
     manual = null,
     following = false,
     closedAt = null,
+    closedReason = 'closed',
   } = options;
   if (!subjects.length)
     return {
@@ -58,6 +59,7 @@ export function multiDayModel(subjects, options) {
       now,
       following,
       closedAt,
+      closedReason,
       replayHolds: s.replayHolds ?? undefined,
       measure: options.measure,
       ...extra,
@@ -352,7 +354,7 @@ export function faceMarkers(faces = []) {
     staleRing: !!face.stale,
     tint: face.color,
     label: face.stale
-      ? t("c697", { name: face.name, value: face.lines?.[0] ?? '' })
+      ? t("c1413", { name: face.name, value: face.lines?.[0] ?? '' })
       : t("c698", { name: face.name, value: face.lines?.[0] ?? '', value2: face.lines?.[1] ?? '' }),
   }));
 }

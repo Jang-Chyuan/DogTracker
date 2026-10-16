@@ -426,11 +426,10 @@ class BleForegroundService : Service() {
             frames.missingMasterId(filled != null)
             if (filled != null) { packet = filled; text = filled.toString() }
           }
-          ReceiverMasterId.Check.Same -> {
-            // `"mid":"5"` passed the check: stored and queued as the number.
-            ReceiverMasterId.normalized(data)?.let { packet = it; text = it.toString() }
-          }
+          ReceiverMasterId.Check.Same -> {}
         }
+        // `"mid":"5"`, `"sid":"4"`: stored and queued as the numbers.
+        ReceiverMasterId.normalized(packet)?.let { packet = it; text = it.toString() }
         val now = arrival.wallMs
         try {
           DogStatusStore.get(this).save(packet, text, now)
@@ -444,7 +443,7 @@ class BleForegroundService : Service() {
         stale = false
         val value = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         prefs.edit().putString("lastPayload", value).putLong("lastReceivedAt", now).apply()
-        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1100, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
+        publishStatus(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1418, java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN).format(java.util.Date(now))))
         emit(EVENT_DATA, JSONObject().put("value", value).put("receivedAt", now)
           .put("sessionId", prefs.getString("sessionId", "")).toString())
     }

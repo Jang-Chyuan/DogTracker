@@ -111,7 +111,7 @@ export function phoneStationaryPresentationStops(edges, { config = configFor('ph
  * (historyVisits ends a visit only on a break over gapMs); longer breaks and
  * every 「沒有資料」 row (#135) still separate the stays.
  * Returns the new node list and the replaced/removed source nodes. */
-export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } = {}) {
+export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone'), ownStays = false } = {}) {
   const stay = n => n?.type === 'stop';
   const zeroFoot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving')
     && n.countedDistanceM === 0 && n.end - n.start <= config.gapMs;
@@ -171,6 +171,8 @@ export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } 
       interruptionMs: stops.reduce((sum, n) => sum + (n.interruptionMs || 0), 0),
       gaps: stops.flatMap(n => n.gaps || []),
       unobserved: stops.flatMap(n => n.unobserved || []),
+      // #200: the stays' own metres (the 0 m foot rows between add none).
+      ...(ownStays ? { countedDistanceM: chain.reduce((sum, n) => sum + (n.countedDistanceM || 0), 0) } : {}),
       ...(base.displayRange ? { displayRange: { ...base.displayRange, start: chain[0].start, end: chain[chain.length - 1].end,
         gaps: stops.flatMap(n => n.displayRange?.gaps || []) } } : {}),
       mergedStays: stops };
@@ -201,7 +203,7 @@ export function mergePhoneSamePlaceStays(nodes, { config = configFor('phone') } 
  * Recording session changes are 「沒有資料」 rows, never inside these: only
  * directly adjacent rows join. The first real stop keeps its identity and
  * number. Returns the new node list and the replaced/removed source nodes. */
-export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points = [] } = {}) {
+export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points = [], ownStays = false } = {}) {
   const stay = n => n?.type === 'stop';
   const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
   const firstAt = time => {
@@ -274,7 +276,10 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
       ...(stops.some(n => n.unobserved?.length) ? { unobserved: stops.flatMap(n => n.unobserved || []) } : {}),
       ...(base.displayRange ? { displayRange: { ...base.displayRange, start: first.start, end: last.end,
         gaps: stops.flatMap(n => n.displayRange?.gaps || n.gaps || []) } } : {}),
-      ...(stops.length > 1 ? { mergedStays: stops.flatMap(n => n.mergedStays || [n]) } : {}) };
+      ...(stops.length > 1 ? { mergedStays: stops.flatMap(n => n.mergedStays || [n]) } : {}),
+      // #200: the joined stay keeps every part's metres (a walk folded into
+      // it was a move of that stay), and no carried metres were taken out.
+      ...(ownStays ? { countedDistanceM: parts.reduce((sum, n) => sum + (n.countedDistanceM || 0), 0) } : {}) };
   };
   let out = [...nodes];
   const replaced = new Map(), removed = new Set();
@@ -295,20 +300,21 @@ export function foldPhoneStayWalks(nodes, { config = configFor('phone'), points 
       if (pair && zeroWalk(w, a) && within(a, b, config.stillPlaceM)) {
         replace(i, 3, [a, w, b], base); changed = true;
       } else if (pair && excursion(a, w, b)) {
-        // The walk's metres go where a stay's own moves go.
+        // The walk's metres go where a stay's own moves go (#200: the stay).
         const before = out[i - 1], after = out.slice(i + 3).find(foot);
-        const host = foot(before) && before.end === a.start ? before : after;
-        if (w.countedDistanceM > 0 && !host) continue;
-        if (w.countedDistanceM > 0) host.countedDistanceM += w.countedDistanceM;
+        const host = ownStays ? null : foot(before) && before.end === a.start ? before : after;
+        if (!ownStays && w.countedDistanceM > 0 && !host) continue;
+        if (host && w.countedDistanceM > 0) host.countedDistanceM += w.countedDistanceM;
         replace(i, 3, [a, w, b], base); changed = true;
       } else if (pair && step(w) && within(a, b, config.stillPlaceM) && stillThere(a, b)) {
         // 2026-10-14: the few seconds between two stays at one place, a few
         // metres of its own (「走路 不到 1 分・5 m」): the stays are one; the
         // metres go on to a walk of a minute or more (as phoneStepCarry's).
-        const host = out.slice(i + 3).find(m => foot(m) && !step(m))
+        // #200: they are the joined stay's.
+        const host = ownStays ? null : out.slice(i + 3).find(m => foot(m) && !step(m))
           ?? out.slice(0, i).reverse().find(m => foot(m) && !step(m));
-        if (w.countedDistanceM > 0 && !host) continue;
-        if (w.countedDistanceM > 0) {
+        if (!ownStays && w.countedDistanceM > 0 && !host) continue;
+        if (host && w.countedDistanceM > 0) {
           host.countedDistanceM += w.countedDistanceM;
           host.carriedM = (host.carriedM || 0) + w.countedDistanceM;
         }
@@ -411,19 +417,23 @@ export function phoneStillTravel(nodes, { config = configFor('phone'), points = 
  * goes as an empty foot row (emptyPhoneFootRows), its seconds to the rows
  * beside it. With no such foot row at all it stays as it was. Mutates the
  * foot rows' countedDistanceM / carriedM. */
-export function phoneStepCarry(nodes) {
+export function phoneStepCarry(nodes, { ownStays = false } = {}) {
   const foot = n => n?.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
   const shownMinutes = n => Math.floor(n.end / 60000) - Math.floor(n.start / 60000);
   const short = n => (n.durationMs ?? n.end - n.start) < 60000 || shownMinutes(n) === 0;
   const beside = n => !n || !['movement', 'switch'].includes(n.type);
   nodes.forEach((n, i) => {
     if (!foot(n) || !(n.carriedM > 0) || !short(n) || !beside(nodes[i - 1]) || !beside(nodes[i + 1])) return;
-    const host = nodes.slice(i + 1).find(m => foot(m) && !short(m))
+    // #200: the steps of leaving or arriving between two places are the
+    // stay's they left (else the one they reached), not a walk elsewhere.
+    const stay = m => m?.type === 'stop';
+    const host = ownStays ? (stay(nodes[i - 1]) ? nodes[i - 1] : stay(nodes[i + 1]) ? nodes[i + 1] : null)
+      : nodes.slice(i + 1).find(m => foot(m) && !short(m))
       ?? nodes.slice(0, i).reverse().find(m => foot(m) && !short(m));
     if (!host) return;
     const own = n.countedDistanceM - n.carriedM;
-    host.countedDistanceM += n.carriedM;
-    host.carriedM = (host.carriedM || 0) + n.carriedM;
+    host.countedDistanceM = (host.countedDistanceM || 0) + n.carriedM;
+    if (!stay(host)) host.carriedM = (host.carriedM || 0) + n.carriedM;
     n.countedDistanceM = own > 1e-6 ? own : 0;
     n.carriedM = 0;
   });
@@ -482,6 +492,9 @@ function dayBoundaryGaps({ context, dayPoints, first, last, dayStart, dayEnd, fo
 export function historyTimeline(rows = [], options = {}) {
   const { subject = 'dog', dayStart = -Infinity, dayEnd = Infinity,
     today = false, now = rows[rows.length - 1]?.time ?? 0, manualRange = null, closedAt = null,
+    // 'closed' (the user switched recording off: 記錄已關閉) or 'interrupted'
+    // (on, but the recording service is not running: 記錄中斷), with closedAt.
+    closedReason = 'closed',
     following = today && manualRange?.end == null, state = null, timezone = '',
     replayHolds, config = configFor(subject), measure } = options;
   const measured = (stage, count, operation) => measure ? measure(stage, count, operation) : operation();
@@ -565,13 +578,27 @@ export function historyTimeline(rows = [], options = {}) {
     continuesPreviousDay: context.some(p => p.time < dayStart)
       && first.time - context.filter(p => p.time < dayStart).pop().time <= config.gapMs });
   const displayedEnd = subject === 'phone' && last ? phoneStayDisplayCoordinate(displayLocations, last.time) : null;
+  // 2026-10-15 (user, #200 follow-up): no 「最後 HH:MM」. Following now, the
+  // end is 「現在」 while the last fix is at most two minutes old. Older: my
+  // route still at a stay (no confirmed movement after it; the recorder runs,
+  // the phone keeps still and Samsung stops GPS) is that stay going on to now (`ongoing`, below,
+  // still 「現在」); otherwise there is no position after the last fix
+  // (`no-fix`: 「20:49 之後沒有位置」 — a dog, or my route on the move with
+  // no fix, a tunnel). A fixed end: 記錄已關閉 / 記錄中斷 (closedAt), or none.
+  const stale = following && last && now - last.time > 120000;
+  // Standing still: the detector holds a stop, or at least confirms no
+  // movement, at a stay that holds the last fix (checked below).
+  const stillAtEnd = stale && subject === 'phone' && !last.phoneConfirmedMovement;
+  const endState = following ? (!stale || stillAtEnd ? 'now' : 'no-fix')
+    : closedAt != null ? (closedReason === 'interrupted' ? 'interrupted' : 'closed') : 'fixed';
   if (last && last !== first && !locations.some(n => n.end === last.time && n.type === 'indoor')) locations.push({ type: 'end',
     start: last.time, end: last.time, latitude: last.latitude, longitude: last.longitude,
     ...(displayedEnd ? { ...displayedEnd,
       originalRepresentative: { latitude: last.latitude, longitude: last.longitude } } : {}),
-    // 判定表「「現在」和「最後 12:05」」; a recording that was switched off
-    // ends with 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
-    label: following ? now - last.time <= 120000 ? t('c130') : t("c660") : closedAt != null ? t("c656") : t('c330'),
+    // 判定表「「現在」」; a recording that was switched off ends with
+    // 「記錄已關閉 10:20」 (closedAt, when the caller knows it).
+    endState,
+    label: endState === 'now' ? t('c130') : endState === 'closed' ? t("c656") : endState === 'fixed' ? t('c330') : null,
     closedAt: following ? null : closedAt,
     continuesNextDay: context.some(p => p.time >= dayEnd && p.time - last.time <= config.gapMs) });
   const sections = [];
@@ -579,6 +606,25 @@ export function historyTimeline(rows = [], options = {}) {
   // 無關): they go to the foot row that arrived there, or else the next one,
   // so the rows add up to the summary.
   let carried = 0;
+  // 2026-10-15 (user, #200, phone): a stay's own moves are that stay's
+  // (「停 N 分・45 m」, or 「在附近走動」 below), never a walk's minutes or
+  // hours later: a walk row counts its own stretch. Only the first and last
+  // edgeMoveMs of a stay belong to the walk beside it — the steps of
+  // arriving and of setting off (the visit's circle lags the walk by a few
+  // fixes). `stayMetres` by visit id; `leaving` waits for the next row.
+  const ownStays = subject === 'phone' && !!config.edgeMoveMs;
+  const stayMetres = new Map();
+  let leaving = null;
+  const stayOf = edge => displayLocations.find(n => n.type === 'stop'
+    && edge.start >= (n.displayRange?.start ?? n.start) && edge.end <= (n.displayRange?.end ?? n.end));
+  const toStay = (id, metres) => stayMetres.set(id, (stayMetres.get(id) || 0) + metres);
+  const settleLeaving = row => {
+    if (!leaving) return;
+    if (row && isFoot(row.mode) && row.type === 'movement' && row.start - leaving.end <= config.edgeMoveMs) {
+      row.countedDistanceM += leaving.metres; row.carriedM = (row.carriedM || 0) + leaving.metres;
+    } else toStay(leaving.id, leaving.metres);
+    leaving = null;
+  };
   // Skipped stationary edges right after the last row (a pause on foot).
   let pause = null;
   const isFoot = mode => mode === 'walking' || mode === 'moving';
@@ -612,6 +658,18 @@ export function historyTimeline(rows = [], options = {}) {
       // steps of leaving — goes to the next foot row (2026-10-13: never to a
       // walk hours earlier, across breaks and other stays).
       const arrived = [...sections].reverse().find(row => row.type === 'movement');
+      const host = ownStays && e.countedDistanceM > 0 ? stayOf(e) : null;
+      if (host) {
+        const hostEnd = host.displayRange?.end ?? host.end;
+        if (arrived && isFoot(arrived.mode) && e.start - arrived.end <= config.edgeMoveMs) {
+          arrived.countedDistanceM += e.countedDistanceM;
+          arrived.carriedM = (arrived.carriedM || 0) + e.countedDistanceM;
+        } else if (hostEnd - e.end <= config.edgeMoveMs) {
+          if (leaving && leaving.id !== host.id) settleLeaving(null);
+          leaving = { id: host.id, end: hostEnd, metres: (leaving?.metres || 0) + e.countedDistanceM };
+        } else toStay(host.id, e.countedDistanceM);
+        continue;
+      }
       if (arrived && isFoot(arrived.mode) && e.start - arrived.end <= config.gapMs) {
         arrived.countedDistanceM += e.countedDistanceM;
         if (e.countedDistanceM > 0) arrived.carriedM = (arrived.carriedM || 0) + e.countedDistanceM;
@@ -646,6 +704,7 @@ export function historyTimeline(rows = [], options = {}) {
       excluded: ['driving', 'ride', 'gap'].includes(e.mode),
       line: e.gap ? 'long-dashed' : ['driving', 'ride'].includes(e.mode) ? 'solid' : 'dotted' });
     const row = sections[sections.length - 1];
+    settleLeaving(row);
     if (carried && isFoot(row.mode)) { row.countedDistanceM += carried; row.carriedM = (row.carriedM || 0) + carried; carried = 0; }
   }
   // 2026-10-14 (user: 10/13 summed 4.519 km over rows of 4.459 km): metres
@@ -653,6 +712,7 @@ export function historyTimeline(rows = [], options = {}) {
   // the rows always add up to the summary (and 「今天 x km」, which sums the
   // edges). A drift trip counted nothing (countEdge), and with no walk at all
   // historyStops split the stay at these metres, so there is one.
+  settleLeaving(null);
   if (carried) {
     const row = [...sections].reverse().find(n => n.type === 'movement' && isFoot(n.mode));
     if (row) { row.countedDistanceM += carried; row.carriedM = (row.carriedM || 0) + carried; carried = 0; }
@@ -700,6 +760,7 @@ export function historyTimeline(rows = [], options = {}) {
       durationMs: to - from - interruptionMs, interruptionMs, gaps };
   });
   let nodes = [...locations, ...sections, ...stillHere].sort((a, b) => a.start - b.start || rank(a) - rank(b));
+  if (ownStays) for (const n of nodes) if (n.type === 'stop') n.countedDistanceM = stayMetres.get(n.id) || 0;
   // A switch right beside another place (a stay ends, the car starts after a
   // few seconds on foot) would leave a 0 km foot row between two points:
   // the place itself already separates the modes, so the switch and the empty
@@ -757,28 +818,40 @@ export function historyTimeline(rows = [], options = {}) {
   // metres before the stays are joined (phoneStepCarry, again below): the
   // metres carried onto them made a step of 5 s a walk that kept two stays at
   // one place apart.
-  if (subject === 'phone') phoneStepCarry(nodes);
+  if (subject === 'phone') phoneStepCarry(nodes, { ownStays });
   // PR 116 / 067: stays at one place joined by a same-session break are one.
   let replaced = new Map(), removed = new Set();
-  if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config }));
+  if (subject === 'phone') ({ nodes, replaced, removed } = mergePhoneSamePlaceStays(nodes, { config, ownStays }));
   if (subject === 'phone') {
     // 2026-10-13: 0 m walks beside a stay and short excursions between two
     // stays at one place are the stay's time.
-    const fold = foldPhoneStayWalks(nodes, { config, points });
+    const fold = foldPhoneStayWalks(nodes, { config, points, ownStays });
     const original = new Map([...replaced].map(([from, to]) => [to, from]));
     for (const n of fold.removed) removed.add(original.get(n) ?? n);
     for (const [from, to] of fold.replaced) replaced.set(original.get(from) ?? from, to);
     nodes = fold.nodes;
     // 2026-10-14: the folds can leave two stays at one place side by side
     // (a 0 m walk of five minutes taken into the second): join them too.
-    const again = mergePhoneSamePlaceStays(nodes, { config });
+    const again = mergePhoneSamePlaceStays(nodes, { config, ownStays });
     const before = new Map([...replaced].map(([from, to]) => [to, from]));
     for (const n of again.removed) removed.add(before.get(n) ?? n);
     for (const [from, to] of again.replaced) replaced.set(before.get(from) ?? from, to);
     nodes = again.nodes;
   }
   if (subject === 'phone') {
-    phoneStepCarry(nodes);
+    phoneStepCarry(nodes, { ownStays });
+    // 2026-10-15 (user, #200): a stay whose own moves add up to wanderM over
+    // wanderMinutes distinct minutes or more was a walk round one place
+    // (a dog walked in a small park, stopping and going): 「在附近走動」, its
+    // metres on it. Fewer or shorter moves stay a stay: 「停 N 分・45 m」.
+    if (ownStays && config.wanderM) {
+      for (const node of nodes) {
+        if (node.type !== 'stop' || !(node.countedDistanceM >= config.wanderM - 1e-8)) continue;
+        const minutes = new Set(sectionEdges.filter(e => e.countedDistanceM > 0 && e.start >= node.start
+          && e.end <= node.end).map(e => Math.floor(e.start / 60000)));
+        if (minutes.size >= config.wanderMinutes) node.wandering = true;
+      }
+    }
     const empty = emptyPhoneFootRows(nodes);
     for (const n of empty) drop.add(n);
     nodes = nodes.filter(n => !empty.has(n));
@@ -817,6 +890,27 @@ export function historyTimeline(rows = [], options = {}) {
   // only still-here, the carried-over day boundary and the list's own
   // between-breaks time (timelinePresentation) stay unnumbered, and those are
   // the range's ends or shorter than a stay.
+  // The stay my route stands still at goes on to now (`stillAtEnd`): its
+  // minutes grow, and the end (現在) is now. Without a stay holding the last
+  // fix (standing less than a stay's minutes before the fixes stopped) there
+  // is no place to go on at: no position after the last fix.
+  if (stillAtEnd) {
+    const end = nodes.find(n => n.type === 'end');
+    const stay = [...nodes].reverse().find(n => n.type === 'stop' && (n.displayRange?.end ?? n.end) === last.time);
+    const after = stay && nodes.slice(nodes.indexOf(stay) + 1).every(n => n.type === 'end'
+      || (n.type === 'gap' && n.dayBoundary === 'end'));
+    if (stay && after && end) {
+      const grow = now - last.time;
+      stay.end = now;
+      stay.durationMs = (stay.durationMs ?? 0) + grow;
+      if (stay.displayRange) stay.displayRange = { ...stay.displayRange, end: now };
+      stay.ongoing = true;
+      end.start = now; end.end = now;
+    } else if (end) {
+      end.endState = 'no-fix';
+      end.label = null;
+    }
+  }
   const numbered = node => (node.type === 'stop' || node.type === 'switch')
     && (!node.presentationOnly || node.presentationOnly === 'phone-stationary');
   let number = 0;

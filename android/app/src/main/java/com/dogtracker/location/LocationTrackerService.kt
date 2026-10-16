@@ -131,6 +131,7 @@ class LocationTrackerService : Service(), LocationListener {
     val preferences = getSharedPreferences("phone_location_recording", 0)
     if (intent?.action == "STOP") {
       preferences.edit().putBoolean("enabled", false).putLong("stoppedAt", System.currentTimeMillis()).commit()
+      RecordingResumeReceiver.clear(this)
       stopSelf(); return START_NOT_STICKY
     }
     // A queued automatic start must not undo a later explicit stop.
@@ -165,6 +166,8 @@ class LocationTrackerService : Service(), LocationListener {
       subscribe()
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
+      // Recording again: the 「點一下繼續記錄路線」 prompt is done.
+      RecordingResumeReceiver.clear(this)
       startedAtMs = System.currentTimeMillis()
       runCatching { startLog.started(kind, startedWall) }
       handler.post {

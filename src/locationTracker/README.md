@@ -8,7 +8,7 @@
 
 `myLocationTracker` 位於既有 `files/databases/dogtracker.sqlite`，透過 `DogStatusStore` 同一原生 SQLite owner 寫入，與 BLE、雲端資料共用序列化交易。每一列交給 `LocationTrackerStore` 自己的背景寫入執行緒（`SerialWriter`，同一程序共用一條，依序寫入）：定位 looper 不等資料庫的鎖，雲端下載佔著鎖時，排在後面的定位不會過期被丟掉，列只是晚一點落盤（`dumpsys` 的 `location-row-delay`）。背景寫入失敗時重試三次，仍失敗就在下一次保存時算成寫入錯誤，下一個 tick 再存當時的定位，與原本相同。建表與寫入由 `android/app/src/main/java/com/dogtracker/location/LocationTrackerStore.kt` 負責。首次進入頁面或開始取得定位時初始化。
 
-- 有可用 Google Play Services 時使用 Google Fused Location Provider；否則 Android 12+ 有 framework fused 時使用它，其餘依可用 GPS／network provider。這是來源選擇，並不保證 Google Maps 相同的室內推論。約每秒要求一次高精度定位；以 monotonic timestamp 排除重複或倒序樣本。SQLite 依原始 GPS 速度調整保存間隔：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒；速度未知則每 5 秒。以最新速度與上次成功寫入時間判斷，不受靜止歸零影響。最多 80,000 筆，高速持續每秒保存約可保留 22.2 小時。
+- 有可用 Google Play Services 時使用 Google Fused Location Provider；否則 Android 12+ 有 framework fused 時使用它，其餘依可用 GPS／network provider。這是來源選擇，並不保證 Google Maps 相同的室內推論。約每秒要求一次高精度定位；以 monotonic timestamp 排除重複或倒序樣本。和上一筆接受的定位相距超過「70 m/s × 間隔＋兩筆精度」的是跳點，不收；中斷超過 30 秒重新開始。2026-10-15（#200，稽核 A）：重新開始後第一筆就錯（例如快取的舊位置）時，以前之後每一筆正確定位都被當成跳點，約「距離／70」秒（最多 30 秒）收不到；現在重新開始後只接受了一筆時，兩筆連續、彼此一致的跳點就從它們重新開始（平滑視窗清空，那一步不算進每秒路程），已經接受兩筆以上的軌跡不會被兩筆跳點蓋掉（`LocationFirstFixTest`）。SQLite 依原始 GPS 速度調整保存間隔：≤ 10 km/h 每 5 秒、> 10 且 ≤ 20 km/h 每 3 秒、> 20 km/h 每 1 秒；速度未知則每 5 秒。以最新速度與上次成功寫入時間判斷，不受靜止歸零影響。保留 1 年（365 天，手機時區整天，含今天），安全上限 4,000,000 筆（約 1 GB）：使用者手機實測每個有記錄的日子 7,000–9,000 筆（每筆約 253 B），一年約 330 萬筆；開車整天每秒一筆的日子約 30,000 筆。記錄清單的「已存約 N 筆」是 id 的範圍（最大減最小加一），不再每頁 `COUNT(*)`；一年份的資料下 `COUNT(*)` 要走完整個時間索引。
 - 無新定位不補空白筆數、不重複舊定位；定位本身（elapsedRealtimeNanos）超過 15 秒的丟棄，不早於上一筆已接受定位的也丟棄（duplicate）。原本 3 秒是只用 GPS provider、每秒一筆且都很新鮮時訂的；改用 fused 後，手機靜止、Samsung 停掉 GPS 時，Wi-Fi 定位數秒到數分鐘才來一筆，到達時已約 4.5–5 秒，幾乎全被當過期丟掉（實機一晚 1,004 筆 stale，多段 80–133 分鐘沒有保存任何一筆，被拒定位最舊只有 5.1 秒）。已接受但尚未保存的定位在同一個 15 秒內仍可保存。實際頻率受 Android、接收狀況及省電影響。
 - `recorded_at` 是定位本身的時間：以系統時鐘換算（寫入當下的時間減去定位的 monotonic 年齡），不是寫入時間，所以晚到幾秒的定位仍放在正確時間，歷史、今天路線與 PhoneMotion 回放的時間間隔和原生 MotionDetector 一致。新一次記錄的第一筆若是上一次已保存的快取定位（`location_at` 不晚於最新一列、差距 ≤ 15 秒）就略過，不重複寫入；時鐘被往回調超過 15 秒則照常記錄。
 - 即時快照的「最後位置已過期」與 motion unknown 同樣以 15 秒為界；地圖藍點動畫與顯示座標仍在 JS 端以 3 秒為界（`PhoneLocationOverlay`），只影響畫面。
@@ -22,7 +22,7 @@
 - `raw_latitude`、`raw_longitude` 保留被保存樣本的原始座標；`session_id` 區分每次記錄。歷史地圖與 GPX 在工作階段切換或超過 3 分鐘間隔時分段。
 - `LocationTrackerScreen` 是設定 → 診斷 → 記錄清單的分頁清單；日期／時間範圍與匯出在 `src/mapHistory/HistoryScreen.js`。第三版手機 CSV／GPX 以 recorded route 為主座標，CSV 另保留 raw 欄位；裁切與時間用途見 `../mapHistory/ExportBuilders.md`。每秒樣本僅用於定位管線，不全部存入資料庫。
 - `recorded_at` 和 `location_at` 是 Unix 毫秒（`location_at` 是定位來源回報的時間）；緯經度為十進位度；速度由 m/s 轉為 km/h。無精度／海拔／速度／方向時為 NULL。
-- 每次寫入與修剪在同一交易，依寫入順序（id）保留最新 80,000 筆。初始化也修剪舊資料。以前依 recorded_at 排：系統時鐘先被調快、之後再調回時，那段「未來」時間的列會比之後所有的列都留得久。新一次記錄判斷「快取定位」時比對的也是最後寫入的一列（id），不是 recorded_at 最大的一列。今天 km（`phoneRouteSince`）的 (recorded_at, id) 游標在時鐘往回調時仍會跳過調回後、時間早於游標的列，直到重新讀整天；這部分沒有改。
+- 修剪不在寫入的交易裡：`LocalRetention`（#198）在自己的執行緒每次刪 500 筆，刪掉 recorded_at 早於第 365 天 00:00 的列，以及寫入順序（id）最新 4,000,000 筆以外的列。上限依 id 而不是 recorded_at：系統時鐘先被調快、之後再調回時，那段「未來」時間的列不會比之後所有的列都留得久（依時間的規則會留到那個「未來」日期再過 1 年，上限仍會照寫入順序清掉）。新一次記錄判斷「快取定位」時比對的也是最後寫入的一列（id），不是 recorded_at 最大的一列。今天 km（`phoneRouteSince`）的 (recorded_at, id) 游標在時鐘往回調時仍會跳過調回後、時間早於游標的列，直到重新讀整天；這部分沒有改。
 - 畫面使用 id 游標每頁 50 筆，前景每 10 秒更新，離開頁面不再輪詢；停止記錄不刪除資料。
 - 只存本機、不上傳 Supabase、不修改 dog_status 或 supabase_dog_status。
 - 需要精確位置權限與 GPS；不接受只有粗略位置權限。服務只能在 App 前景啟動。系統強制停止／重開機後需再次點開始，不宣稱能永久背景執行。

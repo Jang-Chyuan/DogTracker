@@ -9,12 +9,13 @@ import { phoneDisplayLocations, phoneStayAtTime } from '../PhoneStayDisplayAncho
 /**
  * The cursor's two lines (DESIGN.md「游標和標籤」, 2026-10-14): its time, then
  * the list row it is in, in the list's words — 「停留 2・28 分」 (an
- * unnumbered stay 「停留 28 分」), 「室內・25 分」, 「走路・已走 1.2 km」 (my
- * route), 「移動中・1.2 km」 (a dog), 「開車中」, 「坐車中」, or 「這段沒資料（最後
- * 10:29）」. The distance is the range's so far, as before.
+ * unnumbered stay 「停留 28 分」; a walk round one place 「在附近走動 2・28 分」), 「室內・25 分」, 「走路・已走 1.2 km」 (my
+ * route), 「移動中・1.2 km」 (a dog), 「開車中」, 「坐車中」, or 「10:29 之後沒有位置」
+ * (2026-10-15: no 「最後」). The distance is the range's so far, as before.
  */
 export function cursorLabel(model, time, subject = 'dog', gap = null) {
-  if (gap) return [clock(time), t('c325', { time: clock(time) })];
+  // No position after this fix (a break, or beyond the last fix): never 「最後」.
+  if (gap) return [clock(time), t('c1410', { time: clock(time) })];
   const row = Array.isArray(model.nodes) ? shownRowAt(model.nodes, time) : null;
   const listed = subject === 'phone' ? row : null;
   // A short break the list folded into a stay (beside it or inside it) is
@@ -37,7 +38,10 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   const minutes = stay && stayDuration(shownMs);
   // The number the list shows for this stay (start / end stays have none).
   const number = stay?.type === 'stop' && row?.type === 'stop' ? shownNumberAt(model.nodes, time) : null;
+  // 2026-10-15 (user, #200): a walk round one place 「在附近走動 2・1 時 49 分」.
+  const wandering = stay?.type === 'stop' && !!(stay.wandering || listedStay?.wandering);
   if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })
+    : wandering ? (number != null ? t('c1407', { number, duration: minutes }) : t('c1405', { duration: minutes }))
     : number != null ? t('c1342', { number, duration: minutes }) : t('c136', { duration: minutes })];
   // At a switch boundary the outgoing segment owns the label.
   const section = model.sections.find(n => n.start <= time && n.end > time)

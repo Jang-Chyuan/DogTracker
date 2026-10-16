@@ -54,7 +54,8 @@ test('drag gaps skips nearest edge; gap row selects preceding fix and stale labe
   expect(screenCursor(model, 34 * minute).time).toBe(30 * minute);
   expect(screenCursor(model, 36 * minute).time).toBe(40 * minute);
   expect(screenCursor(model, 35 * minute, { action: 'gap' })).toMatchObject({ time: 30 * minute, stale: true });
-  expect(screenCursor(model, 35 * minute, { action: 'gap' }).label[1]).toContain('這段沒資料');
+  // 2026-10-15 (user): 「HH:MM 之後沒有位置」, never 「最後」.
+  expect(screenCursor(model, 35 * minute, { action: 'gap' }).label[1]).toMatch(/^\d\d:\d\d 之後沒有位置$/u);
 });
 test('shared time stays fixed while protagonist is missing; before first hides', () => {
   expect(screenCursor(model, 36 * minute, { action: 'shared' })).toMatchObject({ time: 36 * minute, point: { time: 30 * minute }, stale: true });

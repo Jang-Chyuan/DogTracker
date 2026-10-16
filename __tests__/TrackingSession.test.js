@@ -143,7 +143,7 @@ describe('tracking session and connection lifetime', () => {
     real.initialize = async () => { await initializeReal(); realReady = true; };
     const execute = connection.executeAsync.getMockImplementation();
     connection.executeAsync.mockImplementation(async (query, params) => {
-      if (query.replace(/\s+/g, ' ').includes('SELECT * FROM dog_status ORDER BY id DESC')) await raw.promise;
+      if (/^SELECT [^()]* FROM dog_status ORDER BY id DESC/.test(query.replace(/\s+/g, ' ').trim())) await raw.promise;
       if (realReady && query === 'PRAGMA table_info(supabase_dog_status)') {
         migrationStarted = true;
         await migration.promise;

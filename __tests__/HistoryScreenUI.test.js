@@ -164,7 +164,7 @@ test('a tap on a stay row: the cursor to its start, the row lit, a double haptic
   const gap = s.screen.model.nodes.find(node => node.type === 'gap');
   await act(async () => pressable(s, 'timeline-gap-gap').props.onPress());
   expect(s.screen.cursor.stale).toBe(true);
-  expect(s.screen.cursor.label[1]).toMatch(/^這段沒資料（最後 \d\d:\d\d）$/);
+  expect(s.screen.cursor.label[1]).toMatch(/^\d\d:\d\d 之後沒有位置$/);
   expect(s.screen.cursor.point.time).toBeLessThanOrEqual(gap.start);
   await unmount(s);
   const r = await mountFixture('history-my-route');

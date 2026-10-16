@@ -1,11 +1,11 @@
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 
 // Producer/archive tests explicitly supply a consumer for the immutable,
 // verified SQLite readback. Actual React commit and missing-consumer behavior
 // are exercised separately by CloudLatestPriority/CloudLatestHistoryPriority.
-export function createCloudSyncWithCommittedMapReader(options) {
+export function createIndependentCloudSyncWithCommittedMapReader(options) {
   let engine;
-  engine = createCloudSync({ ...options, onChange: state => {
+  engine = createIndependentCloudSync({ ...options, onChange: state => {
     options.onChange?.(state);
     const publication = engine?.mapPublication();
     const readback = publication?.readback;

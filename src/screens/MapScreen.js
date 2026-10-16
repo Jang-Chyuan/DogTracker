@@ -770,6 +770,7 @@ export default function MapScreen({
     clock: fixtureClock, active: historical && active && tracking.foreground !== false, aliases: dogAliases, avatars,
     recording: typeof livePhone?.running === 'boolean' ? livePhone.running : null,
     recordingStoppedAt: livePhone?.stoppedAt ?? null,
+    recordingEnabled: typeof livePhone?.enabled === 'boolean' ? livePhone.enabled : null,
     // A fixture's ranges stay apart from the real ones; H2b starts dragged.
     memoryScope: fixture ? `fixture:${fixture.name}:` : '',
     preset: fixture?.historyView ?? null,
@@ -1411,14 +1412,8 @@ export default function MapScreen({
           exportNative={exportNative}
           initialExport={fixture?.historyView?.export ?? null}
           onSheetOpen={setHistorySheet}
-          closedAt={
-            target.subject === 'phone' &&
-            screen.today &&
-            livePhone &&
-            livePhone.running === false
-              ? livePhone.stoppedAt ?? null
-              : null
-          }
+          closedAt={screen.recordingEnd?.at ?? null}
+          closedReason={screen.recordingEnd?.reason ?? 'closed'}
         />
       )}
       {cardModel && (

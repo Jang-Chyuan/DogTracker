@@ -1,10 +1,16 @@
+import MapScreen from '../src/screens/MapScreen';
+import TrackingMap from '../src/map/TrackingMap';
+import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
+import { emptyLiveRoute } from '../src/tracking/LiveRouteWindow';
+import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
+import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import React, { useState } from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { latestArchiveRest, cloudEvent } from '../__fixtures__/LatestArchiveRest';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
 import { useCloudDogs } from '../src/cloud/useCloudDogs';
 import { completedMapRevision, latestMapApplied, mapDownloadBusy, mapReadRevision } from '../src/cloud/CloudPublication';
@@ -17,6 +23,11 @@ const deferred = () => {
   const promise = new Promise(done => { resolve = () => { settled = true; done(); }; });
   return { promise, resolve, settled: () => settled };
 };
+let showMap;
+const tracking = { mode: 'real', point: { ...trackingPoint, id: null, slaveId: null, slaveLat: null, slaveLon: null },
+  route: emptyLiveRoute(), positionSamples: [], ready: { real: true }, errors: {},
+  initialSnapshotReady: true, foreground: true,
+  preferences: { ready: true, busy: false, value: DEFAULT_TRACKING_PREFERENCES } };
 let archive, latest, database, engine, tree, update, state, dogs, info, releases, observed;
 function Consumer() {
   const [sync, setSync] = useState({ latestFirst: true }); update = setSync;
@@ -25,14 +36,16 @@ function Consumer() {
     cloudSuccess: completedMapRevision(sync), revision: mapReadRevision(sync),
     getMapPublication: () => engine.mapPublication() });
   observed.push(dogs);
-  return null;
+  return showMap ? <MapScreen tracking={tracking} phone={{ enabled: true }} cloudOwner={OWNER} cloudDogs={dogs}
+    cloudSync={{ ...sync, retry: () => engine.retry(), getMapPublication: () => engine.mapPublication() }}
+    mapProvider={GOOGLE_MAP_PROVIDER} /> : null;
 }
 const advance = async ms => { await act(async () => jest.advanceTimersByTimeAsync(ms)); };
 const applied = () => info.mock.calls.filter(([tag]) => tag === '[CloudSync] latest-applied');
 const read = () => database.readLatestSnapshot(OWNER, { positionsOnly: true });
 beforeEach(async () => {
   jest.useFakeTimers(); jest.setSystemTime(NOW); releases = []; observed = [];
-  tree = update = state = dogs = engine = null;
+  tree = update = state = dogs = engine = null; showMap = false;
   info = jest.spyOn(console, 'info').mockImplementation(() => {});
   archive = createMemoryConnection(); latest = createMemoryConnection();
   await createDogDatabase(archive).initialize();
@@ -57,7 +70,7 @@ async function seed(events) {
   return read();
 }
 async function start(network) {
-  engine = createCloudSync({ client: network.client, database,
+  engine = createIndependentCloudSync({ client: network.client, database,
     downloadContext: async () => { throw new Error('optional context unavailable'); },
     onChange: value => { state = value; update?.(value); } });
   await act(async () => { tree = Renderer.create(<Consumer />); });
@@ -150,4 +163,68 @@ test('one offline dog with a valid requested sibling cannot publish a partial se
   const recovered = await read();
   expect(recovered.revision).toBe(prior.revision + 1);
   expect(recovered.rows.map(row => row.event_id)).toEqual([events[2].event_id, events[3].event_id]);
+});
+
+// Ported from the retired map-from-archive engine: exercise the actual map
+// indicator through HTTP failure, retry, native snapshot commit and readback.
+test.each(['explicit', 'automatic'])('%s initial recovery stays visible until the independent SQLite readback reaches the map', async recovery => {
+  showMap = true;
+  let fail = true;
+  const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000, { latitude: 25 })],
+    beforeRead: ({ phase }) => { if (fail && phase === 'packet') throw new TypeError('Network request failed'); } });
+  await start(network);
+  const shown = () => JSON.stringify(tree.toJSON());
+  expect(state.catchUp.phase).toBe('failed');
+  expect(shown()).toContain('更新失敗');
+  fail = false;
+  const commit = deferred(), readback = deferred(); releases.push(commit.resolve, readback.resolve);
+  const batch = latest.executeBatchAsync.getMockImplementation(), execute = latest.executeAsync.getMockImplementation();
+  let committed = false, reading = false;
+  latest.executeBatchAsync.mockImplementation(async commands => {
+    if (commands.some(command => command.query.includes('INSERT OR REPLACE INTO cloud_snapshot_state'))) {
+      await commit.promise; committed = true;
+    }
+    return batch(commands);
+  });
+  latest.executeAsync.mockImplementation(async (sql, params) => {
+    if (committed && sql.includes('s.origin,d.packet_json,d.fix_json') && !sql.includes('d.context_json')) {
+      reading = true; await readback.promise;
+    }
+    return execute(sql, params);
+  });
+  if (recovery === 'explicit') {
+    const button = tree.root.findAllByProps({ testID: 'map-catch-up-retry' }).find(node => node.props.onPress);
+    await act(async () => { button.props.onPress(); await jest.advanceTimersByTimeAsync(1); });
+  } else await advance(30000);
+  const text = recovery === 'explicit' ? '正在更新狗的位置' : '更新失敗';
+  expect(shown()).toContain(text);
+  expect(state).toMatchObject({ snapshotPending: true, mapSuccessRevision: 0 });
+  commit.resolve(); await advance(1);
+  expect(reading).toBe(true);
+  expect(shown()).toContain(text);
+  expect(dogs.cloudCommit == null).toBe(true);
+  readback.resolve(); await advance(1);
+  expect(dogs.cloudCommit).toBe(1);
+  expect(tree.root.findAllByProps({ testID: 'map-catch-up' })).toHaveLength(0);
+  expect(tree.root.findByType(TrackingMap).props.presentation.dogMarkers
+    .find(dog => dog.slaveId === 6).coordinate.latitude).toBe(25);
+});
+
+test.each(['error', 'abort'])('failed manual %s cannot replace the accepted map when React skips busy renders', async failure => {
+  const network = latestArchiveRest({ events: [cloudEvent(1, NOW - 1000)] });
+  await start(network);
+  const accepted = await read(), previous = dogs.rows;
+  const notify = update; update = null;
+  const abort = new AbortController();
+  await expect(engine.runManual(async () => {
+    await database.savePage(OWNER, [mapCloudTelemetry(cloudEvent(2, NOW, { latitude: 26 }))]);
+    if (failure === 'abort') abort.abort();
+    throw new Error('incomplete manual scope');
+  }, abort)).rejects.toThrow('incomplete manual scope');
+  update = notify;
+  await act(async () => { update({ ...state }); });
+  expect(await read()).toEqual(accepted);
+  expect(dogs.rows).toEqual(previous);
+  expect(dogs.rows[0].slave_lat).toBe(24.9892);
+  expect(engine.historyPublication().publishedPending).toBe(false);
 });

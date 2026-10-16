@@ -35,3 +35,22 @@ test('non-Android retains the Nitro fallback', () => {
   openTrackingDatabase();
   expect(open).toHaveBeenCalledWith({ name: 'dogtracker.sqlite', location: 'databases' });
 });
+test('Android: my route\'s SELECTs have their own read lane, when the bridge has one', async () => {
+  Platform.OS = 'android';
+  const native = {
+    executeDatabase: jest.fn(async () => '{"results":[]}'),
+    executeDatabaseBatch: jest.fn(async () => true),
+    readDatabase: jest.fn(async () => '{"results":[{"n":3}]}'),
+  };
+  NativeModules.BleBackground = native;
+  const db = openTrackingDatabase();
+  expect(await db.reader.executeAsync('SELECT COUNT(*) AS n FROM myLocationTracker WHERE id > ?', [5]))
+    .toEqual({ results: [{ n: 3 }] });
+  expect(native.readDatabase).toHaveBeenCalledWith('SELECT COUNT(*) AS n FROM myLocationTracker WHERE id > ?', '[5]');
+  expect(native.executeDatabase).not.toHaveBeenCalled();
+  db.close();
+  await expect(db.reader.executeAsync('SELECT 1')).rejects.toThrow('closed');
+  // An older native module without the lane: no reader, everything on the one queue.
+  delete native.readDatabase;
+  expect(openTrackingDatabase().reader).toBeNull();
+});

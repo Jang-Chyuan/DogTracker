@@ -3,7 +3,7 @@ import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { downloadCloudLatest } from '../src/cloud/CloudLatest';
 import { createLatestSnapshotDatabase } from '../src/cloud/CloudLatestSnapshot';
 import { mapCloudTelemetry } from '../src/cloud/CloudTelemetry';
-import { createCloudSync } from '../src/cloud/CloudSync';
+import { createIndependentCloudSync } from '../src/cloud/IndependentCloudSync';
 
 const NOW = Date.parse('2026-10-12T02:00:00Z');
 const OWNER = 'invented-sdk-retry-owner';
@@ -149,7 +149,7 @@ test.each(['network reject', '503 Retry-After', 'ignored abort'])('real foregrou
     return response({ message: 'invented schema cache wait' }, 503, '90');
   });
   const state = [];
-  engine = createCloudSync({ client: network.client,
+  engine = createIndependentCloudSync({ client: network.client,
     database: { ...database, latestStorageIsolated: true },
     onChange: value => state.push(value) });
   engine.setSession({ user: { id: OWNER } }); engine.setForeground(true);

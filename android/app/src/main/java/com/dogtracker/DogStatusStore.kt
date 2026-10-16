@@ -5,6 +5,8 @@ import android.content.Context
 import android.database.AbstractWindowedCursor
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteDoneException
+import android.database.sqlite.SQLiteStatement
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -34,6 +36,7 @@ class DogStatusStore private constructor(private val context: Context) {
     /** For dumpsys: never opens the database or waits for its lock. */
     fun diagnostics(): String = buildString {
       appendLine("database: wal=${instance?.wal ?: "not open"}")
+      appendLine(LocalRetention.diagnostics())
       waits.lines().forEach { appendLine(it) }
     }.trimEnd()
   }
@@ -56,6 +59,52 @@ class DogStatusStore private constructor(private val context: Context) {
     "activity_time" to listOf("activity_time", "at"), "packet_type" to listOf("type"),
     "sequence" to listOf("seq"), "packet_length" to listOf("len")
   )
+
+  /**
+   * LocalRetention's statements on this store: reads on a reader connection,
+   * each DELETE its own short hold of the write monitor ("retention").
+   */
+  private val retentionSql by lazy {
+    object : LocalRetention.Sql {
+      override fun first(sql: String, vararg args: Any): Long? = db.compileStatement(sql).use { statement ->
+        bind(statement, args)
+        try { statement.simpleQueryForString()?.toLongOrNull() } catch (e: SQLiteDoneException) { null }
+      }
+      override fun change(sql: String, vararg args: Any): Int = retentionDelete(sql, args)
+      override fun pause() = Thread.sleep(LocalRetention.PAUSE_MS)
+    }
+  }
+
+  private fun retentionDelete(sql: String, args: Array<out Any>): Int = atWriterPriority {
+    locked("retention") {
+      db.compileStatement(sql).use { statement -> bind(statement, args); statement.executeUpdateDelete() }
+    }
+  }
+
+  /**
+   * The prune thread runs at the lowest priority (LocalRetention.schedule) so
+   * it never competes with the screen; but while one of its statements holds
+   * the write monitor, the BLE and route writers wait for it. On a busy CPU
+   * the lowest priority was descheduled in the middle of a 500-row DELETE (a
+   * statement with nothing to delete held the lock 0.5–6.8 s on a loaded
+   * emulator): for the statement, and the wait for the monitor, it runs at
+   * the default priority as the writers do, and drops back between batches.
+   */
+  private inline fun <T> atWriterPriority(block: () -> T): T {
+    val before = try { android.os.Process.getThreadPriority(android.os.Process.myTid()) } catch (e: Exception) { null }
+    val raise = before != null && before > android.os.Process.THREAD_PRIORITY_DEFAULT
+    if (raise) try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT) } catch (e: Exception) {}
+    try { return block() } finally {
+      if (raise && before != null) try { android.os.Process.setThreadPriority(before) } catch (e: Exception) {}
+    }
+  }
+
+  private fun bind(statement: SQLiteStatement, args: Array<out Any>) = args.forEachIndexed { i, value ->
+    if (value is Number) statement.bindLong(i + 1, value.toLong()) else statement.bindString(i + 1, value.toString())
+  }
+
+  /** Prunes by LocalRetention's rule, at most once an hour (BLE and route writes call it). */
+  fun scheduleRetention() = LocalRetention.schedule(retentionSql)
 
   init {
     val file = File(context.filesDir, "databases/dogtracker.sqlite")
@@ -103,6 +152,9 @@ class DogStatusStore private constructor(private val context: Context) {
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_id ON dog_status(slave_id, id DESC)")
     db.execSQL("CREATE INDEX IF NOT EXISTS idx_dog_status_slave_master ON dog_status(slave_id, master_id)")
     BleUploadQueue.initialize(db)
+    // The first sweep after an update is the migration to the time rule; it
+    // waits out the cold start's reads and writes.
+    LocalRetention.schedule(retentionSql, LocalRetention.FIRST_SWEEP_DELAY_MS)
   }
 
   private val wal = db.isWriteAheadLoggingEnabled
@@ -133,9 +185,9 @@ class DogStatusStore private constructor(private val context: Context) {
     BleUploadQueue.enqueue(db, data, payload, receivedAt)?.let { owner ->
       com.dogtracker.cloud.SearchRelayService.queued(context, owner)
     }
-    val slave = (value(data, listOf("slave_id", "sid")) as? Number)?.toDouble() ?: return
-    if (slave <= 0 || slave > Int.MAX_VALUE || slave % 1.0 != 0.0) return
-    val slaveId = slave.toInt()
+    // The service hands packets over with it as a whole number
+    // (ReceiverMasterId.normalized); read the same way regardless.
+    val slaveId = ReceiverMasterId.slaveOf(data) ?: return
     val previous = lastSaved[slaveId]
     if (previous != null && receivedAt >= previous && receivedAt - previous < 1000) return
     val row = ContentValues().apply {
@@ -158,14 +210,10 @@ class DogStatusStore private constructor(private val context: Context) {
         }
       }
     }
-    db.beginTransaction()
-    try {
-      db.insertOrThrow("dog_status", null, row)
-      // Inclusive cutoff keeps exactly 10000; fewer rows yield NULL and delete none.
-      db.execSQL("DELETE FROM dog_status WHERE slave_id = ? AND id <= (SELECT id FROM dog_status WHERE slave_id = ? ORDER BY id DESC LIMIT 1 OFFSET 10000)", arrayOf(slaveId, slaveId))
-      db.setTransactionSuccessful()
-    } finally { db.endTransaction() }
+    db.insertOrThrow("dog_status", null, row)
     lastSaved[slaveId] = receivedAt
+    // By time now (LocalRetention), on its own thread, not under every packet.
+    scheduleRetention()
   } }
 
   private fun value(data: JSONObject, aliases: List<String>): Any? =

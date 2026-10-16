@@ -4,6 +4,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { parseHistoryRange } from './HistoryTime';
 import { normalizeDogAliases } from './DogAliases';
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
+import { readLocalRetention } from '../database/LocalRetention';
 
 // The history list reads this much before the day too: a visit or a drive
 // running over midnight, a break before the first fix (判定表「跨午夜」).
@@ -14,7 +15,7 @@ const DAY_PAGE = 2000;
 // The single list the app composition binds; a method added here without the
 // binding would only be missing on a phone, never in a repository test.
 export const HISTORY_DATABASE_METHODS = ['load', 'save', 'loadDogAvatars', 'saveDogAvatar',
-  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs'];
+  'listDevices', 'phoneRouteSince', 'historyDayRows', 'historyDays', 'historyDogs', 'localRetention'];
 // historyDogs lists at most this many dogs (each one is one indexed seek).
 export const HISTORY_DOGS_LIMIT = 200;
 const AVATAR_TABLE = 'CREATE TABLE IF NOT EXISTS dog_avatars (slave_id INTEGER PRIMARY KEY NOT NULL, value TEXT NOT NULL)';
@@ -102,6 +103,13 @@ const PHONE_TEXT_COLUMNS = new Set(['motion_state', 'session_id']);
 const PHONE_EXPORT_COLUMNS = ['location_at', 'accuracy_meters', 'altitude_meters', 'heading_degrees',
   'display_source', 'display_location_at'];
 export function createHistoryDatabase(db) {
+  // My route's reads go on the connection's own read lane when it has one
+  // (TrackingDatabaseConnection.reader, Android): SELECTs only, never queued
+  // behind the cloud sync's work on the App's database queue. Coming back
+  // to the App and opening 我的路線 waited there 10 s on the phone.
+  const route = db.reader || db;
+  const routeColumns = async () => new Set(rows(await route.executeAsync(
+    "SELECT name FROM pragma_table_info('myLocationTracker')")).map(column => column.name));
   // myLocationTracker's speed columns, read once per open database.
   let phoneSpeedColumns = null;
   // The names' own table. The first open after the upgrade creates it
@@ -182,7 +190,7 @@ export function createHistoryDatabase(db) {
      * model's columns (PHONE_MODEL_COLUMNS), as historyDayRows reads them.
      */
     async phoneRouteSince(since, cursor = null, limit = 2000) {
-      const exists = rows(await db.executeAsync(
+      const exists = rows(await route.executeAsync(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'"));
       if (!exists.length) return [];
       const time = Math.max(Number(since) || 0, Number(cursor?.time) || 0);
@@ -191,7 +199,7 @@ export function createHistoryDatabase(db) {
       // it opens the table (an app update), possibly after the first read.
       let columns = phoneSpeedColumns;
       if (!columns) {
-        const names = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        const names = await routeColumns();
         columns = PHONE_MODEL_COLUMNS.filter(name => names.has(name));
         if (columns.length === PHONE_MODEL_COLUMNS.length) phoneSpeedColumns = columns;
       }
@@ -199,7 +207,7 @@ export function createHistoryDatabase(db) {
       // has none), as on historyDayRows' rows: the logic tells a recorder
       // that measured nothing (null) from an old one without the column.
       const value = (name, raw) => (raw == null ? null : PHONE_TEXT_COLUMNS.has(name) ? String(raw) : Number(raw));
-      return rows(await db.executeAsync(
+      return rows(await route.executeAsync(
         `SELECT id, recorded_at AS time, latitude, longitude, accuracy_meters AS accuracy${
           columns.map(name => `, ${name}`).join('')} FROM myLocationTracker
          WHERE recorded_at >= ? AND (recorded_at > ? OR (recorded_at = ? AND id > ?))
@@ -244,16 +252,35 @@ export function createHistoryDatabase(db) {
       let cursors = { ...after };
       // By id, not time: a cloud download can add rows older than the newest
       // one read (判定表「補下載完成」), and those must be read too.
-      async function pages(key, sql, params) {
+      // `span` (my route): first the ids the window's rows lie between (and
+      // how many there are), from the time index, then the pages by id
+      // within them. Alone, `id > ?` walks the table from the cursor (a year
+      // of my route is millions of rows: a day took 0.25 s on a Mac, seconds
+      // on a phone). A window whose ids are far apart (a row written while
+      // the clock was set a day or a year wrong) is read on the time index
+      // and sorted instead: a walk between its ids would cross the table.
+      async function pages(key, sql, params, span = null, conn = db) {
         const found = [];
         let cursor = cursors[key] ?? { id: -1 };
+        let from = cursor.id, through = null, sparse = false;
+        if (span) {
+          stopped();
+          const ends = rows(await conn.executeAsync(span, [...params, cursor.id]))[0];
+          if (ends?.low == null) { cursors[key] = cursor; return found; }
+          from = Math.max(cursor.id, Number(ends.low) - 1);
+          through = Number(ends.high);
+          sparse = through - from > 2 * Number(ends.n) + DAY_PAGE;
+        }
         for (;;) {
           stopped();
-          const page = rows(await db.executeAsync(`${sql} AND id > ? ORDER BY id LIMIT ${DAY_PAGE}`,
-            [...params, cursor.id]));
+          const page = rows(await conn.executeAsync(sparse
+            ? `${sql} AND +id > CAST(? AS INTEGER) ORDER BY id LIMIT ${DAY_PAGE}`
+            : `${sql} AND id > ?${through == null ? '' : ' AND id <= ?'} ORDER BY id LIMIT ${DAY_PAGE}`,
+          [...params, from, ...(through == null || sparse ? [] : [through])]));
           if (!page.length) break;
           found.push(...page);
           cursor = { id: Number(page[page.length - 1].id) };
+          from = cursor.id;
           if (page.length < DAY_PAGE) break;
         }
         cursors[key] = cursor;
@@ -262,10 +289,10 @@ export function createHistoryDatabase(db) {
       const table = async name => rows(await db.executeAsync(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length > 0;
       if (subject === 'phone') {
-        if (!(await table('myLocationTracker'))) return { rows: [], seed: [], after: cursors };
+        if (!rows(await route.executeAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'")).length) return { rows: [], seed: [], after: cursors };
         // The model's columns (the same as 「今天 x km」's) and the CSV
         // export's (判定表「CSV」: 照 main 的欄位).
-        const phoneColumns = new Set(rows(await db.executeAsync('PRAGMA table_info(myLocationTracker)')).map(c => c.name));
+        const phoneColumns = await routeColumns();
         const phoneExtra = [...PHONE_EXPORT_COLUMNS, ...PHONE_MODEL_COLUMNS]
           .filter(name => phoneColumns.has(name)).map(name => `, ${name}`).join('');
         const select = `SELECT id, recorded_at AS time, latitude, longitude,
@@ -273,11 +300,14 @@ export function createHistoryDatabase(db) {
         let replaced = false;
         if (verify && cursors.phone) {
           stopped();
-          const held = rows(await db.executeAsync(`SELECT COUNT(*) AS n FROM myLocationTracker
+          const held = rows(await route.executeAsync(`SELECT COUNT(*) AS n FROM myLocationTracker
             WHERE recorded_at >= ? AND recorded_at < ? AND id <= ?`, [since, until, cursors.phone.id]))[0];
           if (Number(held?.n) !== (cursors.phoneCount ?? 0)) { cursors = {}; replaced = true; }
         }
-        const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until]);
+        const found = await pages('phone', `${select} WHERE recorded_at >= ? AND recorded_at < ?`, [since, until],
+          // `+id`: the time index answers it, never a walk of the rowid from the cursor.
+          'SELECT MIN(id) AS low, MAX(id) AS high, COUNT(*) AS n FROM myLocationTracker WHERE recorded_at >= ? AND recorded_at < ? AND +id > CAST(? AS INTEGER)',
+          route);
         // The window's rows read so far (by id, up to the cursor): what
         // `verify` compares the table with.
         cursors.phoneCount = (cursors.phoneCount ?? 0) + found.length;
@@ -288,14 +318,14 @@ export function createHistoryDatabase(db) {
         const before = [], next = [];
         stopped();
         if (!cursors.phoneBefore) {
-          before.push(...rows(await db.executeAsync(`${select} WHERE recorded_at < ?
+          before.push(...rows(await route.executeAsync(`${select} WHERE recorded_at < ?
             ORDER BY recorded_at DESC, id DESC LIMIT 1`, [since])));
           cursors.phoneBefore = true;
         }
         if (!cursors.phoneAfter) {
           if (found.some(row => Number(row.time) >= Number(end))) cursors.phoneAfter = true;
           else {
-            next.push(...rows(await db.executeAsync(`${select} WHERE recorded_at >= ?
+            next.push(...rows(await route.executeAsync(`${select} WHERE recorded_at >= ?
               ORDER BY recorded_at, id LIMIT 1`, [until])));
             if (next.length) cursors.phoneAfter = true;
           }
@@ -343,23 +373,25 @@ export function createHistoryDatabase(db) {
       const dayOf = time => `strftime('%Y-%m-%d', ${time} / 1000, 'unixepoch', 'localtime')`;
       const found = new Set();
       const add = list => list.forEach(row => { if (row.day) found.add(String(row.day)); });
+      // Not a DISTINCT over every row (my route keeps 30 days, a dog 7: up to
+      // hundreds of thousands, each converted to local time, on the
+      // connection the day's own read waits for): from each day's first row,
+      // the time index jumps straight to the next local day's first one.
+      const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
+      const firstOfEachDay = (from, time, where) => `WITH RECURSIVE first(t) AS (
+          SELECT MIN(${time}) FROM ${from} WHERE ${where}
+          UNION ALL SELECT (SELECT MIN(${time}) FROM ${from}
+            WHERE ${where} AND ${time} >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
+        SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`;
       if (subject === 'phone') {
-        // Not a DISTINCT over every row (80 000 at the recorder's cap, each
-        // converted to local time, on the connection the day's own read
-        // waits for): from each day's first fix, the time index jumps
-        // straight to the next local day's first one.
-        const nextDay = `CAST(strftime('%s', t / 1000, 'unixepoch', 'localtime', 'start of day', '+1 day', 'utc') AS INTEGER) * 1000`;
-        if (await table('myLocationTracker')) {
-          add(rows(await db.executeAsync(`WITH RECURSIVE first(t) AS (
-              SELECT MIN(recorded_at) FROM myLocationTracker
-              UNION ALL SELECT (SELECT MIN(recorded_at) FROM myLocationTracker
-                WHERE recorded_at >= MAX(t + 1, ${nextDay})) FROM first WHERE t IS NOT NULL)
-            SELECT ${dayOf('t')} AS day FROM first WHERE t IS NOT NULL`)));
+        if (rows(await route.executeAsync(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='myLocationTracker'")).length) {
+          add(rows(await route.executeAsync(firstOfEachDay('myLocationTracker', 'recorded_at', '1'))));
         }
       } else {
         if (await table('dog_status')) {
-          add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('received_at')} AS day FROM dog_status
-            WHERE slave_id = ?`, [slaveId])));
+          // dog_status(slave_id, received_at DESC) answers each MIN with one seek.
+          add(rows(await db.executeAsync(firstOfEachDay('dog_status', 'received_at', 'slave_id = ?'), [slaveId, slaveId])));
         }
         if (owner && await table('supabase_dog_status')) {
           add(rows(await db.executeAsync(`SELECT DISTINCT ${dayOf('CAST(COALESCE(track_at, received_at) AS INTEGER)')} AS day
@@ -400,6 +432,13 @@ export function createHistoryDatabase(db) {
       return [...found].sort((left, right) => left - right).slice(0, HISTORY_DOGS_LIMIT);
     },
     /**
+     * The first day this phone keeps my route and the dogs' packets from
+     * (設定的「保留到 M/D」; LocalRetention).
+     */
+    localRetention(now = Date.now()) {
+      return readLocalRetention(db, now);
+    },
+    /**
      * Which Master/Slave pairs this phone actually holds for a source. The card
      * offers these instead of asking the user to type device numbers: both ids
      * can take several values, and a typed number that exists nowhere looks
@@ -409,10 +448,26 @@ export function createHistoryDatabase(db) {
       const cloud = source === 'cloud';
       if (cloud && !owner) return [];
       const table = cloud ? 'supabase_dog_status' : 'dog_status';
-      const found = rows(await db.executeAsync(
-        `SELECT DISTINCT master_id, slave_id FROM ${table}
-         ${cloud ? 'WHERE owner_user_id=?' : ''}
-         ORDER BY slave_id, master_id LIMIT 60`, cloud ? [owner] : []));
+      // One index seek per pair, not a DISTINCT over every row: the cloud
+      // copy of an account holds about a million rows, and the DISTINCT read
+      // them all (minutes on a signed-in emulator, on the queue every other
+      // read of the App waits behind) each time the history opened.
+      // dog_status(slave_id, master_id); the cloud copy's index leads with
+      // (owner_user_id, master_id, slave_id).
+      const scope = cloud ? 'owner_user_id = ? AND ' : '';
+      const scopeParams = cloud ? [owner] : [];
+      const [outer, inner] = cloud ? ['master_id', 'slave_id'] : ['slave_id', 'master_id'];
+      const firstOf = async (where, params, order) => rows(await db.executeAsync(
+        `SELECT master_id, slave_id FROM ${table} WHERE ${scope}${where} ORDER BY ${order} LIMIT 1`,
+        [...scopeParams, ...params]))[0];
+      const found = [];
+      let row = await firstOf(`${outer} > ?`, [0], `${outer}, ${inner}`);
+      while (row && found.length < 60) {
+        found.push(row);
+        row = await firstOf(`${outer} = ? AND ${inner} > ?`, [row[outer], row[inner] ?? 0], inner)
+          ?? await firstOf(`${outer} > ?`, [row[outer]], `${outer}, ${inner}`);
+      }
+      found.sort((a, b) => Number(a.slave_id) - Number(b.slave_id) || Number(a.master_id) - Number(b.master_id));
       return found
         .map(row => ({ master: Number(row.master_id), slave: Number(row.slave_id) }))
         // A row without a slave id (Number(null) is 0) is a Master-only packet,

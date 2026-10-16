@@ -21,8 +21,9 @@ const MOMENTS = ['departure', 'resume', 'end', 'switch'];
  *   seconds after a 恢復記錄 belonged to no row and nothing said so);
  * - 'moment-span': a 出發 / 恢復記錄 / end / 切換 row shows no minutes, so it
  *   spans none (2026-10-15: a still-confirming departure took a whole stay);
- * - 'sum': a stay, 室內 or movement's start clock + shown minutes (+ a stay's
- *   「不含中斷 N 分」) is its end clock. A gap row says its own two clocks.
+ * - 'sum': a stay, 室內, movement or my route's gap row's start clock + shown
+ *   minutes (+ a stay's 「不含中斷 N 分」) is its end clock. A dog's gap row
+ *   says its own two clocks.
  */
 export function timelineClockMismatches(nodes) {
   const rows = timelinePresentation(nodes);
@@ -34,7 +35,9 @@ export function timelineClockMismatches(nodes) {
     }
     const moment = MOMENTS.includes(row.type);
     if (moment && row.end > row.start) out.push({ at: i, kind: 'moment-span', type: row.type, start: row.start, end: row.end });
-    if (!(row.end > row.start) || isGap(row) || moment) return;
+    // 2026-10-15: my route's gaps show their minutes too (「沒有位置 19 分」);
+    // a dog's keep their two clocks.
+    if (!(row.end > row.start) || (isGap(row) && ['no-gps', 'no-signal'].includes(row.reason)) || moment) return;
     const start = clockMinute(row.start), end = clockMinute(row.end);
     const minutes = shownMinutes(row), breaks = breakMinutes(row);
     if (start + minutes + breaks !== end) {
@@ -66,4 +69,16 @@ export function departureClocks(nodes) {
   const rows = timelinePresentation(nodes);
   return rows.map((row, i) => (['stop', 'indoor'].includes(row.type) && rows[i + 1]?.type === 'movement'
     ? { stay: clockMinute(row.end), next: clockMinute(rows[i + 1].start) } : null)).filter(Boolean);
+}
+
+/**
+ * The metres the list's rows show, added up (the summary must be this):
+ * walking / moving rows and, on my route since 2026-10-15 (#200), a stay's
+ * own moves — 「停 25 分・45 m」, 「在附近走動 …」 — also when the list
+ * shows that stay inside the start or end row.
+ */
+export function listedMetres(nodes) {
+  const foot = row => row.type === 'movement' && (row.mode === 'walking' || row.mode === 'moving');
+  return timelinePresentation(nodes).reduce((sum, row) => sum + (foot(row) || row.type === 'stop' ? row.countedDistanceM || 0 : 0)
+    + (row.terminalStay?.countedDistanceM || 0) + (row.departureStay?.countedDistanceM || 0), 0);
 }

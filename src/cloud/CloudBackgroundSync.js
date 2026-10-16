@@ -33,7 +33,7 @@ export async function runBackgroundCloudSync({ runId, owner }, {
   const abort = new AbortController();
   const unregister = registerBackgroundSync(abort);
   let outcome = 'retry', database, client, authSubscription;
-  let timedOut = false;
+  let timedOut = false, uploadRetry = false;
   const deadline = now() + budgetMs;
   const timeout = setTimeout(() => { timedOut = true; abort.abort(); }, budgetMs);
   const appSubscription = appState.addEventListener('change', state => {
@@ -51,57 +51,61 @@ export async function runBackgroundCloudSync({ runId, owner }, {
   // Constraint changes/onStopped may occur without an AppState event.
   const poll = setInterval(() => { check().catch(() => abort.abort()); }, 2000);
   try {
+    // Session, migrations and the BLE relay upload run before the shared slot:
+    // none of them touch staging, and UploadService serialises its own passes.
+    // A manual history download can hold the slot for minutes; the relay must
+    // not wait behind it, and the wait for the slot ends with the budget.
+    await check();
+    client = clientFactory();
+    client.auth.stopAutoRefresh();
+    authSubscription = client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id !== owner) {
+        native.cancelAccount(runId).catch(() => {});
+        abort.abort();
+      }
+    }).data.subscription;
+    // Auth restores/refreshes from secure storage; do not put a JWT in job data.
+    const sessionResult = client.auth.getSession();
+    let cancelSession;
+    const cancelled = new Promise((_, reject) => {
+      cancelSession = () => reject(new Error('Session restore cancelled'));
+      abort.signal.addEventListener('abort', cancelSession, { once: true });
+      if (abort.signal.aborted) cancelSession();
+    });
+    let result;
+    try { result = await Promise.race([sessionResult, cancelled]); }
+    finally { abort.signal.removeEventListener('abort', cancelSession); }
+    await check();
+    if (result.error) throw result.error;
+    if (result.data.session?.user?.id !== owner) {
+      await native.cancelAccount(runId);
+      outcome = 'cancelled'; return;
+    }
+    database = databaseFactory();
+    await database.initialize();
+    await check();
+    // Share the network-constrained job with BLE relay, leaving time for history.
+    // Never publish an owner here: logout/native receiver binding owns that state.
+    const upload = createUploadService({ database: database.uploadDatabase, client });
+    const uploadAbort = new AbortController();
+    const cancelUpload = () => uploadAbort.abort();
+    abort.signal.addEventListener('abort', cancelUpload, { once: true });
+    const uploadTimeout = setTimeout(cancelUpload, Math.min(30000, Math.max(0, deadline - now())));
+    try {
+      while (!uploadAbort.signal.aborted) {
+        await check();
+        const uploadResult = await upload.run(owner, () => !abort.signal.aborted && !uploadAbort.signal.aborted,
+          { signal: uploadAbort.signal });
+        if (uploadResult === 'retry') { uploadRetry = true; break; }
+        if (uploadResult !== 'success') break;
+      }
+      if (uploadAbort.signal.aborted) uploadRetry = true;
+    } finally {
+      clearTimeout(uploadTimeout);
+      abort.signal.removeEventListener('abort', cancelUpload);
+    }
+    await check();
     await withCloudSyncSlot(async () => {
-      await check();
-      client = clientFactory();
-      client.auth.stopAutoRefresh();
-      authSubscription = client.auth.onAuthStateChange((_event, session) => {
-        if (session?.user?.id !== owner) {
-          native.cancelAccount(runId).catch(() => {});
-          abort.abort();
-        }
-      }).data.subscription;
-      // Auth restores/refreshes from secure storage; do not put a JWT in job data.
-      const sessionResult = client.auth.getSession();
-      let cancelSession;
-      const cancelled = new Promise((_, reject) => {
-        cancelSession = () => reject(new Error('Session restore cancelled'));
-        abort.signal.addEventListener('abort', cancelSession, { once: true });
-        if (abort.signal.aborted) cancelSession();
-      });
-      let result;
-      try { result = await Promise.race([sessionResult, cancelled]); }
-      finally { abort.signal.removeEventListener('abort', cancelSession); }
-      await check();
-      if (result.error) throw result.error;
-      if (result.data.session?.user?.id !== owner) {
-        await native.cancelAccount(runId);
-        outcome = 'cancelled'; return;
-      }
-      database = databaseFactory();
-      await database.initialize();
-      await check();
-      // Share the network-constrained job with BLE relay, leaving time for history.
-      // Never publish an owner here: logout/native receiver binding owns that state.
-      let uploadRetry = false;
-      const upload = createUploadService({ database: database.uploadDatabase, client });
-      const uploadAbort = new AbortController();
-      const cancelUpload = () => uploadAbort.abort();
-      abort.signal.addEventListener('abort', cancelUpload, { once: true });
-      const uploadTimeout = setTimeout(cancelUpload, Math.min(30000, Math.max(0, deadline - now())));
-      try {
-        while (!uploadAbort.signal.aborted) {
-          await check();
-          const uploadResult = await upload.run(owner, () => !abort.signal.aborted && !uploadAbort.signal.aborted,
-            { signal: uploadAbort.signal });
-          if (uploadResult === 'retry') { uploadRetry = true; break; }
-          if (uploadResult !== 'success') break;
-        }
-        if (uploadAbort.signal.aborted) uploadRetry = true;
-      } finally {
-        clearTimeout(uploadTimeout);
-        abort.signal.removeEventListener('abort', cancelUpload);
-      }
       await check();
       const masters = await listCloudMasters(client, owner, abort.signal, check);
       const cutoff = now();
@@ -112,8 +116,8 @@ export async function runBackgroundCloudSync({ runId, owner }, {
           signal: abort.signal, check, maxPages: 4 });
       }
       await check();
-      outcome = uploadRetry ? 'retry' : 'success';
-    });
+    }, { signal: abort.signal });
+    outcome = uploadRetry ? 'retry' : 'success';
   } catch {
     // Cancellation due to UI/logout is complete; transient failures and time
     // limits retry with WorkManager backoff, keeping every committed page.

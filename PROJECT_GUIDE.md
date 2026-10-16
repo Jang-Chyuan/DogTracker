@@ -40,7 +40,7 @@ src/
 ├─ mapHistory/  HistoryScreen.js、HistoryDatabase.js、HistoryCloud.js、useHistoryExport.js  第三版歷史畫面、日期下載與匯出
 ├─ activity/  ActivityScreen.js、ActivityData.js、views/  活動畫面與統計
 ├─ alerts/  AlertEngine.js、AlertNotifications.js、useAlertEngine.js  提醒判斷與通知
-├─ cloud/  IndependentCloudSync.js（CloudSync.js 的舊引擎已停用）、CloudDatabase.js、CloudDataScreen.js  雲端下載、帳號快取與診斷
+├─ cloud/  IndependentCloudSync.js、CloudDatabase.js、CloudDataScreen.js  雲端下載、帳號快取與診斷
 ├─ cloudUpload/  UploadService.js、SearchRelay.js  BLE 轉送與搜索中繼
 ├─ placement/  IndoorHold.js、HoldStore.js、RideAlong.js、AddressLookup.js  室內停住、坐車與地址
 ├─ settings/  SettingsHome.js、PhoneSettings.js、DiagnosticsSettings.js  設定入口、手機記錄與診斷
@@ -196,7 +196,7 @@ Wi-Fi Config Characteristic 使用 write-with-response，裝置收到 UTF-8 JSON
 - 資料庫：`dogtracker.sqlite`
 - 資料表：`dog_status`
 - Android 原生每隻 Slave 每 1 秒最多保存一次；JS 備援由 device profile 控制。
-- 每個 Slave 最多保留 10,000 筆狀態。
+- 本機資料依時間保留（#198，`LocalRetention.kt`／`src/database/LocalRetention.js`）：狗的資料 30 天、我的路線 1 年（365 天），都以手機時區的整天計算（含今天；2026/10/15 時狗的資料從 9/16 00:00 起、我的路線從 2025/10/16 00:00 起；使用者 2026-10-15 決定）。很久沒收到的狗仍留著牠最新的 10,000 筆（最後位置、電量不會從地圖消失）。安全上限：我的路線 4,000,000 筆（約 1 GB，依寫入順序 id 保留最新的；實測一年約 330 萬筆）；所有狗合計 500,000 筆（約 380 MB），超過時不分哪隻狗、從最舊的（id）先刪，但不刪每隻狗最新的 10,000 筆與牠最新的那一天；同時收到的幾隻狗 id 交錯，仍是一句刪 500 筆（依 id 一起走）。修剪在自己的執行緒，每次刪 500 筆、每筆刪除單獨拿寫入鎖；開啟資料庫 30 秒後跑一次（升級後第一次就是遷移），之後 BLE 或路線寫入時最多每小時一次。設定 → 進階顯示「保留到 M/D」、手機顯示「保留到 YYYY/MM/DD（最近 1 年）」（上限已截掉一段時顯示實際最早的那天）。
 - Android 原生每次寫入交易內清理該 Slave 的超額紀錄；JS 備援每 100 次寫入清理一次。
 - 查詢筆數限制為 1 至 1,000 筆。
 - Android 上整個檔案只由 `DogStatusStore` 的框架 SQLite 開啟，使用 WAL（稽核 A F3）：所有寫入（BLE 封包、手機路線、App 的寫入與批次交易）照舊一次一個，讀取不等鎖，在讀取專用連線上看最後一次提交的內容。一次讀取若超過一個 cursor window（約 2 MB），會改成持鎖重讀，避免兩段之間有寫入插進來；大量讀取請用 `src/database/PagedRead.js` 分頁（每次最多 1,000 筆）。

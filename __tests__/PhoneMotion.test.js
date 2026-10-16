@@ -98,17 +98,31 @@ test('a new recording session cannot reuse an old stationary lock', () => {
   expect(point.latitude).toBe(25 + 60 / 111195);
 });
 
+// 2026-10-15 (#200): 2 km/h ± 5 m/s is no speed at all, like the missing
+// ones. Beyond stillPlaceM (150 m) such fixes are weak GPS, an interruption;
+// within it (65 m) they are the stay itself (quietFix), as fixes without a
+// speed already were. Neither is a walk.
+const uncertainRows = metres => Array.from({ length: 480 }, (_, i) => sample(i * 5 + 1,
+  i < 60 ? 0 : metres + Math.sin(i / 3) * 5, {
+    raw_speed_kmh: i < 60 ? 0 : i % 3 === 0 ? null : 2,
+    speed_accuracy_mps: i < 60 ? 0.3 : 5,
+  }));
+test('uncertain speeds near the stay are the stay, not imaginary walking', () => {
+  const rows = uncertainRows(65);
+  const model = historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', today: false });
+  expect(model.distanceM).toBe(0);
+  expect(model.nodes.filter(n => n.type === 'movement')).toEqual([]);
+  expect(model.nodes.filter(n => n.type === 'stop').map(n => [n.start, n.end])).toEqual([[rows[0].time, rows.at(-1).time]]);
+  expect(model.departure.status).toBe('undetermined');
+});
 test('uncertain speeds and missing speeds create interruption, not imaginary walking', () => {
-  const rows = Array.from({ length: 480 }, (_, i) => sample(i * 5 + 1,
-    i < 60 ? 0 : 65 + Math.sin(i / 3) * 5, {
-      raw_speed_kmh: i < 60 ? 0 : i % 3 === 0 ? null : 2,
-      speed_accuracy_mps: i < 60 ? 0.3 : 5,
-    }));
+  const rows = uncertainRows(150);
   const model = historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone', today: false });
   expect(model.distanceM).toBe(0);
   expect(model.edges.some(e => e.uncertain && e.mode === 'gap')).toBe(true);
   expect(model.nodes.some(n => n.type === 'gap' && n.reason === 'uncertain')).toBe(true);
-  expect(sectionText({ type: 'gap', reason: 'uncertain', start: 1000, end: 2000 }).lead).toBe(translate('c883'));
+  // 2026-10-15 (user): weak GPS reads like any break of my route.
+  expect(sectionText({ type: 'gap', reason: 'uncertain', start: 1000, end: 2000 }).lead).toBe(translate('c1414'));
   expect(model.points.filter(p => p.time > 1200000).every(p => !p.phoneStationary)).toBe(true);
   expect(model.departure.status).toBe('undetermined');
   expect(model.range.start).toBe(rows[0].time);
