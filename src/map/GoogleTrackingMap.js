@@ -271,7 +271,7 @@ function usePhotoMarker(avatar, ref) {
 // One dog on the live map. The marker view is not tracked for changes (that
 // would redraw it on every frame), so every change of what it shows asks for
 // one redraw. A tap opens the dog.
-const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shownKey = 0,
+const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, zIndex, onPress, label, shown = true,
   compact = false }) {
   const { isDark, opacity } = useTheme();
   // The launch screen's handover draws a copy of each dog over the map while
@@ -297,11 +297,20 @@ const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, z
     avatar?.color,
     avatar?.uri?.length,
   ].join('|');
-  // Also each time the map is shown again: a bitmap taken while the map was
-  // hidden under a page (or the app off screen) can be Google's default pin.
+  // A bitmap taken while the map is hidden under a page (or the app is off
+  // screen) can be Google's default pin: a change then is drawn once the map
+  // is shown again. A dog that did not change while hidden keeps its bitmap
+  // (2026-10-17: every dog was drawn again on each return to the app).
+  const missed = useRef(false);
   useEffect(() => {
+    if (shown) ref.current?.redraw?.();
+    else missed.current = true;
+  }, [look, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!shown || !missed.current) return;
+    missed.current = false;
     ref.current?.redraw?.();
-  }, [look, isDark, shownKey]);
+  }, [shown]);
   return (
     <StyledMarker
       ref={ref}
@@ -732,6 +741,8 @@ function GoogleTrackingMapRenderer({
   compassTop = null,
   onReadyChange,
   foreground,
+  // The app itself on screen (foreground also needs the map's page shown).
+  appForeground = true,
   dataReady = true,
   coldStartReady = true,
   coldStartScope = null,
@@ -861,6 +872,13 @@ function GoogleTrackingMapRenderer({
     if (foreground && !wasShown.current) setShownKey(value => value + 1);
     wasShown.current = foreground;
   }, [foreground]);
+  // The map's buttons, TalkBack items, edge hints and compass stay mounted
+  // while the app is off screen (nothing draws them then): taken down at the
+  // background, they were all built again in the first frame back
+  // (2026-10-17, a 1–2 s frame on each return). Under a page they go.
+  const shownBeforeBackground = useRef(foreground);
+  if (appForeground) shownBeforeBackground.current = foreground;
+  const overlaysShown = appForeground ? foreground : shownBeforeBackground.current;
   const activeInstance = useRef(instance);
   activeInstance.current = instance;
   const ready = readyInstance === instance;
@@ -1264,7 +1282,7 @@ function GoogleTrackingMapRenderer({
     turnedNow.current = next;
     setTurned(next);
   }, [compassTurn]);
-  const compassVisible = usable && foreground && compassTop != null && turned;
+  const compassVisible = usable && overlaysShown && compassTop != null && turned;
   const compassKey = `${source}:${instance}:${cursorLayout.width}:${cursorLayout.height}:${compassTop}:${compassVisible}`;
   const compassGeneration = useRef({ key: compassKey, value: 0 });
   if (compassGeneration.current.key !== compassKey) compassGeneration.current = {
@@ -2215,7 +2233,7 @@ function GoogleTrackingMapRenderer({
               marker={marker}
               tag={tags[marker.slaveId]}
               avatar={presentation.dogAvatars?.[marker.slaveId]}
-              shownKey={shownKey}
+              shown={foreground}
               // Above the phone's dot (30), whose name tag layer they carry:
               // the open dog on top, then problems, then the dog carrying a
               // group tag over the faces it covers; each dog its own zIndex
@@ -2275,7 +2293,7 @@ function GoogleTrackingMapRenderer({
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { opacity: splashChrome }]}
       >
-        {!live && usable && foreground && onStopPress && stopPoints && (
+        {!live && usable && overlaysShown && onStopPress && stopPoints && (
           <MarkerA11yLayer
             items={stopPoints.filter(
               item =>
@@ -2289,7 +2307,7 @@ function GoogleTrackingMapRenderer({
             }
           />
         )}
-        {live && usable && foreground && !movingState && onDogPress && (
+        {live && usable && overlaysShown && !movingState && onDogPress && (
           <MarkerA11yLayer
             items={markerA11yItems(dogMarkers, screenPoints, {
               width: cursorLayout.width,
@@ -2304,7 +2322,7 @@ function GoogleTrackingMapRenderer({
         )}
         {live &&
           usable &&
-          foreground &&
+          overlaysShown &&
           !movingState &&
           hints.map(value => (
             <EdgeHintView
@@ -2314,7 +2332,7 @@ function GoogleTrackingMapRenderer({
               onPress={() => frame(value.coordinates)}
             />
           ))}
-        {live && !component && foreground && (loaded || timedOut) && (
+        {live && !component && overlaysShown && (loaded || timedOut) && (
           // 框住全部, 我的位置 and 「今天 x km」 (A1), 12dp above the card; above the tip
           // while it shows.
           <MapButtons
