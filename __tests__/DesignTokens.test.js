@@ -395,3 +395,15 @@ test.each([lightTheme, darkTheme])('missing activity is neutral, distinct and re
   expect(contrast(c.activityMissing, c.surface)).toBeGreaterThanOrEqual(4.5);
   expect(contrast(c.activityMissing, c.bg)).toBeGreaterThanOrEqual(4.5);
 });
+
+test.each([lightTheme, darkTheme])('activityCharging is green, readable as a graphic and apart from the other activity colours ($isDark)', theme => {
+  const c = theme.colors;
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(c.activityCharging.slice(i, i + 2), 16));
+  expect(g).toBeGreaterThan(r);
+  expect(g).toBeGreaterThan(b);
+  for (const other of ['activityLow', 'activityNormal', 'activityHigh', 'activityMissing']) {
+    expect(c.activityCharging).not.toBe(c[other]);
+  }
+  expect(contrast(c.activityCharging, c.bg)).toBeGreaterThanOrEqual(3);
+  expect(contrast(c.activityCharging, c.surface)).toBeGreaterThanOrEqual(3);
+});
