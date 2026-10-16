@@ -9,7 +9,7 @@ import { todayRouteDistance } from '../src/tracking/TodayDistance';
 import { listedMetres, timelineClockMismatches } from '../test-support/TimelineClocks';
 
 // 2026-10-15 (user, #200 停留中真的移動的距離, option D + C): a stay's own
-// moves are on its own row — 「停 N 分・45 m」 — never on a walk minutes or
+// moves are its own (2026-10-16: counted, not shown — 「停 N 分」), never on a walk minutes or
 // hours later; a long stay with much real movement in it (a dog walked round
 // one small place, stopping and going: 10/11 16:21–18:10, 210 m over 16
 // minutes of 109) is 「在附近走動 1 時 49 分・210 m」. A walk row counts its
@@ -102,10 +102,13 @@ describe('a few moves inside an ordinary stay', () => {
     ['walk', 300]]);
   const model = timeline(rows);
 
-  test('stay a stay, the metres on it: 「停 N 分・M m」, not on the walk an hour later', () => {
+  // 2026-10-16 (user): the pill is 「停 N 分」 only; the metres still count in
+  // the summary (not on the walk an hour later either).
+  test('stay a stay: 「停 N 分」 with no metres, its metres not on the walk an hour later', () => {
     const [stay] = stayRows(model).filter(n => n.countedDistanceM > 0);
     expect(stay.wandering).toBeFalsy();
-    expect(nodePill(stay).text).toMatch(/^停 .+・\d+\u00A0m$/u);
+    expect(nodePill(stay).text).toMatch(/^停 [^・]+分$/u);
+    expect(placeSpeech(stay, '某地')).not.toMatch(/公尺|公里/u);
     const walks = timelinePresentation(model.nodes).filter(foot);
     expect(walks.at(-1).countedDistanceM).toBeLessThan(400);
     expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);

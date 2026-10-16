@@ -43,7 +43,8 @@ export const HISTORY_CONFIG = Object.freeze({
     // the departure goes back to where the walk left the last stay, at most
     // this far before the candidate (a stop-and-go dog walk).
     departureBeyondAccuracy: true, departureWalkBackMs: 10 * 60000,
-    // 2026-10-15 (user, #200): a stay's own moves are shown on it; only those
+    // 2026-10-15 (user, #200): a stay's own moves are its own (shown only on
+    // 「在附近走動」 since 2026-10-16); only those
     // within edgeMoveMs of arriving or setting off are the walk's beside it.
     // A stay whose own moves add up to wanderM or more over wanderMinutes
     // distinct minutes or more is 「在附近走動」 (a walk round one place: on

@@ -83,7 +83,8 @@ function day(script, { from = clock(6), every = 10, seed = 7 } = {}) {
 const timeline = (rows, options = {}) => historyTimeline(rows.map(phoneHistoryRow), { subject: 'phone',
   dayStart, dayEnd, today: true, now: rows.at(-1).time + SECOND, timezone: 'Asia/Taipei', ...options });
 const foot = n => n.type === 'movement' && (n.mode === 'walking' || n.mode === 'moving');
-// The rows' metres (#200: a stay's own moves are on its row).
+// The rows' counted metres (#200: a stay's own moves are its own; not shown
+// on 「停 N 分」 since 2026-10-16).
 const rowMetres = model => listedMetres(model.nodes);
 const engineMetres = (rows, batch = 50) => {
   const engine = createTodayRouteEngine({ dayStart });
@@ -242,7 +243,7 @@ describe('the summary is the sum of the rows', () => {
   test('pottering about the last stay on fine fixes keeps its metres in a row', () => {
     // A walk there, then a real move the visit's circle keeps inside, and no
     // walk after it: its metres are in a row. 2026-10-15 (user, #200): the
-    // stay's own (「停 N 分・M m」), not the walk that arrived 20 min before.
+    // stay's own (counted; its pill 「停 N 分」), not the walk that arrived 20 min before.
     const rows = day([['walk', 300, { step: 11 }], ['home', 1200], ['walk', 30, { step: 3, every: 5 }],
       ['walk', 30, { step: -3, every: 5 }], ['home', 1200]]);
     const model = timeline(rows);
