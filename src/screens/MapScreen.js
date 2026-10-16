@@ -6,7 +6,7 @@ import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { dismissWaitingSources, waitingSourcesCount, waitingSourcesState } from '../map/WaitingSources';
 import { useStyles, makeStyles } from '../theme/ThemeProvider';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HistoryScreen from '../mapHistory/HistoryScreen';
 import { historyPanelMinHeight } from '../map/MapPanelHeight';
 import { useHistoryScreen } from '../mapHistory/useHistoryScreen';
@@ -981,18 +981,27 @@ export default function MapScreen({
   // (on top of the others) and always brings the map to it: centred in the
   // map left above the card, the user's zoom kept (`always`); the order and
   // the card itself stay.
+  // The new dog's card and map are worked out as a transition (2026-10-16:
+  // a swipe paused before the row moved on): the row's slide, started on the
+  // native driver just before, is sent to the UI thread first, and a swipe
+  // on to the next dog interrupts the work for this one instead of waiting
+  // for it.
+  const switchState = useRef({});
+  switchState.current = { cardDogId, switchDogs };
   const selectDog = useCallback(
     to => {
-      if (to == null || to === cardDogId) return;
+      if (to == null || to === switchState.current.cardDogId) return;
       cardGeneration.current += 1;
-      setSelected({ kind: 'dog', slaveId: to });
-      setFocusRequest({ slaveId: to, key: Date.now(), always: true });
+      startTransition(() => {
+        setSelected({ kind: 'dog', slaveId: to });
+        setFocusRequest({ slaveId: to, key: Date.now(), always: true });
+      });
     },
-    [cardDogId],
+    [],
   );
   const stepDog = useCallback(
-    step => selectDog(switchTarget(switchDogs, cardDogId, step)),
-    [selectDog, switchDogs, cardDogId],
+    step => selectDog(switchTarget(switchState.current.switchDogs, switchState.current.cardDogId, step)),
+    [selectDog],
   );
   // The row of dogs (DogCarousel): every dog in the order, each once.
   const markerById = useMemo(
@@ -1035,23 +1044,27 @@ export default function MapScreen({
     return [{ key: cardModel.slaveId, row: own, headline: cardModel.headline }, ...others];
   }, [otherDogs, otherPlaces, now, cloudClockInput, pauses, catchUpSince, cloudDogs?.ranges, livePhone, nativePhone, fixture,
     dogAliases, cardModel, cardDog, address]);
+  // The row's dogs stay the same objects while only the open dog changes
+  // (the markers are re-made then, for the selected one's layer), so the row
+  // of dogs keeps its faces and their animations from dog to dog.
+  const switchKey = JSON.stringify(switchDogs.map(id => [id, dogName(id, dogAliases),
+    !!markerById[id]?.problem, !!markerById[id]?.stale]));
+  const switchListDogs = useMemo(
+    () => JSON.parse(switchKey).map(([slaveId, name, problem, stale]) =>
+      ({ slaveId, name, avatar: avatars[slaveId] ?? null, problem, stale })),
+    [switchKey, avatars],
+  );
   const switcher = useMemo(() => {
     if (!switching) return null;
     return {
-      dogs: switchDogs.map(id => ({
-        slaveId: id,
-        name: dogName(id, dogAliases),
-        avatar: avatars[id] ?? null,
-        problem: !!markerById[id]?.problem,
-        stale: !!markerById[id]?.stale,
-      })),
+      dogs: switchListDogs,
       // No wrap-around: at either end there is nothing further that way.
       previous: switchTarget(switchDogs, cardDogId, -1),
       next: switchTarget(switchDogs, cardDogId, 1),
       onSelect: selectDog,
       onStep: stepDog,
     };
-  }, [switching, cardDogId, switchDogs, dogAliases, avatars, markerById, selectDog, stepDog]);
+  }, [switching, cardDogId, switchDogs, switchListDogs, selectDog, stepDog]);
   // The history page opens at once (2026-10-15 audit): whom it shows travels
   // with the route (App's openTrackFrom), so it never waits for the old
   // history query (useMapHistory.save) to be stored. That query is written in

@@ -25,7 +25,7 @@ import { t } from '../i18n';
 //   native driver, runs a few dp past and settles back on a spring (let go
 //   still: the spring alone); past an end, back to the end dog. No
 //   wrap-around. ‹ › at the two ends move one dog at a time.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import DogAvatar from '../dogs/DogAvatar';
 import BangGlyph from '../components/BangGlyph';
@@ -241,6 +241,21 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     if (dog && dog.slaveId !== currentId) onSelect?.(dog.slaveId);
   };
   useEffect(() => () => sliding.current?.stop(), []);
+  // A face tapped: the open one opens the edit sheet; another is picked at
+  // once and the row slides to it. One function for every face (kept by
+  // ref), so a face only draws again when its own dog or state changes.
+  const latest = useRef({});
+  latest.current = { currentId, onEdit, onSelect, slideTo };
+  const pick = useRef(({ dog, index }) => {
+    const { currentId: openId, onEdit: edit, onSelect: select, slideTo: slide } = latest.current;
+    if (dog.slaveId === openId) {
+      edit?.();
+      return;
+    }
+    at.current = index;
+    slide(index);
+    select?.(dog.slaveId);
+  }).current;
   // ‹ ›: the dog before or after the open one, with the same landing.
   const openIndex = indexOf(currentId);
   const step = direction => {
@@ -308,48 +323,19 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
       ))}
       <View testID="dog-card-carousel" style={[styles.window, { height: rowHeight }]} {...responder}>
         <Animated.View style={[styles.strip, { paddingLeft: side + BOUNCE, transform: [{ translateX: shift }] }]}>
-          {faces.map(({ dog, index, scale, opacity, middle, nameOpacity }) => {
-            const open = dog.slaveId === currentId;
+          {faces.map(face => {
+            const open = face.dog.slaveId === currentId;
             return (
-              <Pressable
-                key={dog.slaveId}
-                testID={open ? 'dog-card-edit' : `dog-card-pick-${dog.slaveId}`}
-                accessibilityRole="button"
-                accessibilityLabel={open ? t('c378', { dogName: dog.name }) : t('c1350', { name: dog.name })}
-                accessibilityActions={open ? actions : undefined}
-                onAccessibilityAction={open ? onAction : undefined}
-                onPress={() => {
-                  if (open) {
-                    onEdit?.();
-                    return;
-                  }
-                  // A tap picks at once; the row slides to it.
-                  at.current = index;
-                  slideTo(index);
-                  onSelect?.(dog.slaveId);
-                }}
-                style={({ pressed }) => [styles.slot, pressed && !open && styles.pressed]}
-              >
-                <Animated.View style={[styles.face, { transform: [{ scale }] }]}>
-                  <Animated.View style={{ opacity }}>
-                    <DogAvatar avatar={dog.avatar} size={carousel.face[0]} stale={dog.stale} border={0} />
-                  </Animated.View>
-                  {/* A problem's red 「!」 keeps its full strength on a faded face. */}
-                  {dog.problem && (
-                    <View style={styles.bang}>
-                      <BangGlyph size={sizes.badge.size} background={colors.problemBadge}
-                        color={colors.avatarFrameMap} />
-                    </View>
-                  )}
-                  <Animated.View style={[styles.editBadge, { opacity: middle }]} testID={open ? 'dog-card-edit-badge' : undefined}>
-                    <Glyph name="pencil" color={colors.textMuted} size={sizes.card.editBadgeIcon} />
-                  </Animated.View>
-                </Animated.View>
-                <Animated.Text style={[styles.name, { opacity: nameOpacity, transform: [{ scale }] }]}
-                  numberOfLines={linesFor(1)} accessible={false}>
-                  {dog.name}
-                </Animated.Text>
-              </Pressable>
+              <Face
+                key={face.dog.slaveId}
+                face={face}
+                open={open}
+                actions={open ? actions : undefined}
+                onAction={open ? onAction : undefined}
+                onPick={pick}
+                styles={styles}
+                colors={colors}
+              />
             );
           })}
         </Animated.View>
@@ -364,6 +350,47 @@ export default function DogCarousel({ dogs, currentId, width, onSelect, onEdit, 
     </View>
   );
 }
+
+/**
+ * One dog in the row: its face (with the 「!」 and, in the middle, the pencil
+ * badge) and its name, sized and faded by the row's position on the native
+ * driver. Drawn again only when its dog, its animations or whether it is the
+ * open one change (2026-10-16: every face was drawn again on every swipe).
+ */
+const Face = memo(function Face({ face, open, actions, onAction, onPick, styles, colors }) {
+  const { dog, scale, opacity, middle, nameOpacity } = face;
+  return (
+    <Pressable
+      testID={open ? 'dog-card-edit' : `dog-card-pick-${dog.slaveId}`}
+      accessibilityRole="button"
+      accessibilityLabel={open ? t('c378', { dogName: dog.name }) : t('c1350', { name: dog.name })}
+      accessibilityActions={actions}
+      onAccessibilityAction={onAction}
+      onPress={() => onPick(face)}
+      style={({ pressed }) => [styles.slot, pressed && !open && styles.pressed]}
+    >
+      <Animated.View style={[styles.face, { transform: [{ scale }] }]}>
+        <Animated.View style={{ opacity }}>
+          <DogAvatar avatar={dog.avatar} size={carousel.face[0]} stale={dog.stale} border={0} />
+        </Animated.View>
+        {/* A problem's red 「!」 keeps its full strength on a faded face. */}
+        {dog.problem && (
+          <View style={styles.bang}>
+            <BangGlyph size={sizes.badge.size} background={colors.problemBadge}
+              color={colors.avatarFrameMap} />
+          </View>
+        )}
+        <Animated.View style={[styles.editBadge, { opacity: middle }]} testID={open ? 'dog-card-edit-badge' : undefined}>
+          <Glyph name="pencil" color={colors.textMuted} size={sizes.card.editBadgeIcon} />
+        </Animated.View>
+      </Animated.View>
+      <Animated.Text style={[styles.name, { opacity: nameOpacity, transform: [{ scale }] }]}
+        numberOfLines={linesFor(1)} accessible={false}>
+        {dog.name}
+      </Animated.Text>
+    </Pressable>
+  );
+});
 
 /**
  * A small ‹ or › in its own zone at one end of the row (2026-10-14, option
