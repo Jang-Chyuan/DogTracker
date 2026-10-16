@@ -11,7 +11,7 @@ import MapView, {
 } from 'react-native-maps';
 import NativePlatform from '../specs/NativeTrackingPlatform';
 import TrackingMap from '../src/map/TrackingMap';
-import { savedCamera } from '../src/map/GoogleTrackingMap';
+import { savedCamera, STREET_ZOOM } from '../src/map/GoogleTrackingMap';
 import { GOOGLE_MAP_PROVIDER } from '../src/map/GoogleMapProvider';
 import MapScreen from '../src/screens/MapScreen';
 import { trackingPoint } from '../__fixtures__/TrackingPointFixtures';
@@ -1019,6 +1019,63 @@ test('066: 我的位置 with a card open puts the phone in the middle of the map
   }
 });
 
+// 我的位置 as Google Maps: zoomed out further than the street view
+// (STREET_ZOOM 16) it zooms in to it; closer than that it keeps the zoom.
+const pressMyLocation = async () => {
+  await act(async () => renderer.root.findAll(node => node.props.testID === 'map-my-location'
+    && typeof node.props.onPress === 'function')[0].props.onPress());
+};
+const phoneAt = async coordinate => {
+  await act(async () => renderer.root.findByType(MapView).props.onUserLocationChange({
+    nativeEvent: { coordinate } }));
+};
+test('我的位置 zoomed out: moves to the phone and zooms in to the street view (16)', async () => {
+  await render({ phoneEnabled: true });
+  await readyMap();
+  await phoneAt({ latitude: 25.002, longitude: 121.002 });
+  mockCamera.animateCamera.mockClear();
+  mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom: 11, heading: 0, pitch: 0 });
+  await pressMyLocation();
+  expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({
+    center: { latitude: 25.002, longitude: 121.002 }, zoom: STREET_ZOOM });
+  expect(STREET_ZOOM).toBe(16);
+});
+test('我的位置 at or closer than the street view: only moves, keeping the zoom', async () => {
+  await render({ phoneEnabled: true });
+  await readyMap();
+  await phoneAt({ latitude: 25.002, longitude: 121.002 });
+  for (const zoom of [16, 18.5]) {
+    mockCamera.animateCamera.mockClear();
+    mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom, heading: 0, pitch: 0 });
+    await pressMyLocation();
+    expect(mockCamera.animateCamera.mock.calls[0][0]).toEqual({
+      center: { latitude: 25.002, longitude: 121.002 } });
+  }
+});
+test('066 + zoom: zoomed out with a card open, the phone lands above the card at the street view', async () => {
+  // As the 066 test: at the current zoom the centre would be 140 units below
+  // the phone; zooming in 4 levels (12 → 16) shrinks that to 140 / 16.
+  mockCamera.pointForCoordinate = jest.fn(async () => ({ x: 200, y: 700 }));
+  mockCamera.coordinateForPoint = jest.fn(async ({ x, y }) => ({ latitude: y, longitude: x }));
+  try {
+    await render({ bottomInset: 80, coverBottom: 300, phoneEnabled: true });
+    await readyMap();
+    await phoneAt({ latitude: 700, longitude: 200 });
+    await act(async () => renderer.root.findByProps({ testID: 'tracking-map-container' })
+      .props.onLayout({ nativeEvent: { layout: { width: 400, height: 800 } } }));
+    mockCamera.animateCamera.mockClear();
+    mockCamera.getCamera.mockResolvedValueOnce({ center: master.coordinate, zoom: 12, heading: 0, pitch: 0 });
+    await pressMyLocation();
+    expect(mockCamera.coordinateForPoint).toHaveBeenCalledWith({ x: 200, y: 840 });
+    const [to] = mockCamera.animateCamera.mock.calls[0];
+    expect(to.zoom).toBe(16);
+    expect(to.center.latitude).toBeCloseTo(700 + 140 / 16);
+    expect(to.center.longitude).toBeCloseTo(200);
+  } finally {
+    delete mockCamera.pointForCoordinate;
+    delete mockCamera.coordinateForPoint;
+  }
+});
 test('dog A then dog B within the hold: a map-only tap on B outside A\'s marker opens B', async () => {
   const { PixelRatio } = require('react-native');
   const { markerFrame } = require('../src/map/DogMarkerView');
