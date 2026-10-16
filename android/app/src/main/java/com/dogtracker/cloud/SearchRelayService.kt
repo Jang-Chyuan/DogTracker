@@ -110,16 +110,16 @@ class SearchRelayService : Service() {
     val delay = SearchRelayTiming.waitMs(next, now, nextPassElapsed - SystemClock.elapsedRealtime())
     if (delay == null) { stopSelf(); return }
     if (delay > 0) {
-      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1147))
+      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1428))
       handler.postDelayed(tick, delay)
       return
     }
     val online = network.getNetworkCapabilities(network.activeNetwork)
       ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-    if (!online) { show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1148)); return }
+    if (!online) { show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1428)); return }
     val context = (application as ReactApplication).reactHost?.currentReactContext
     if (context == null) {
-      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1149))
+      show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1428))
       handler.postDelayed(tick, SearchRelayTiming.reactWaitMs(reactWaitAttempt))
       reactWaitAttempt = minOf(reactWaitAttempt + 1, 4)
       return
@@ -152,7 +152,7 @@ class SearchRelayService : Service() {
       .setOnlyAlertOnce(true).setOngoing(true).build())
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1152))
+    show(com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1429))
     val next = intent?.getStringExtra("owner").orEmpty()
     if (next.isEmpty() || timedOut) { stopSelf(); return START_NOT_STICKY }
     if (next != owner) {
