@@ -1,6 +1,6 @@
 import { captureMapRead } from './CloudPublication';
 import { logger } from '../logger';
-import { useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { createHoldStore, HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { distanceMeters, fixQuality, HOLD_CONFIG } from '../placement/IndoorHold';
 import { cloudRowOnPhoneClock, serverClock } from './ServerClock';
@@ -308,12 +308,14 @@ export function useCloudDogs(database, owner, enabled, now = Date.now, trackSinc
         }
         // A slow old context read cannot attach its holds to positions already
         // accepted by the independent latest reader for a newer publication.
-        if (alive && (!latestFirst || acceptsCloud() || baseline || attempt.commit == null)) setCache({ owner, database, value: {
+        // A transition (as the feed's rows): the map's markers and holds
+        // re-render in slices, not one long JS task (2026-10-16).
+        if (alive && (!latestFirst || acceptsCloud() || baseline || attempt.commit == null)) startTransition(() => setCache({ owner, database, value: {
           rows: attempt.rows, packets: [...packets.filter(row => row.source !== 'cloud'), ...attempt.packets],
           track: attempt.track, holds, statuses, ranges, batteries, error: '', loaded: true,
           cloudCommit: attempt.commit, ...(latestFirst ? { cachedBaseline: baseline, cloudPublication: attempt.cloudPublication ?? null,
             contextPairs: acceptsCloud() || baseline ? latestPairs(snapshot) : null } : {}),
-        } });
+        } }));
       } catch (error) {
         // Keep the last rows: a failed read must not empty the map.
         if (alive) setCache(current => {
