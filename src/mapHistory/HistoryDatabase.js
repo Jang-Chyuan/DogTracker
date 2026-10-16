@@ -469,7 +469,7 @@ export function createHistoryDatabase(db) {
       }
       found.sort((a, b) => Number(a.slave_id) - Number(b.slave_id) || Number(a.master_id) - Number(b.master_id));
       return found
-        .map(row => ({ master: Number(row.master_id), slave: Number(row.slave_id) }))
+        .map(pair => ({ master: Number(pair.master_id), slave: Number(pair.slave_id) }))
         // A row without a slave id (Number(null) is 0) is a Master-only packet,
         // not a dog. It sorted first, so the card offered "狗 0" and fell back
         // to it when a source switch dropped the previous pick — which then

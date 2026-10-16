@@ -1142,11 +1142,11 @@ test('E09/E10 every fixture keeps history and activity reads inside its own data
   const end = FIXTURE_NOW + 60000;
   const history = await fixture.history.readDay({ subject: 'dog', slaveId: 6, start, end });
   expect(history.rows.length).toBeGreaterThan(0);
-  const card = await fixture.readCardRows(6, start);
+  const cardRows = await fixture.readCardRows(6, start);
   const activity = await fixture.readActivity(6, { start, end, detail: 'raw' });
-  expect(activity.local).toEqual(card.local);
-  expect(activity.cloud).toEqual(card.cloud);
-  expect(await fixture.readActivityEarliest(6)).toBe(Math.min(...card.local.map(row => row.time)));
+  expect(activity.local).toEqual(cardRows.local);
+  expect(activity.cloud).toEqual(cardRows.cloud);
+  expect(await fixture.readActivityEarliest(6)).toBe(Math.min(...cardRows.local.map(row => row.time)));
   const other = await fixture.readActivity(4, { start, end, detail: 'raw' });
   const otherCard = await fixture.readCardRows(4, start);
   expect(other.local).toEqual(otherCard.local);

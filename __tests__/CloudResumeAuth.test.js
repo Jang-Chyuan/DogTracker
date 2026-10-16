@@ -91,8 +91,8 @@ beforeEach(async () => {
   engine = createIndependentCloudSync({ client: cloud.client, database: { ...database, latestStorageIsolated: true },
     onChange: value => states.push(value) });
   // As useCloudSync: auth events drive the engine's owner.
-  subscription = cloud.client.auth.onAuthStateChange((event, session) => {
-    events.push(event); engine.setSession(session);
+  subscription = cloud.client.auth.onAuthStateChange((authEvent, session) => {
+    events.push(authEvent); engine.setSession(session);
   }).data.subscription;
   await jest.advanceTimersByTimeAsync(0); await flush();
   // An ordinary foreground pass while the token is fresh, then 2 h away.
@@ -152,7 +152,7 @@ test('resume inside the refresh cooldown waits for the session instead of showin
   expect(shownFailure()).toEqual([]);
   expect(cloud.net.rest.length).toBeGreaterThan(0);
   expect(cloud.net.rest.every(call => call.bearer !== PUBLISHABLE && call.bearer !== cloud.first.access_token)).toBe(true);
-  expect(events.filter(event => event === 'SIGNED_OUT')).toEqual([]);
+  expect(events.filter(authEvent => authEvent === 'SIGNED_OUT')).toEqual([]);
 });
 
 test('resume with an expired token and a working network refreshes before the first request', async () => {
@@ -180,12 +180,12 @@ test('a revoked refresh token still ends the sign-in once, with no anonymous req
   cloud.net.refresh = 'revoked';
   await resume(); await flush();
   expect(cloud.net.tokenCalls).toBe(1);
-  expect(events.filter(event => event === 'SIGNED_OUT')).toHaveLength(1);
+  expect(events.filter(authEvent => authEvent === 'SIGNED_OUT')).toHaveLength(1);
   expect(states.at(-1)).toMatchObject({ owner: null, busy: false, offline: false });
   await jest.advanceTimersByTimeAsync(120000); await flush();
   expect(cloud.net.tokenCalls).toBe(1);
   expect(cloud.net.rest).toEqual([]);
-  expect(events.filter(event => event === 'SIGNED_OUT')).toHaveLength(1);
+  expect(events.filter(authEvent => authEvent === 'SIGNED_OUT')).toHaveLength(1);
 });
 
 test('a server-refused token whose refresh is also refused reports auth once per attempt without retrying', async () => {

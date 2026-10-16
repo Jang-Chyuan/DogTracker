@@ -1307,6 +1307,9 @@ function TrackerApp({ resume = null, onRestart }) {
   const headerTitle = route.name === 'wifi' && receiverSetUp(receiverState)
     ? wifiSummary(wifi, receiverName, true) : pageTitle(route);
   const light = LIGHT_PAGES.has(route.name);
+  const settingsContentStyle = {
+    paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0,
+  };
   const full = FULL_PAGES.has(route.name);
 
   return (
@@ -1445,7 +1448,10 @@ function TrackerApp({ resume = null, onRestart }) {
         )}
         {(light || full) && (
           <View style={styles.page}>
-            <View testID="settings-page-content" style={[styles.page, { paddingTop: light && n3Shown ? n3Height + space.s * 2 : 0 }]}>
+            <View
+              testID="settings-page-content"
+              style={[styles.page, settingsContentStyle]}
+            >
               {page}
             </View>
             {light && n3Shown && (

@@ -64,7 +64,7 @@ const inScroll = node => {
 
 // ---- the picture -------------------------------------------------------------
 const px = (png, x, y) => {
-  const i = (png.width * Math.min(png.height - 1, Math.max(0, y)) + Math.min(png.width - 1, Math.max(0, x))) << 2;
+  const i = Math.imul(png.width * Math.min(png.height - 1, Math.max(0, y)) + Math.min(png.width - 1, Math.max(0, x)), 4);
   return [png.data[i], png.data[i + 1], png.data[i + 2]];
 };
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

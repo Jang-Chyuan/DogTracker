@@ -76,7 +76,7 @@ test('an ignored-abort archive transport may reject late without an unhandled re
   const save = jest.spyOn(database, 'savePage'), unhandled = jest.fn();
   process.on('unhandledRejection', unhandled);
   const task = history(network.client, database, abort.signal);
-  const refused = expect(task).rejects.toThrow();
+  const refused = (async () => { await expect(task).rejects.toThrow(); })();
   try {
     await flush(); expect(network.calls).toHaveLength(1);
     abort.abort(); await refused;
