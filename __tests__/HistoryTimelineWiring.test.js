@@ -8,7 +8,7 @@ import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory
 import { dogHistoryRow, phoneHistoryRow } from '../src/history/HistoryRows';
 import { historyTimeline } from '../src/history';
 import {
-  clock, emptyText, km, listDuration, nodePill, placeLines, sectionText, summaryDuration, summaryText,
+  clock, emptyText, km, listDuration, nodePill, placeLines, placeSpeech, sectionText, summaryDuration, summaryText,
 } from '../src/history/HistoryText';
 import { ADDRESS_CONFIG, AddressLookupContext, createAddressLookup } from '../src/placement/AddressLookup';
 import HistoryTimelineList from '../src/mapHistory/HistoryTimelineList';
@@ -17,6 +17,7 @@ import { endOfDay, formatTodayDistance, startOfToday } from '../src/tracking/Tod
 import { historyTargetOf, useHistoryDayRows } from '../src/mapHistory/useHistoryScreen';
 import { timelinePresentation } from '../src/history/HistoryTimelinePresentation';
 import { listedMetres } from '../test-support/TimelineClocks';
+import { exportTimelineRows } from '../src/mapHistory/ExportSnapshot';
 import { DEFAULT_TRACKING_PREFERENCES } from '../src/tracking/TrackingPreferences';
 
 const MINUTE = 60000;
@@ -204,13 +205,23 @@ describe('fixtures', () => {
     expect(model.distanceM).toBe(0);
   });
   // 2026-10-15 (#200): a walk round a small park is 「在附近走動」 with its
-  // metres; a stay with a few steps 「停 N 分・M m」; rows add up.
-  test('history-wandering: 在附近走動 and a stay with its own metres', async () => {
+  // metres; a stay with a few steps 「停 N 分」 (2026-10-16: no metres shown); the
+  // rows' counted metres add up.
+  test('history-wandering: 在附近走動 with its metres, a stay with metres but a pill without', async () => {
     const { fixture, model } = await fixtureList('history-wandering');
     const shown = timelinePresentation(model.nodes).map(n => n.terminalStay ?? n.departureStay ?? n);
     const pills = shown.filter(n => n.type === 'stop').map(n => nodePill(n).text);
     expect(pills.some(text => /^在附近走動 .+・\d+\u00A0m$/u.test(text))).toBe(true);
-    expect(pills.some(text => /^停 .+・\d+\u00A0m$/u.test(text))).toBe(true);
+    // 2026-10-16 (user): an ordinary stay's pill never shows metres, even
+    // when it has some (they still count in the summary).
+    expect(shown.some(n => n.type === 'stop' && !n.wandering && n.countedDistanceM >= 1)).toBe(true);
+    expect(pills.filter(text => text.startsWith('停 ')).every(text => !text.includes('・'))).toBe(true);
+    // The same in the PNG's list and in TalkBack.
+    const png = exportTimelineRows(model.nodes, () => null).filter(row => row.pill).map(row => row.pill.text);
+    expect(png.some(text => /^在附近走動 .+・\d+\u00A0m$/u.test(text))).toBe(true);
+    expect(png.filter(text => text.startsWith('停 ')).every(text => !text.includes('・'))).toBe(true);
+    const speech = shown.filter(n => n.type === 'stop').map(n => [n.wandering, placeSpeech(n, '某地')]);
+    expect(speech.every(([wandering, text]) => wandering ? /公尺/u.test(text) : !/公尺|公里/u.test(text))).toBe(true);
     expect(listedMetres(model.nodes)).toBeCloseTo(model.distanceM, 6);
     expect(formatTodayDistance(fixture.todayRoute.metres)).toBe(`今天 ${km(model.distanceM)}`);
   });

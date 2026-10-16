@@ -607,7 +607,7 @@ export function historyTimeline(rows = [], options = {}) {
   // so the rows add up to the summary.
   let carried = 0;
   // 2026-10-15 (user, #200, phone): a stay's own moves are that stay's
-  // (「停 N 分・45 m」, or 「在附近走動」 below), never a walk's minutes or
+  // (counted, not shown on 「停 N 分」 since 2026-10-16; or 「在附近走動」 below), never a walk's minutes or
   // hours later: a walk row counts its own stretch. Only the first and last
   // edgeMoveMs of a stay belong to the walk beside it — the steps of
   // arriving and of setting off (the visit's circle lags the walk by a few
@@ -843,7 +843,7 @@ export function historyTimeline(rows = [], options = {}) {
     // 2026-10-15 (user, #200): a stay whose own moves add up to wanderM over
     // wanderMinutes distinct minutes or more was a walk round one place
     // (a dog walked in a small park, stopping and going): 「在附近走動」, its
-    // metres on it. Fewer or shorter moves stay a stay: 「停 N 分・45 m」.
+    // metres on it. Fewer or shorter moves stay a stay: 「停 N 分」 (metres counted, not shown).
     if (ownStays && config.wanderM) {
       for (const node of nodes) {
         if (node.type !== 'stop' || !(node.countedDistanceM >= config.wanderM - 1e-8)) continue;

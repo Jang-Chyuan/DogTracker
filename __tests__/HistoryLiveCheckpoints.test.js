@@ -92,7 +92,8 @@ describe('the list adds up at every 10 minutes of a recorded day', () => {
       const listed = timelinePresentation(model.nodes);
       const at = new Date(t).toTimeString().slice(0, 5);
       for (const mismatch of timelineMismatches(model)) problems.push(`${at} ${mismatch.kind} ${mismatch.type ?? ''}`);
-      // The rows' metres (#200: a stay's own moves are on its row).
+      // The rows' counted metres (#200: a stay's own moves are its own; not
+      // shown on 「停 N 分」 since 2026-10-16).
       const metres = listedMetres(model.nodes);
       if (Math.abs(metres - model.distanceM) > 1e-6) problems.push(`${at} rows ${metres} m, summary ${model.distanceM} m`);
       const numbers = listed.filter(row => row.number != null).map(row => row.number);
