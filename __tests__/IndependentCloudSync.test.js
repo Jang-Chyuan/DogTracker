@@ -90,7 +90,7 @@ test('same-process quick resume commits and React ACKs new latest while prior ar
   expect(engine.mapPublication().acknowledgeMapRead(oldReadback)).toBe(false);
   expect(latestMapApplied({ ...current, getMapPublication: () => engine.mapPublication() }, 'invented-owner', dogs)).toBe(true);
   retained.held.resolve(); await flush();
-  // The held transaction is the first archive page's (the start no longer
+  // The held transaction is the first archive publication's (the start no longer
   // trims inside initialize, 2026-10-16): it and the resume's pass both publish.
   expect(current.archiveRevision).toBe(2); expect(current.archiveCutoff).toBeGreaterThan(NOW);
 });

@@ -1,5 +1,6 @@
 import { createMemoryConnection } from '../__fixtures__/SQLiteConnection';
 import { createDogDatabase } from '../src/database/DogDatabase';
+import { withCloudSyncSlot } from '../src/cloud/CloudSyncSlot';
 import { CLOUD_BUDGET_BYTES, CLOUD_MAX_ROWS, CLOUD_PAYLOAD_MS, TRIM_DELAY_MS, TRIM_PAUSE_MS,
   createCloudDatabase } from '../src/cloud/CloudDatabase';
 
@@ -47,6 +48,7 @@ test('keeps the newest rows globally on upgrade and writes without changing sync
 });
 
 test('the cap is a size budget, and the original JSON only outlives a day', async () => {
+  jest.useFakeTimers();
   const connection = createMemoryConnection();
   const sql = connection.sqlite;
   try {
@@ -64,17 +66,20 @@ test('the cap is a size budget, and the original JSON only outlives a day', asyn
       VALUES (?, 'a', ?, 7, 4, '{"lat":1}')`);
     insert.run(now - 2 * CLOUD_PAYLOAD_MS, 'old');
     insert.run(now - 60000, 'fresh');
-    // The sweep runs on open and then every twentieth page.
+    // The sweep runs a while after open (in the background, PAYLOAD_BATCH
+    // rows a statement) and then every twentieth page.
     await createCloudDatabase({ ...connection }).initialize();
     const payload = event => sql.prepare(
       'SELECT raw_payload FROM supabase_dog_status WHERE event_id = ?').get(event).raw_payload;
+    expect(payload('old')).toBe('{"lat":1}');
+    await jest.advanceTimersByTimeAsync(TRIM_DELAY_MS + 10 * TRIM_PAUSE_MS);
     expect(payload('old')).toBeNull();
     expect(payload('fresh')).toBe('{"lat":1}');
     // Nothing is evicted while the phone is nowhere near the budget.
     const usage = await cloud.usage();
     expect(usage).toMatchObject({ rows: 2, budget: CLOUD_BUDGET_BYTES });
     expect(usage.bytes).toBe(2 * 560);
-  } finally { connection.close(); }
+  } finally { connection.close(); jest.useRealTimers(); }
 });
 
 test('after start, a table over the cap is brought to it in the background, 500 rows a transaction', async () => {
@@ -108,4 +113,28 @@ test('after start, a table over the cap is brought to it in the background, 500 
     expect(plan).toMatch(/SCAN supabase_dog_status USING (COVERING )?INDEX idx_supabase_dog_status_received_at_id/);
     expect(trims.flat().some(q => /OFFSET/.test(q))).toBe(false);
   } finally { connection.close(); jest.useRealTimers(); }
+});
+
+test('review: the background trim waits for a download job holding the cloud sync slot', async () => {
+  jest.useFakeTimers();
+  const connection = createMemoryConnection();
+  const sql = connection.sqlite;
+  let release;
+  try {
+    await createDogDatabase(connection).initialize();
+    const cloud = createCloudDatabase(connection, { maxRows: 100 });
+    await cloud.initialize();
+    sql.exec('INSERT INTO cloud_row_count(id, n) VALUES (1, 0)');
+    const insert = sql.prepare('INSERT INTO supabase_dog_status (received_at, owner_user_id, event_id, master_id) VALUES (?, ?, ?, 5)');
+    for (let i = 1; i <= 300; i += 1) insert.run(i, 'a', String(i));
+    // A manual download is between its begin and its publish.
+    const job = withCloudSyncSlot(() => new Promise(resolve => { release = resolve; }));
+    await createCloudDatabase({ ...connection }, { maxRows: 100 }).initialize();
+    await jest.advanceTimersByTimeAsync(TRIM_DELAY_MS + 50 * TRIM_PAUSE_MS);
+    expect(sql.prepare('SELECT COUNT(*) AS n FROM supabase_dog_status').get().n).toBe(300);
+    release();
+    await job;
+    await jest.advanceTimersByTimeAsync(50 * TRIM_PAUSE_MS);
+    expect(sql.prepare('SELECT COUNT(*) AS n FROM supabase_dog_status').get().n).toBe(100);
+  } finally { release?.(); connection.close(); jest.useRealTimers(); }
 });

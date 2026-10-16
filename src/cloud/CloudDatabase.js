@@ -6,6 +6,7 @@ import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
 import { createLatestSnapshotLifecycle } from './LatestSnapshotLifecycle';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
+import { withCloudSyncSlot } from './CloudSyncSlot';
 import { cloudTrackTime } from './CloudTrackTime';
 import { FUTURE_TOLERANCE_MS } from './ServerClock';
 import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
@@ -37,9 +38,13 @@ export const CLOUD_PAYLOAD_MS = 24 * 60 * 60 * 1000;
 // 50 ms because it has to look at the rows themselves, so it runs every 20
 // pages instead; the worst case is a day's payloads living 20,000 rows longer.
 const PAYLOAD_EVERY_PAGES = 20;
-const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
+const dropOldPayload = rows => `UPDATE supabase_dog_status SET raw_payload = NULL
   WHERE id IN (SELECT id FROM supabase_dog_status
-    WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT 1000)`;
+    WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT ${rows})`;
+const DROP_OLD_PAYLOAD = dropOldPayload(1000);
+// After start, in the background: rewriting a row without its JSON is slow
+// (1,000 rows held the write lock 1.4–2.7 s at every start on an emulator).
+export const PAYLOAD_BATCH = 200;
 
 // Enumerate dogs by seeking to the next indexed id, then seek each newest row.
 // DISTINCT still walks the whole account even when its output has only six dogs.
@@ -184,7 +189,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
     if (!owner) throw new Error(t("c572"));
   };
   // Databases downloaded by older versions (or over a lowered cap) are brought
-  // to the cap after start, not inside initialize: TRIM_BATCH rows a
+  // to the cap after start, not inside initialize (nor the old JSON dropped): TRIM_BATCH rows a
   // statement, each its own transaction (the write lock only for those
   // rows), a pause between, on the App's queue in turn with everything else.
   // Without the counter (no page downloaded since the update) it waits: the
@@ -195,14 +200,25 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
     capTrims.add(key);
     const excess = async () => Number(rows(await connection.executeAsync(
       `SELECT (SELECT n FROM cloud_row_count WHERE id = 1) - ${cap} AS excess`))[0]?.excess);
-    const step = () => withConnectionLock(connection, async () => {
+    // Each step waits for the cloud sync slot too: a download job (manual or
+    // automatic) holds it from begin to publish and relies on the published
+    // rows it skipped staying there (Codex review: a trim in between let a
+    // manual day publish complete=1 without its oldest row).
+    const trim = () => withCloudSyncSlot(() => withConnectionLock(connection, async () => {
       const over = await excess();
       if (!(over > 0)) return false;
       const statement = trimOldest(TRIM_BATCH);
       await executeBatch([{ query: invalidateEvictedCoverage(statement), params: [] }, { query: statement, params: [] }]);
       return over > TRIM_BATCH;
-    }).then(more => { if (more) setTimeout(step, TRIM_PAUSE_MS); else capTrims.delete(key); }, () => capTrims.delete(key));
-    setTimeout(step, TRIM_DELAY_MS);
+    }));
+    // Then the original JSON older than CLOUD_PAYLOAD_MS, PAYLOAD_BATCH rows a statement.
+    const payload = () => withCloudSyncSlot(() => withConnectionLock(connection, async () => {
+      const result = await connection.executeAsync(dropOldPayload(PAYLOAD_BATCH), [Date.now() - CLOUD_PAYLOAD_MS]);
+      return Number(result?.rowsAffected) >= PAYLOAD_BATCH;
+    }));
+    const next = (work, then) => work().then(more => { if (more) setTimeout(() => next(work, then), TRIM_PAUSE_MS); else then(); },
+      () => capTrims.delete(key));
+    setTimeout(() => next(trim, () => next(payload, () => capTrims.delete(key))), TRIM_DELAY_MS);
   }
 
   return {
@@ -334,7 +350,6 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       )`);
       await initializeHistoryCoverage(connection);
       await fixRelayedFutureTimes();
-      await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
