@@ -6,6 +6,7 @@ import { createLatestSnapshotDatabase } from './CloudLatestSnapshot';
 import { createLatestSnapshotLifecycle } from './LatestSnapshotLifecycle';
 // Borrows the tracking connection; never opens or closes a second SQLite engine.
 import { withConnectionLock } from '../database/connectionLock';
+import { withCloudSyncSlot } from './CloudSyncSlot';
 import { cloudTrackTime } from './CloudTrackTime';
 import { FUTURE_TOLERANCE_MS } from './ServerClock';
 import { readActivityEarliest, readActivityPeriod } from '../activity/ActivityData';
@@ -15,7 +16,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { optimizeDatabase } from '../database/DatabaseStatistics';
 import { readPages } from '../database/PagedRead';
-import { CLOUD_ROWS, backfillWifiStep, cloudRowSetup, wifiLatestReady, WIFI_BACKFILL_PAUSE_MS } from './CloudRowCounters';
+import { CLOUD_ROWS, backfillWifiStep, cloudRowCountInit, cloudRowSetup, wifiLatestReady, WIFI_BACKFILL_PAUSE_MS } from './CloudRowCounters';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -37,9 +38,13 @@ export const CLOUD_PAYLOAD_MS = 24 * 60 * 60 * 1000;
 // 50 ms because it has to look at the rows themselves, so it runs every 20
 // pages instead; the worst case is a day's payloads living 20,000 rows longer.
 const PAYLOAD_EVERY_PAGES = 20;
-const DROP_OLD_PAYLOAD = `UPDATE supabase_dog_status SET raw_payload = NULL
+const dropOldPayload = rows => `UPDATE supabase_dog_status SET raw_payload = NULL
   WHERE id IN (SELECT id FROM supabase_dog_status
-    WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT 1000)`;
+    WHERE raw_payload IS NOT NULL AND received_at < ? ORDER BY received_at LIMIT ${rows})`;
+const DROP_OLD_PAYLOAD = dropOldPayload(1000);
+// After start, in the background: rewriting a row without its JSON is slow
+// (1,000 rows held the write lock 1.4–2.7 s at every start on an emulator).
+export const PAYLOAD_BATCH = 200;
 
 // Enumerate dogs by seeking to the next indexed id, then seek each newest row.
 // DISTINCT still walks the whole account even when its output has only six dogs.
@@ -77,9 +82,21 @@ const initialization = new WeakMap();
 // on the read lane, each write its own short transaction. A failed step stops; the next
 // start continues where the last one left off.
 export const WIFI_BACKFILL_DELAY_MS = 15000;
+export const TRIM_BATCH = 500;
+export const TRIM_DELAY_MS = 20000;
+export const TRIM_PAUSE_MS = 25;
+const capTrims = new WeakSet();
+// The newest open's maintenance starter, per native owner: a job whose
+// wrapper failed (a headless sync's, closed when its sync ended) hands the
+// work to it, even when that open came while the failing job still ran.
+const maintenanceStarters = new WeakMap();
+function handOverMaintenance(key, failed) {
+  const next = maintenanceStarters.get(key);
+  if (next && next !== failed) setTimeout(next, 0);
+}
 const backfills = new WeakMap();
 /** Starts (or, `delayMs` 0, hurries) the backfill; resolves when it is done or failed. */
-function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
+function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS, onFail = null) {
   const key = connection.lockKey || connection;
   let state = backfills.get(key);
   if (!state) {
@@ -88,7 +105,7 @@ function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
     state.done = new Promise(resolve => { finish = resolve; });
     const step = () => backfillWifiStep(connection, work => withConnectionLock(connection, work))
       .then(more => { if (more) setTimeout(step, WIFI_BACKFILL_PAUSE_MS); else finish(true); },
-        () => { backfills.delete(key); finish(false); });
+        () => { backfills.delete(key); finish(false); onFail?.(); });
     state.start = () => {
       if (state.started) return;
       state.started = true;
@@ -105,6 +122,19 @@ function scheduleWifiBackfill(connection, delayMs = WIFI_BACKFILL_DELAY_MS) {
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
   const database = createStagedCloudDatabase(connection, { ...options, maxRows }, createCloudDatabaseCore);
+  // Internal: started by every open, not one of the database's methods.
+  const core = { startMaintenance: database.startMaintenance };
+  delete database.startMaintenance;
+  const startMaintenance = () => core.startMaintenance?.(startMaintenance);
+  const initializeOnce = database.initialize;
+  database.initialize = (...args) => {
+    const ready = initializeOnce(...args);
+    Promise.resolve(ready).then(() => {
+      maintenanceStarters.set(connection.lockKey || connection, startMaintenance);
+      startMaintenance();
+    }, () => {});
+    return ready;
+  };
   const latestConnection = options.latestConnection ?? connection;
   if (latestConnection !== connection && connection.lockKey && connection.lockKey === latestConnection.lockKey)
     throw new Error('Latest snapshot storage must use an independent native lock');
@@ -147,10 +177,19 @@ export function createCloudDatabase(connection, options = {}) {
 
 function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, historyMaterialTracking = true } = {}) {
   const cap = Number.isInteger(maxRows) && maxRows > 0 ? maxRows : CLOUD_MAX_ROWS;
-  const trimHistory = `DELETE FROM supabase_dog_status WHERE id IN (
-    SELECT id FROM supabase_dog_status
-    ORDER BY received_at DESC, id DESC LIMIT -1 OFFSET ${cap}
+  // The global cap: the oldest rows beyond `cap` (by reception time, then
+  // id — the same rows as keeping the newest `cap`), at most `most` of them.
+  // Counted by the trigger-kept counter (CLOUD_ROWS), it starts at the oldest
+  // row of the (received_at, id) index: a statement costs the rows it deletes.
+  // The former `ORDER BY received_at DESC … OFFSET cap` walked all 936,228
+  // kept index entries every time, deleting nothing as often as not: 4–11 s
+  // holding the write lock at every start and after every downloaded page
+  // (2026-10-16, a signed-in emulator).
+  const trimOldest = (most = null) => `DELETE FROM supabase_dog_status WHERE id IN (
+    SELECT id FROM supabase_dog_status ORDER BY received_at, id
+    LIMIT MAX(0, ${most == null ? `${CLOUD_ROWS} - ${cap}` : `MIN(${most}, ${CLOUD_ROWS} - ${cap})`})
   )`;
+  const trimHistory = trimOldest();
   const executeBatch = async commands => {
     if (!historyMaterialTracking) return connection.executeBatchAsync(commands);
     try {
@@ -170,7 +209,53 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
   const requireOwner = owner => {
     if (!owner) throw new Error(t("c572"));
   };
+  // Databases downloaded by older versions (or over a lowered cap) are brought
+  // to the cap after start, not inside initialize (nor the old JSON dropped): TRIM_BATCH rows a
+  // statement, each its own transaction (the write lock only for those
+  // rows), a pause between, on the App's queue in turn with everything else.
+  // Without the counter (no page downloaded since the update) it waits: the
+  // next download's own trim brings the table to the cap anyway.
+  function scheduleCapTrim(onFail = null) {
+    const key = connection.lockKey || connection;
+    if (capTrims.has(key)) return;
+    capTrims.add(key);
+    const excess = async () => Number(rows(await connection.executeAsync(
+      `SELECT (SELECT n FROM cloud_row_count WHERE id = 1) - ${cap} AS excess`))[0]?.excess);
+    // Each step waits for the cloud sync slot too: a download job (manual or
+    // automatic) holds it from begin to publish and relies on the published
+    // rows it skipped staying there (Codex review: a trim in between let a
+    // manual day publish complete=1 without its oldest row).
+    const trim = () => withCloudSyncSlot(() => withConnectionLock(connection, async () => {
+      const over = await excess();
+      if (!(over > 0)) return false;
+      const statement = trimOldest(TRIM_BATCH);
+      await executeBatch([{ query: invalidateEvictedCoverage(statement), params: [] }, { query: statement, params: [] }]);
+      return over > TRIM_BATCH;
+    }));
+    // Then the original JSON older than CLOUD_PAYLOAD_MS, PAYLOAD_BATCH rows a statement.
+    const payload = () => withCloudSyncSlot(() => withConnectionLock(connection, async () => {
+      const result = await connection.executeAsync(dropOldPayload(PAYLOAD_BATCH), [Date.now() - CLOUD_PAYLOAD_MS]);
+      return Number(result?.rowsAffected) >= PAYLOAD_BATCH;
+    }));
+    const next = (work, then) => work().then(more => { if (more) setTimeout(() => next(work, then), TRIM_PAUSE_MS); else then(); },
+      () => { capTrims.delete(key); onFail?.(); });
+    setTimeout(() => next(trim, () => next(payload, () => capTrims.delete(key))), TRIM_DELAY_MS);
+  }
+
   return {
+    // The work after start (CloudRowCounters' backfill, the cap trim and the
+    // old JSON), started by every open of the database (createCloudDatabase)
+    // while none of it is running for this native owner: a headless sync's
+    // wrapper closes when its sync ends, its job then fails, and the next
+    // wrapper's open starts it again with itself (Codex review).
+    // `self`: this open's starter as registered (maintenanceStarters), so a
+    // failing job never hands the work back to itself.
+    startMaintenance(self) {
+      const key = connection.lockKey || connection;
+      const failed = () => handOverMaintenance(key, self);
+      scheduleWifiBackfill(connection, WIFI_BACKFILL_DELAY_MS, failed);
+      scheduleCapTrim(failed);
+    },
     invalidatePublished() { trackRepairs++; },
     async historyDownloadStates(owner, ids) {
       return withConnectionLock(connection, async () => {
@@ -219,6 +304,11 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // UI/headless wrappers of one native owner share migration work.
       // A new owner/standalone handle migrates again; failed opens remain retryable.
       const key = connection.lockKey || connection;
+      // The work after start (CloudRowCounters' backfill, the cap trim and
+      // the old JSON) belongs to whichever wrapper opens the database while
+      // none of it is running: a headless sync's wrapper closes when its sync
+      // ends, its job then fails, and the next wrapper's open starts it again
+      // (Codex review).
       if (initialization.has(key)) return initialization.get(key);
       const ready = withConnectionLock(connection, async () => {
       const columns = new Set(rows(await connection.executeAsync(
@@ -297,15 +387,11 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         verified_at INTEGER NOT NULL,
         PRIMARY KEY (owner_user_id, master_id, bucket_start)
       )`);
-      // Also apply retention to databases downloaded by older app versions.
       await initializeHistoryCoverage(connection);
       await fixRelayedFutureTimes();
-      await executeBatch([{ query: invalidateEvictedCoverage(trimHistory), params: [] }, { query: trimHistory, params: [] }]);
-      await connection.executeAsync(DROP_OLD_PAYLOAD, [Date.now() - CLOUD_PAYLOAD_MS]);
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
-      ready.then(() => scheduleWifiBackfill(connection), () => {});
       initialization.set(key, ready);
       ready.catch(() => initialization.delete(key));
       return ready;
@@ -411,6 +497,10 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         }
         // Global cap across accounts/Masters. Keep newest reception times, not
         // newest download order, so manual historical downloads cannot evict newer rows.
+        // The counter the cap reads, counted once if missing (CloudRowCounters).
+        // Only on the published table: a staging core's statements are
+        // renamed to its own tables, and its trims are dropped (CloudStaging).
+        if (historyMaterialTracking) commands.unshift(...await cloudRowCountInit(connection));
         commands.push({ query: invalidateEvictedCoverage(trimHistory), params: [] });
         commands.push({ query: trimHistory, params: [] });
         pagesSaved += 1;
