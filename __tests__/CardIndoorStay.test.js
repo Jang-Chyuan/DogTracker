@@ -4,8 +4,8 @@ import { createHoldStore } from '../src/placement/HoldStore';
 import { HOLD_CONFIG } from '../src/placement/IndoorHold';
 import { mergeDogMarkers } from '../src/map/DogMerge';
 import { dogCard } from '../src/map/DogCardModel';
-import { historyHoldCandidates, useHistoryHolds } from '../src/map/CardIndoorStay';
-import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
+import { CARD_INDOOR_LOOKBACK_MS, historyHoldCandidates, historyStayAt, historyStayAtSoon, useHistoryHolds } from '../src/map/CardIndoorStay';
+import { createHistoryDatabase, HISTORY_DAY_CONTEXT_MS } from '../src/mapHistory/HistoryDatabase';
 import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
@@ -161,8 +161,13 @@ describe('a hold the live rows cannot start', () => {
       const seen = [];
       function Probe({ list }) { seen.push(useHistoryHolds(read, list, { owner: null })); return null; }
       await act(async () => { renderer = Renderer.create(<Probe list={candidates} />); });
-      await act(async () => {});
+      // The day's replay yields to the JS thread between steps (historyStayAtSoon).
+      for (let i = 0; i < 200 && !seen.at(-1)[8]; i += 1) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
       const found = seen.at(-1)[8];
+      // The same answer as in one go.
+      const answer = await history.historyDayRows({ subject: 'dog', slaveId: 8, start: NOW - CARD_INDOOR_LOOKBACK_MS, end: NOW + 1, owner: null });
+      const options = { at: NOW, readFrom: NOW - CARD_INDOOR_LOOKBACK_MS - HISTORY_DAY_CONTEXT_MS };
+      expect(await historyStayAtSoon(answer, options)).toEqual(historyStayAt(answer, options));
       expect(found).toMatchObject({ coordinate: HOME, source: 'good', from: INSIDE + 30000 });
       expect(found.fromClipped).toBeUndefined();
       // A newer packet a moment later does not read the day again.

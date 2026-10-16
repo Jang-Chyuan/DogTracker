@@ -42,8 +42,13 @@ function dedupe(rows, field) {
 export const mergeHistoryFixes = rows => dedupe(rows, 'locationTime');
 
 /** Call hold replay on packets, then GPS dedupe: status changes must survive. */
+/** The packets historySourceStream replays, in its order (for a replay run ahead of it, in steps). */
+export function historyPackets(rows = []) {
+  return dedupe(normalizeHistoryRows(rows), 'packetTime');
+}
+
 export function historySourceStream(rows = [], { replayHolds = p => p, measure } = {}) {
-  const packets = dedupe(normalizeHistoryRows(rows), 'packetTime');
+  const packets = historyPackets(rows);
   // The packets are the caller's rows: a replay that writes into what it is
   // given gets copies. One that copies each packet itself (`copiesPackets`,
   // the history screen's incremental pass) gets them as they are.
