@@ -741,8 +741,8 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
  * (`event`: the tracker's start event): the drift right before it, after the
  * last good fix (`event.since`), at most retroMaxMs back and never over a row
  * already held or farther than farRadiusM from the anchor. The history draws
- * these rows held (createHistoryHolds), and the live card times 「室內・N 分」
- * from the same row (HoldStore), so both say the same minutes.
+ * these rows held (createHistoryHolds), and the live hold starts from the
+ * same row (HoldStore).
  * @param isHeld whether an earlier row already belongs to a hold
  * @returns the index of that row (`index` when nothing before it is covered)
  */

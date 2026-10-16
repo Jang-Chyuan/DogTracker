@@ -56,7 +56,7 @@ import { displayName } from '../dogs/DogName';
 import { dogCard, nativePhoneReading, phoneReading } from '../map/DogCardModel';
 import { switchOrder, switchTarget } from '../map/DogSwitch';
 import { useDogCardReadings } from '../map/useDogCardReadings';
-import { historyHoldCandidates, useCardIndoorStay, useHistoryHolds } from '../map/CardIndoorStay';
+import { historyHoldCandidates, useHistoryHolds } from '../map/CardIndoorStay';
 import {
   cloudClock,
   isIndoorHold,
@@ -922,10 +922,6 @@ export default function MapScreen({
     now,
     `${cardBusy}:${cardSuccess}:${cloudSync?.publishedRevision ?? 0}`,
   );
-  // 「室內・N 分」 of a stay begun before the live rows (a cold start sees
-  // half an hour): from where the history's stay begins, over midnight too.
-  const indoorStay = useCardIndoorStay(cardOpen ? history?.readDay ?? null : null, cardDog,
-    { owner: cloudOwner ?? null, busy: cardBusy, revision: cardSuccess });
   // A7b: the held place's address under 「室內」 (none while asking; its
   // coordinates when none was found).
   const address = useAddress(
@@ -956,7 +952,6 @@ export default function MapScreen({
         freshness.source === 'cloud' ? cloudClock(cloudClockInput, now) : now,
       name: dogName(cardDog.slaveId, dogAliases),
       address,
-      indoorStay,
     });
   }, [
     cardDog,
@@ -971,7 +966,6 @@ export default function MapScreen({
     fixture,
     dogAliases,
     address,
-    indoorStay,
   ]);
   const closedCard = useCallback(
     () => setSelected(current => (current?.kind === 'dog' ? null : current)),

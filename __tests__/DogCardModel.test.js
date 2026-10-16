@@ -124,35 +124,25 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), no �
     detail: '桃園區中正路 1 號附近', twoLine: true });
 });
 
-// 2026-10-13: the card's 室內 minutes are the history's for the same hold
-// (HistoryStops.historyIndoorNodes, HistoryTimelinePresentation): from the first
-// row the hold covers (heldFrom, HoldStore) to its newest packet, in whole clock
-// minutes — not the 活動量 row's rest, which is the collar's motion.
-test('A7b: 室內・N 分 counts as the history does, apart from the 活動量 rest', () => {
+// 2026-10-16 (user): the card no longer times a stay. 「室內」 and the
+// address, nothing more (the history times it); the 活動量 row still says how
+// long the collar has been calm.
+test('A7b: 位置 「室內」 with the address, no minutes; 活動量 apart', () => {
   const from = new Date(2026, 9, 7, 9, 3, 50).getTime();
   const held = dog({ heldReason: '室內', heldSource: 'good', heldSince: from - 4 * MINUTE, heldFrom: from,
-    packetAt: new Date(2026, 9, 7, 9, 29, 10).getTime() });
+    heldFromClipped: true, packetAt: new Date(2026, 9, 7, 9, 29, 10).getTime() });
   const freshness = { ...fresh, basis: 'packet' };
-  // Calm only for the last 12 minutes (the dog moved about inside before).
   const rows = [];
   for (let time = NOW - 40 * MINUTE; time < NOW; time += 10000) {
     rows.push({ time, activity: time < NOW - 12 * MINUTE ? 0.3 : 0.02, slave_id: 6 });
   }
   const activity = { minutes: activityMinutes(activityReadings(rows, 'ble'), { now: NOW }), newestAt: NOW - 10000 };
   const model = card(held, { freshness, address: '桃園區中正路 1 號附近', activity });
-  // 09:03 → 09:29 on the clock: 26 minutes, as the history's 「室內・26 分」.
-  expect(row(model, 'position')).toMatchObject({ value: '室內・26 分', detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: '位置，室內，26 分，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
+  expect(row(model, 'position')).toMatchObject({ value: i18nT('c114'), detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
   expect(row(model, 'activity')).toMatchObject({ value: i18nT('c069'), detail: '已 12 分鐘',
     speech: '活動量，休息中，活動量低已 12 分鐘' });
-  // Without heldFrom (an older merged dog) it counts from heldSince; past an
-  // hour it reads as the history's list (「1 時 13 分」).
-  const { heldFrom, ...older } = held;
-  expect(heldFrom).toBe(from);
-  expect(row(card({ ...older, heldSince: from - 47 * MINUTE }, { freshness }), 'position').value).toBe('室內・1 時 13 分');
-  // No times at all: 「室內」 alone, as before.
-  expect(row(card({ ...older, heldSince: undefined }, { freshness }), 'position').value).toBe(i18nT('c114'));
-  // Stale indoors: the row still says 沒有新資料, no minutes.
+  // Stale indoors: the row still says 沒有新資料.
   expect(row(card(held, { freshness: { ...stale, basis: 'packet' } }), 'position').value).toBe('09:05 之後沒有新資料');
 });
 

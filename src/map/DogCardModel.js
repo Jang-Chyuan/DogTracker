@@ -13,7 +13,6 @@ import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
 import { ACTIVITY_STATE, activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
 import { CARD_ACTIVITY_LOOKBACK_MS } from '../activity/DogCardReadings';
-import { listDuration, stayDuration } from '../history/HistoryText';
 
 // The phone's position is written as old (「手機位置 3 分鐘前」) after this.
 export const PHONE_OLD_AFTER_MS = 30 * 1000;
@@ -21,6 +20,7 @@ export const PHONE_OLD_AFTER_MS = 30 * 1000;
 // time written after it (「62%（09:40）」).
 export const READING_OLD_AFTER_MS = 10 * 60000;
 const MINUTE = 60000;
+const HOUR = 60 * MINUTE;
 
 const pad = value => String(value).padStart(2, '0');
 const clock = at => {
@@ -74,49 +74,6 @@ export function cardHeadline({ dog, phone }) {
 }
 
 /**
- * How long the dog has been held indoors, as the history's time line says it
- * (「室內・26 分」, HistoryTimelinePresentation): from the first row the
- * hold covers (`heldFrom`, HoldStore) to its newest packet, in whole clock
- * minutes. null when the times are not known.
- */
-export function indoorDurationMs(dog, stay = null) {
-  return indoorDuration(dog, stay)?.ms ?? null;
-}
-
-/**
- * The same, for a live hold whose rows begin inside it (`heldFromClipped`: a
- * cold start replays half an hour): from where the history's stay begins
- * (CardIndoorStay, `stay`), the whole stay over midnight too. `over`: the
- * start is still not known (no history rows hold it there, or the stay is
- * older than the card looks back), so the minutes are a lower bound
- * (「室內・超過 24 時」). null while the history is being asked, or when the
- * times are not known.
- * @returns {{ ms, over } | null}
- */
-export function indoorDuration(dog, stay = null) {
-  const live = Number.isFinite(dog?.heldFrom) ? dog.heldFrom : dog?.heldSince;
-  const until = Number.isFinite(dog?.packetAt) ? dog.packetAt : dog?.lastPacketAt;
-  if (!Number.isFinite(live) || !Number.isFinite(until)) return null;
-  const since = from => Math.max(0, Math.floor(until / MINUTE) - Math.floor(from / MINUTE)) * MINUTE;
-  if (!dog.heldFromClipped || !stay) return { ms: since(live), over: !!dog.heldFromClipped };
-  if (stay.state === 'pending') return null;
-  if (stay.state === 'found' && Number.isFinite(stay.from)) {
-    return { ms: since(Math.min(stay.from, live)), over: !!stay.clipped };
-  }
-  return { ms: since(live), over: true };
-}
-
-const HOUR = 60 * MINUTE;
-// 「26 分」, 「1 時 13 分」; a lower bound in whole hours past one: 「超過 24 時」.
-function indoorText(duration) {
-  if (!duration) return t('c114');
-  // Its first minute: 「室內・不到 1 分」, never 「室內・0 分」.
-  if (!duration.over) return t('c344', { duration: stayDuration(duration.ms) });
-  const bound = duration.ms >= HOUR ? Math.floor(duration.ms / HOUR) * HOUR : duration.ms;
-  return t('c344', { duration: t('c1282', { duration: listDuration(bound) }) });
-}
-
-/**
  * The 活動量 row's words for the dog's activity minutes.
  * @param activity { minutes: ActivityMinutes.activityMinutes(), newestAt }
  * @param options.reference the clock the dog is judged by (now, or the cloud
@@ -167,11 +124,9 @@ export function activityRow(activity, { reference, positionAt, stale, charging =
  * @param options.reference the clock activity is judged by
  * @param options.name the dog's name (「小黑」, 「狗 4」)
  * @param options.address the held place's address (A7b second line), or null
- * @param options.indoorStay useCardIndoorStay() for a hold begun before the
- *   live rows, or null
  */
 export function dogCard(dog, { freshness, range = null, battery = null, activity = null, phone = null, now,
-  reference = now, name, address = null, indoorStay = null }) {
+  reference = now, name, address = null }) {
   const indoor = isIndoorHold(dog);
   const stale = !!freshness?.stale;
   const positionAt = indoor ? (Number.isFinite(dog.packetAt) ? dog.packetAt : dog.fixAt) : dog.fixAt;
@@ -186,17 +141,15 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   const alert = out ? rangeLabel(view, clock) : null;
   let place;
   if (indoor) {
-    // Two lines (56dp) held indoors: 「室內・26 分」 and the address under it
-    // (A7b). The minutes are the history's for the same hold (GPS: since the
-    // hold began), not the 活動量 row's rest (the collar's motion).
-    // Still asking: no second line and no spinner, the row keeps its two
-    // lines so nothing jumps. None found, offline or timed out: useAddress
-    // gives the place's coordinates instead (2026-10-14), read out the same.
-    // A stay begun before the live rows (a cold start) is timed from where
-    // the history's stay begins (`indoorStay`, CardIndoorStay). Silent too:
-    // 「沒有新資料・最後 09:05」 over the same address.
+    // Two lines (56dp) held indoors: 「室內」 and the address under it (A7b).
+    // No minutes (2026-10-16, the user's decision: the card does not time
+    // the stay; the history does). Still asking: no second line and no
+    // spinner, the row keeps its two lines so nothing jumps. None found,
+    // offline or timed out: useAddress gives the place's coordinates instead
+    // (2026-10-14), read out the same. Silent too: 「09:05 之後沒有新資料」
+    // over the same address.
     place = { key: 'position', label: t('c073'),
-      value: stale ? staleText(freshness, now) : indoorText(indoorDuration(dog, indoorStay)),
+      value: stale ? staleText(freshness, now) : t('c114'),
       tone: stale ? 'crit' : null, detail: address, twoLine: true, alert };
   } else if (stale) {
     place = { key: 'position', label: t('c073'), value: staleText(freshness, now), tone: 'crit', detail: null,

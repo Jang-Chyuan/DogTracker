@@ -757,7 +757,7 @@ async function addressOf(lookup, point) {
   return cardAddressLine(value, point);
 }
 
-async function card(name, { indoorStay = null } = {}) {
+async function card(name) {
   const state = await screen(name);
   const { fixture } = state;
   const dog = state.dog(fixture.openDog);
@@ -769,20 +769,9 @@ async function card(name, { indoorStay = null } = {}) {
     battery: readings.battery, activity: readings.activity, phone: phoneReading(fixture.livePhone, now), now,
     reference: freshness.source === 'cloud' ? cloudClock(fixture.cloudSync, now) : now,
     name: state.label(dog),
-    address: isIndoorHold(dog) ? await addressOf(fixture.addressLookup, dog.coordinate) : null,
-    indoorStay: indoorStay ? await indoorStay(fixture, dog) : null });
+    address: isIndoorHold(dog) ? await addressOf(fixture.addressLookup, dog.coordinate) : null });
   const rows = Object.fromEntries(model.rows.map(row => [row.key, row]));
   return { model, rows, keys: model.rows.map(row => row.key), state, dog };
-}
-
-// What useCardIndoorStay asks the history for (the fixture's readDay).
-async function askHistory(fixture, dog) {
-  const { CARD_INDOOR_LOOKBACK_MS, indoorStayStart } = require('../src/map/CardIndoorStay');
-  const { HISTORY_DAY_CONTEXT_MS } = require('../src/mapHistory/HistoryDatabase');
-  const start = dog.heldFrom - CARD_INDOOR_LOOKBACK_MS;
-  const answer = await fixture.history.readDay({ subject: 'dog', slaveId: dog.slaveId, start, end: dog.heldFrom });
-  const stay = indoorStayStart(answer, { at: dog.heldFrom, readFrom: start - HISTORY_DAY_CONTEXT_MS });
-  return stay ? { state: 'found', ...stay } : { state: 'unknown' };
 }
 
 test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows', async () => {
@@ -862,45 +851,29 @@ test('card-problems (A3b): every problem red, 活動量 「—」, the distance 
     .toMatch(/^位置，09:05 之後沒有新位置，不在接收範圍，.+方 [\d.]+ 公里，離手機；電量 15%，偏低；活動量，沒有資料$/);
 });
 
-// 2026-10-13: 室內・11 分 is the hold (GPS, as the history's node); 休息中・已
-// 40 分鐘 is the collar's motion (it rested outside before going in).
-// 2026-10-15: its clear fixes at the door begin inside the cold start's half
-// hour, so the live rows never saw it arrive (`heldFromClipped`): the card asks
-// the history, which begins the stay at the same packet.
-test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging 62%, activity 充電中, no 接收範圍 row', async () => {
-  const { model, rows, keys, state, dog } = await card('card-indoor', { indoorStay: askHistory });
+// 2026-10-16 (user): the card says 「室內」 over the address, no minutes (the
+// history times the stay).
+test('card-indoor (A7b): 位置 「室內」 over its address, charging 62%, activity 充電中, no 接收範圍 row', async () => {
+  const { model, rows, keys, state, dog } = await card('card-indoor');
   expect(dog.heldFromClipped).toBe(true);
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
-  expect(rows.position).toMatchObject({ value: '室內・11 分', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: expect.stringMatching(/^位置，室內，11 分，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
+  expect(rows.position).toMatchObject({ value: '室內', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: expect.stringMatching(/^位置，室內，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
   // On its charger: 充電中, not the 40 minutes of 0.02 it reads (2026-10-16).
   expect(rows.activity).toMatchObject({ value: i18nT('c731'), detail: null, speech: '活動量，充電中' });
   expect(model.headline).toMatchObject({ kind: 'distance' });
 });
 
-// 2026-10-13: a stay begun last night, opened after a cold start (the live
-// hold replays half an hour): the whole stay, from where the history begins it.
-test('card-indoor-overnight: 「室內・12 時 20 分」, not the live half hour', async () => {
-  const { rows, dog } = await card('card-indoor-overnight', { indoorStay: askHistory });
-  expect(dog.heldFromClipped).toBe(true);
-  expect(rows.position).toMatchObject({ value: '室內・12 時 20 分', detail: '桃園區中正路 1 號附近',
-    speech: expect.stringMatching(/^位置，室內，12 時 20 分，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
-  // Without the history's answer it says only what it knows.
-  const live = await card('card-indoor-overnight');
-  expect(live.rows.position.value).toBe('室內・超過 29 分');
-});
-
-// 2026-10-15 (emulator): 「室內・25 分」 at 10:26 for a stay the history began
-// at 07:57. The weak drift left the cold start no good seeds; the live hold
-// starts on the window's own fixes, but it never saw the dog arrive.
-test('card-indoor-cold-drift: the whole stay from the history, not the live half hour', async () => {
-  const { rows, dog } = await card('card-indoor-cold-drift', { indoorStay: askHistory });
-  expect(dog.heldFromClipped).toBe(true);
-  expect(rows.position).toMatchObject({ value: '室內・2 時 28 分', detail: '桃園區中正路 1 號附近' });
-  const live = await card('card-indoor-cold-drift');
-  expect(live.rows.position.value).toMatch(/^室內・超過 \d+ 分$/);
+// A stay begun last night or on weak drift, opened after a cold start: still
+// 「室內」 and the address, whatever the live rows saw of it.
+test('card-indoor-overnight / -cold-drift: 「室內」 over the address, no minutes', async () => {
+  for (const name of ['card-indoor-overnight', 'card-indoor-cold-drift']) {
+    const { rows, dog } = await card(name);
+    expect(dog.heldFromClipped).toBe(true);
+    expect(rows.position).toMatchObject({ value: '室內', detail: '桃園區中正路 1 號附近' });
+  }
 });
 
 // 2026-10-14 (tried on a phone): the first row's harder cases.
@@ -913,7 +886,7 @@ test('card-indoor-long-address / -silent / -out / -silent-out: one first row, ev
     detail: long.rows.position.detail });
   const out = await card('card-indoor-out');
   expect(out.keys).toEqual(['position', 'battery', 'activity']);
-  expect(out.rows.position).toMatchObject({ value: expect.stringMatching(/^室內・\d+ 分$/), tone: null,
+  expect(out.rows.position).toMatchObject({ value: '室內', tone: null,
     alert: expect.stringMatching(/^不在接收範圍・最後確認 \d\d:\d\d$/) });
   const both = await card('card-indoor-silent-out');
   expect(both.rows.position).toMatchObject({ value: '09:05 之後沒有新資料', tone: 'crit',
@@ -930,21 +903,17 @@ test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!�
 // coordinates on the second line, as the history list, read out the same.
 const held = dog => `${dog.coordinate.latitude.toFixed(4)}, ${dog.coordinate.longitude.toFixed(4)}`;
 
-test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內・11 分」 over the coordinates', async () => {
-  const { rows, state, dog } = await card('dog-indoor-no-address', { indoorStay: askHistory });
+test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「室內」 over the coordinates', async () => {
+  const { rows, state, dog } = await card('dog-indoor-no-address');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
   expect(held(dog)).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-  expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog), twoLine: true,
-    speech: expect.stringMatching(new RegExp(`^位置，室內，11 分，${held(dog).replace(/\./g, '\\.')}，.+方 [\\d.]+ 公(尺|里)，離手機$`)) });
+  expect(rows.position).toMatchObject({ value: '室內', detail: held(dog), twoLine: true,
+    speech: expect.stringMatching(new RegExp(`^位置，室內，${held(dog).replace(/\./g, '\\.')}，.+方 [\\d.]+ 公(尺|里)，離手機$`)) });
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: the coordinates)', async () => {
-  const { rows, dog } = await card('card-indoor-geocoder', { indoorStay: askHistory });
-  expect(rows.position).toMatchObject({ value: '室內・11 分', detail: held(dog) });
-  // Before the history answers: no minutes; without its answer, a lower bound.
-  expect((await card('card-indoor-geocoder', { indoorStay: async () => ({ state: 'pending' }) }))
-    .rows.position.value).toBe('室內');
-  expect((await card('card-indoor-geocoder')).rows.position.value).toBe('室內・超過 11 分');
+  const { rows, dog } = await card('card-indoor-geocoder');
+  expect(rows.position).toMatchObject({ value: '室內', detail: held(dog) });
 });
 
 test('card-cloud-dog: a cloud dog has no 接收範圍 row, 位置 says when its position is from; running hard', async () => {
