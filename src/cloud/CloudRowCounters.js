@@ -14,15 +14,16 @@
 //   Wi-Fi (最後上傳成功（經 Wi-Fi）, wifiUploads). The GROUP BY over the
 //   account's rows took 2.6–38 s and ran after every download. Rows that were
 //   already stored when the trigger came are added in the background, a few
-//   thousand ids at a time (cloud_wifi_backfill); until that finishes the
+//   thousand ids at a time (cloud_wifi_progress); until that finishes the
 //   old query answers. A deleted row does not lower the answer: the Master
 //   did upload then (「刪除全部狗資料」 clears it with the rows).
 export const CLOUD_ROW_TABLES = [
   'CREATE TABLE IF NOT EXISTS cloud_row_count (id INTEGER PRIMARY KEY CHECK(id=1), n INTEGER NOT NULL)',
   `CREATE TABLE IF NOT EXISTS cloud_wifi_latest (owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
     received_at INTEGER NOT NULL, PRIMARY KEY (owner_user_id, master_id))`,
-  `CREATE TABLE IF NOT EXISTS cloud_wifi_backfill (id INTEGER PRIMARY KEY CHECK(id=1),
-    next_id INTEGER NOT NULL, until_id INTEGER NOT NULL)`,
+  // `generation` moves at every clear: a step read before it writes nothing.
+  `CREATE TABLE IF NOT EXISTS cloud_wifi_progress (id INTEGER PRIMARY KEY CHECK(id=1),
+    next_id INTEGER NOT NULL, until_id INTEGER NOT NULL, generation INTEGER NOT NULL DEFAULT 0)`,
 ];
 
 // The newest Wi-Fi time of `row`'s Master, raised (never lowered). Two plain
@@ -54,7 +55,7 @@ export const CLOUD_ROW_TRIGGERS = [
   // A Wi-Fi row the backfill has not reached yet keeps its time when deleted
   // (the trim right after the update), as a row deleted after it did.
   `CREATE TRIGGER IF NOT EXISTS cloud_rows_wifi_deleted_v2 AFTER DELETE ON supabase_dog_status
-    WHEN OLD.upload_source = 'wifi' AND EXISTS (SELECT 1 FROM cloud_wifi_backfill
+    WHEN OLD.upload_source = 'wifi' AND EXISTS (SELECT 1 FROM cloud_wifi_progress
       WHERE id = 1 AND OLD.id > next_id AND OLD.id <= until_id) BEGIN
     ${wifiUpsert('OLD')};
   END`,
@@ -82,7 +83,9 @@ export function cloudRowSetup() {
     // knowing these: nothing stored means nothing uploaded to show.
     'DELETE FROM cloud_wifi_latest WHERE NOT EXISTS (SELECT 1 FROM supabase_dog_status)',
     ...CLOUD_ROW_TRIGGERS,
-    `INSERT OR IGNORE INTO cloud_wifi_backfill(id, next_id, until_id)
+    // A development build's progress table, without `generation`.
+    'DROP TABLE IF EXISTS cloud_wifi_backfill',
+    `INSERT OR IGNORE INTO cloud_wifi_progress(id, next_id, until_id)
       SELECT 1, 0, COALESCE((SELECT MAX(id) FROM supabase_dog_status), 0)`].map(query => ({ query, params: [] }));
 }
 
@@ -96,7 +99,8 @@ export const cloudRowsAfterClear = () => [
   ...CLOUD_ROW_TABLES,
   { query: 'DELETE FROM cloud_wifi_latest' },
   { query: 'INSERT OR REPLACE INTO cloud_row_count(id, n) VALUES (1, 0)' },
-  { query: 'INSERT OR REPLACE INTO cloud_wifi_backfill(id, next_id, until_id) VALUES (1, 0, 0)' },
+  { query: 'INSERT OR IGNORE INTO cloud_wifi_progress(id, next_id, until_id) VALUES (1, 0, 0)' },
+  { query: 'UPDATE cloud_wifi_progress SET next_id = 0, until_id = 0, generation = generation + 1 WHERE id = 1' },
   ...CLOUD_ROW_TRIGGERS,
 ].map(command => (typeof command === 'string' ? { query: command, params: [] } : { params: [], ...command }));
 
@@ -115,7 +119,7 @@ export const WIFI_BACKFILL_PAUSE_MS = 250;
  */
 export async function backfillWifiStep(connection, locked = work => work()) {
   const rowsOf = result => result?.results || result?.rows?._array || [];
-  const state = rowsOf(await connection.executeAsync('SELECT next_id, until_id FROM cloud_wifi_backfill WHERE id = 1'))[0];
+  const state = rowsOf(await connection.executeAsync('SELECT next_id, until_id, generation FROM cloud_wifi_progress WHERE id = 1'))[0];
   if (!state || Number(state.next_id) >= Number(state.until_id)) return false;
   const from = Number(state.next_id), to = Math.min(Number(state.until_id), from + WIFI_BACKFILL_IDS);
   const found = rowsOf(await (connection.reader || connection).executeAsync(
@@ -123,19 +127,23 @@ export async function backfillWifiStep(connection, locked = work => work()) {
       WHERE id > CAST(? AS INTEGER) AND id <= CAST(? AS INTEGER) AND upload_source = 'wifi'
         AND owner_user_id IS NOT NULL AND master_id IS NOT NULL AND received_at IS NOT NULL
       GROUP BY owner_user_id, master_id`, [from, to]));
+  // Every write only while the progress is still where this read began: a
+  // clear (or another step) in between makes the whole step a no-op, so an
+  // answer read before 刪除全部狗資料 cannot come back after it (Codex review).
+  const still = 'EXISTS (SELECT 1 FROM cloud_wifi_progress WHERE id = 1 AND next_id = ? AND generation = ?)';
+  const at = [from, Number(state.generation) || 0];
   await locked(() => connection.executeBatchAsync([
     ...found.flatMap(row => {
       const key = [row.owner_user_id, Number(row.master_id)];
       return [
-        { query: 'UPDATE cloud_wifi_latest SET received_at = ? WHERE owner_user_id = ? AND master_id = ? AND received_at < ?',
-          params: [Number(row.time), ...key, Number(row.time)] },
+        { query: `UPDATE cloud_wifi_latest SET received_at = ? WHERE owner_user_id = ? AND master_id = ? AND received_at < ? AND ${still}`,
+          params: [Number(row.time), ...key, Number(row.time), ...at] },
         { query: `INSERT INTO cloud_wifi_latest(owner_user_id, master_id, received_at) SELECT ?, ?, ?
-            WHERE NOT EXISTS (SELECT 1 FROM cloud_wifi_latest WHERE owner_user_id = ? AND master_id = ?)`,
-        params: [...key, Number(row.time), ...key] },
+            WHERE NOT EXISTS (SELECT 1 FROM cloud_wifi_latest WHERE owner_user_id = ? AND master_id = ?) AND ${still}`,
+        params: [...key, Number(row.time), ...key, ...at] },
       ];
     }),
-    // Only forward, and never past a range a clear has reset meanwhile.
-    { query: 'UPDATE cloud_wifi_backfill SET next_id = ? WHERE id = 1 AND next_id = ?', params: [to, from] },
+    { query: 'UPDATE cloud_wifi_progress SET next_id = ? WHERE id = 1 AND next_id = ? AND generation = ?', params: [to, ...at] },
   ]));
   return to < Number(state.until_id);
 }
@@ -144,7 +152,7 @@ export async function backfillWifiStep(connection, locked = work => work()) {
 export async function wifiLatestReady(connection) {
   const rowsOf = result => result?.results || result?.rows?._array || [];
   try {
-    const state = rowsOf(await connection.executeAsync('SELECT next_id >= until_id AS done FROM cloud_wifi_backfill WHERE id = 1'))[0];
+    const state = rowsOf(await connection.executeAsync('SELECT next_id >= until_id AS done FROM cloud_wifi_progress WHERE id = 1'))[0];
     return Number(state?.done) === 1;
   } catch {
     return false;

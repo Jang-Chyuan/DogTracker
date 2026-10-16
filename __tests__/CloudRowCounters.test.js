@@ -62,7 +62,7 @@ test('each Master\'s newest Wi-Fi row: rows stored before come in the background
     // An older database: the rows were downloaded before the triggers existed.
     const cloud = createCloudDatabase(db);
     await cloud.initialize();
-    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TABLE cloud_wifi_backfill');
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TABLE cloud_wifi_progress');
     const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
       VALUES (?, ?, ?, ?, 1, ?)`);
     db.sqlite.exec('BEGIN');
@@ -120,7 +120,7 @@ test('review: a Wi-Fi row deleted before the backfill reached it keeps its time'
     await createDogDatabase(db).initialize();
     const cloud = createCloudDatabase(db);
     await cloud.initialize();
-    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_backfill');
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_progress');
     const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
       VALUES ('a', ?, ?, 3, 1, 'wifi')`);
     insert.run('old-new', 200);
@@ -156,7 +156,7 @@ test('review: a failed backfill step gives no partial answer; the next call fini
     await createDogDatabase(db).initialize();
     const cloud = createCloudDatabase(db);
     await cloud.initialize();
-    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_backfill');
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_progress');
     const insert = db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
       VALUES ('a', ?, ?, 3, 1, ?)`);
     db.sqlite.exec('BEGIN');
@@ -172,5 +172,29 @@ test('review: a failed backfill step gives no partial answer; the next call fini
     });
     await expect(cloud.wifiUploads('a')).rejects.toThrow('not ready');
     expect(await cloud.wifiUploads('a')).toEqual({ 3: 100 + WIFI_BACKFILL_IDS + 2 });
+  } finally { db.close(); }
+});
+
+test('review: a step read before 刪除全部狗資料 writes nothing after it', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const cloud = createCloudDatabase(db);
+    await cloud.initialize();
+    db.sqlite.exec('DROP TRIGGER cloud_rows_inserted_v2; DROP TRIGGER cloud_rows_wifi_changed_v2; DROP TRIGGER cloud_rows_wifi_deleted_v2; DROP TABLE cloud_wifi_progress');
+    db.sqlite.prepare(`INSERT INTO supabase_dog_status (owner_user_id, event_id, received_at, master_id, slave_id, upload_source)
+      VALUES ('a', 'e1', 500, 3, 1, 'wifi')`).run();
+    await db.executeBatchAsync(cloudRowSetup());
+    // The step's read happens, then the user deletes everything, then the step writes.
+    const reader = { executeAsync: async (sql, params) => {
+      const result = await db.executeAsync(sql, params);
+      if (/GROUP BY owner_user_id, master_id/.test(sql)) await createDogDataStore(db).deleteAll({ includeUnsent: true });
+      return result;
+    } };
+    const conn = { executeAsync: db.executeAsync, executeBatchAsync: db.executeBatchAsync, reader };
+    expect(await backfillWifiStep(conn)).toBe(false);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM cloud_wifi_latest').get().n).toBe(0);
+    expect(db.sqlite.prepare('SELECT next_id, until_id FROM cloud_wifi_progress').get()).toEqual({ next_id: 0, until_id: 0 });
+    expect(await cloud.wifiUploads('a')).toEqual({});
   } finally { db.close(); }
 });
