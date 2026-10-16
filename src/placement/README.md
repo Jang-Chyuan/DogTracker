@@ -10,7 +10,7 @@ GPS 在室內會失去定位，或定位一直飄（幾十到幾百公尺）。�
 | [HoldStore.js](HoldStore.js) | 即時地圖：每隻狗一個追蹤器，合併本機 BLE 與雲端同一隻狗的資料 |
 | [RideAlong.js](RideAlong.js) | 項圈在車上沒定位時，跟著領犬員的手機畫 |
 
-同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**電量判定**（`src/tracking/BatteryPlausibility.js`，`batteries()`，給 `mergeDogMarkers`）、卡片「室內・N 分」的起點（`holds()` 的 `from`：歷史會畫成停住的第一筆，`IndoorHold.holdFillStart`；停住的最後一次好定位比這個追蹤器看過的第一列還早時——冷啟動只重播 30 分鐘——，或停住從追蹤器看過的前 30 分鐘裡開始、而那之前的定位都沒離開停住點 150 m（`farRadiusM`，追蹤器沒看到狗走到那裡；2026-10-15）時，多給 `fromClipped`，表示停留可能更早就開始，卡片改用 `src/map/CardIndoorStay.js` 從歷史的列往回最多 24 小時找開頭；晚到的列重播視窗時，同一段停住保留原本的 `from`），以及**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
+同一個 `HoldStore` 也用同一批列、同樣的順序算每隻狗的**電量判定**（`src/tracking/BatteryPlausibility.js`，`batteries()`，給 `mergeDogMarkers`）、停住的起點（`holds()` 的 `from`：歷史會畫成停住的第一筆，`IndoorHold.holdFillStart`；停住的最後一次好定位比這個追蹤器看過的第一列還早時——冷啟動只重播 30 分鐘——，或停住從追蹤器看過的前 30 分鐘裡開始、而那之前的定位都沒離開停住點 150 m（`farRadiusM`，追蹤器沒看到狗走到那裡；2026-10-15）時，多給 `fromClipped`，表示停留可能更早就開始。這種狗由地圖的 `useHistoryHolds`（`src/map/CardIndoorStay.js`）從歷史的列往回最多 24 小時找停住點，地圖的「室內」才會和歷史一致。卡片不算停留多久（2026-10-16 起只寫「室內」和地址），也不讀歷史；晚到的列重播視窗時，同一段停住保留原本的 `from`），以及**接收範圍判定**（`src/tracking/ReceiverRange.js`，`ranges()`）：只有它知道每一筆當時狗是不是停住（停住期間不重新判定、不累積解除）。本機 BLE 列帶著當時接收器的位置（`master_latitude/longitude`）；雲端列沒有，不判定也不解除。
 
 資料來源：`CloudDatabase.holdRows()` 讀 `dog_status` 與 `supabase_dog_status`（冷啟動讀最近 30 分鐘，加上每隻狗最後 40 筆好定位，不限多久以前（在狗舍充好幾天電也停得住）；之後每 10 秒只讀新增的列）。`useCloudDogs` 把結果放在 `holds`，`mergeDogMarkers` 用它畫狗。歷史由 `HistoryDatabase.historyDayRows()` 讀一天（往前多讀 30 分鐘當脈絡，第一次讀時另附區間前最後 40 筆好定位當 `seed`），`useHistoryScreen` 用 `createHistoryHolds({ seed })` 套用同一套規則。匯出用原始定位，不套用。
 

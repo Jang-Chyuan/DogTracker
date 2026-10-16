@@ -106,6 +106,45 @@ test('repeated foreground recovery retains the same loaded surface and camera', 
   expect(mockCamera.fitToCoordinates).toHaveBeenCalledTimes(1);
 });
 
+test('a return to the app redraws no dog that did not change; a dog that changed while away is drawn once', async () => {
+  const { mockMarkerRedraw } = require('react-native-maps');
+  await render();
+  await readyMap();
+  const redraws = () => mockMarkerRedraw.mock.calls.filter(([id]) => id === 'real-dog-7').length;
+  mockMarkerRedraw.mockClear();
+  await act(async () => renderer.update(<TrackingMap {...defaults} foreground={false} appForeground={false} />));
+  await act(async () => renderer.update(<TrackingMap {...defaults} />));
+  expect(redraws()).toBe(0);
+  // Its look changes while the app is away: no bitmap then, one when back.
+  const away = { ...defaults.presentation, dogMarkers: [{ ...slaveMarker, stale: true }] };
+  await act(async () => renderer.update(<TrackingMap {...defaults} presentation={away} foreground={false} appForeground={false} />));
+  expect(redraws()).toBe(0);
+  await act(async () => renderer.update(<TrackingMap {...defaults} presentation={away} />));
+  expect(redraws()).toBe(1);
+  // The same under a page.
+  const paged = { ...defaults.presentation, dogMarkers: [{ ...slaveMarker, problem: true }] };
+  await act(async () => renderer.update(<TrackingMap {...defaults} presentation={paged} foreground={false} />));
+  await act(async () => renderer.update(<TrackingMap {...defaults} presentation={paged} />));
+  expect(redraws()).toBe(2);
+});
+
+test('the map buttons stay mounted while the app is away (no rebuild on the way back); under a page they go', async () => {
+  await render();
+  await readyMap();
+  const buttons = () => renderer.root.findAll(node => node.props.testID === 'map-frame-all');
+  const before = buttons()[0];
+  expect(before).toBeDefined();
+  await act(async () => renderer.update(<TrackingMap {...defaults} foreground={false} appForeground={false} />));
+  expect(buttons()[0]).toBe(before);
+  await act(async () => renderer.update(<TrackingMap {...defaults} />));
+  expect(buttons()[0]).toBe(before);
+  await act(async () => renderer.update(<TrackingMap {...defaults} foreground={false} />));
+  expect(buttons()).toHaveLength(0);
+  // A page open when the app went away: still nothing while away.
+  await act(async () => renderer.update(<TrackingMap {...defaults} foreground={false} appForeground={false} />));
+  expect(buttons()).toHaveLength(0);
+});
+
 test('camera read failure still allows recovery using database coordinates', async () => {
   mockCamera.getCamera.mockRejectedValueOnce(new Error('surface destroyed'));
   await render();

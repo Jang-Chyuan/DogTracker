@@ -95,7 +95,7 @@ export function historyHoldCandidates(statuses = {}, holds = {}) {
  * candidate's history rows of the last CARD_INDOOR_LOOKBACK_MS are read (one
  * dog at a time), again when its newest row moved on by CARD_INDOOR_RETRY_MS.
  * @returns { [slaveId]: hold } in HoldStore.holds() form (`from`,
- *   `fromClipped` for the card's minutes), only for current candidates
+ *   `fromClipped`), only for current candidates
  */
 export function useHistoryHolds(read, candidates, { owner = null, busy = false } = {}) {
   const [found, setFound] = useState({ owner: null, read: null, dogs: {} });
