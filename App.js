@@ -10,10 +10,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackHandler,
   Linking,
-  Pressable,
   StatusBar,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import {
@@ -102,8 +100,8 @@ import {
   TODAY_ROUTE_POLL_MS,
   useTodayRoute,
 } from './src/locationTracker/useTodayRoute';
-import { layout, touch, type, space, size as sizes } from './src/theme/tokens';
-import Glyph from './src/map/Glyph';
+import { layout, touch, space, size as sizes } from './src/theme/tokens';
+import BackRow from './src/components/BackRow';
 import { usePhonePermissions } from './src/app/usePhonePermissions';
 import { trackReceiverWait } from './src/map/TopAlerts';
 import {
@@ -1330,20 +1328,12 @@ function TrackerApp({ resume = null, onRestart }) {
           // No bottom tabs (v3): every settings page says where it is and
           // goes back the way the back key does (「‹ 標題」).
           <View style={styles.header}>
-            <Pressable
-              testID="page-back"
-              accessibilityRole="button"
-              accessibilityLabel={t("c479", { value: headerTitle })}
+            <BackRow
+              rowId="page-back"
+              label={t("c479", { value: headerTitle })}
+              title={headerTitle}
               onPress={goBack}
-              hitSlop={space.s}
-              style={({ pressed }) => [styles.back, pressed && styles.pressed]}
-            >
-              {/* 066: a real back icon (the 「‹」 character was small and
-                  hard to hit) with room before the title; the whole row is
-                  the 48dp target. */}
-              <Glyph name="back" color={colors.text} size={sizes.icon.navigation} />
-              <Text style={styles.brand}>{headerTitle}</Text>
-            </Pressable>
+            />
           </View>
         )}
         <View
@@ -1579,17 +1569,6 @@ const getStyles = makeStyles(theme => {
       paddingHorizontal: space.s,
       paddingVertical: space.xs,
     },
-    back: {
-      minHeight: touch.min,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.s,
-      paddingLeft: space.xs,
-      paddingRight: space.m,
-      alignSelf: 'flex-start',
-    },
-    pressed: { opacity: 0.7 },
-    brand: { ...type.title, color: colors.text },
     page: {
       flex: 1,
       backgroundColor: theme.isDark ? colors.bg : colors.surface,
