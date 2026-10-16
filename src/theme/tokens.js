@@ -43,9 +43,13 @@ export const colors = {
   activityNormal: '#D3CCC4',
   // No activity evidence: neutral, readable as both text and chart graphics.
   activityMissing: '#686868',
-  // A4 充電中 (2026-10-16): minutes on the charger, a cool neutral apart from
-  // 一般's warm grey and 沒有資料's dark grey (3:1 on surface as a graphic).
-  activityCharging: '#7C929C',
+  // A4 沒有資料: the dashed line (日、週、月、年 and the legend), >= 3:1 on the chart
+  // background. The global noDataLine is too pale for it (2026-10-16).
+  activityMissingLine: '#858B88',
+  // A4 充電中 (2026-10-16): minutes on the charger, green (apart from 休息's
+  // blue, 一般's warm grey and 劇烈's orange, also for red-green colour blindness;
+  // >= 3:1 on surface as a graphic).
+  activityCharging: '#1F8F6B',
   // Chart fill only; the card's 劇烈活動 text uses activityHighText.
   activityHigh: '#E07A2E',
   activityHighText: '#B85A12',
@@ -364,6 +368,10 @@ export const size = {
     dayBarGap: 1,
     dayBarRadius: 1.5,
     dayGapHeight: 3,
+    // 沒有資料 is a dashed line (activityMissingLine colour), not a filled bar.
+    noDataStroke: 2,
+    noDataDash: [6, 4],
+    noDataLegendWidth: 16,
     // A quarter with readings is at least this tall (visible at 0).
     dayBarMin: 3,
 

@@ -47,6 +47,45 @@ const STATE_COLOR = {
   vigorous: 'activityHigh',
   charging: 'activityCharging',
 };
+
+// Dash marks (left offset, width) for a dashed no-data line `length` dp long;
+// the pattern is centred so both ends have the same margin.
+export function dashMarks(length, [mark, gap] = size.activity.noDataDash) {
+  const count = Math.floor((length + gap) / (mark + gap));
+  // A span shorter than one dash (a quarter or two of a day) is one short dash.
+  if (!(length > 0)) return [];
+  if (count < 1) return [{ left: 0, width: length }];
+  const start = (length + gap - count * (mark + gap)) / 2;
+  return Array.from({ length: count }, (_, i) => ({ left: start + i * (mark + gap), width: mark }));
+}
+
+// Runs of consecutive no-data quarter hours in a day: [first, last] indexes.
+export function missingRuns(bars) {
+  const runs = [];
+  bars.forEach(bar => {
+    const missing = !bar.pending && bar.state === 'missing' && !(bar.count > 0);
+    if (!missing) return;
+    const last = runs[runs.length - 1];
+    if (last && last[1] === bar.index - 1) last[1] = bar.index;
+    else runs.push([bar.index, bar.index]);
+  });
+  return runs;
+}
+
+function DashedLine({ length, testID, style }) {
+  const { colors } = useTheme();
+  const styles = useStyles(getStyles);
+  const stroke = size.activity.noDataStroke;
+  return (
+    <View testID={testID} style={[{ width: length, height: stroke }, style]}>
+      {dashMarks(length).map(mark => (
+        <View key={mark.left} style={[styles.dash, { left: mark.left, width: mark.width, height: stroke,
+          backgroundColor: colors.activityMissingLine }]} />
+      ))}
+    </View>
+  );
+}
+
 const BAR_GAP = { week: 8, month: 2, year: 6 };
 const HOURS = ['00:00', '06:00', '12:00', '18:00', '24:00'];
 const AXIS_LABEL = size.activity.axisLabel;
@@ -302,6 +341,14 @@ function DayChart({ view }) {
                 style={[styles.dayGap, bar.state === 'charging' && { backgroundColor: colors.activityCharging }]} />)}
             </View>
           ))}
+          {width > 0 && missingRuns(view.bars).map(([first, last]) => {
+            const slot = (width - (view.bars.length - 1) * size.activity.dayBarGap) / view.bars.length;
+            return (
+              <DashedLine key={first} testID={`activity-day-nodata-${first}`}
+                length={(last - first + 1) * slot + (last - first) * size.activity.dayBarGap}
+                style={[styles.dayNoData, { left: first * (slot + size.activity.dayBarGap) }]} />
+            );
+          })}
         </View>
         <View style={styles.axis}>
           {width > 0 && HOURS.map((hour, index) => (
@@ -311,6 +358,18 @@ function DayChart({ view }) {
           ))}
         </View>
       </View>
+    </View>
+  );
+}
+
+// A whole bar of no data: a dashed line along its baseline, no fill.
+function BarNoData({ testID }) {
+  const styles = useStyles(getStyles);
+  const [width, setWidth] = useState(0);
+  return (
+    <View style={styles.barNoData}
+      onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+      {width > 0 && <DashedLine length={width} testID={testID} />}
     </View>
   );
 }
@@ -340,6 +399,9 @@ function Bars({ view }) {
                 />
               );
             })}
+            {bar.totals.missing > 0 && bar.segments.every(segment => segment.minutes === 0) && (
+              <BarNoData testID={`activity-nodata-${bar.start}`} />
+            )}
           </View>
         ))}
       </View>
@@ -373,13 +435,20 @@ function Legend({ view }) {
     <View style={styles.legend}>
       {items.map(item => (
         <View key={item.state} style={styles.legendItem}>
-          <View
-            testID={`activity-legend-${item.state}`}
-            style={[
-              styles.swatch,
-              { backgroundColor: colors[STATE_COLOR[item.state]] },
-            ]}
-          />
+          {item.state === 'missing' ? (
+            <View style={[styles.swatch, { width: size.activity.noDataLegendWidth }]}>
+              <DashedLine length={size.activity.noDataLegendWidth} testID="activity-legend-missing"
+                style={{ marginTop: (size.activity.legendSwatch - size.activity.noDataStroke) / 2 }} />
+            </View>
+          ) : (
+            <View
+              testID={`activity-legend-${item.state}`}
+              style={[
+                styles.swatch,
+                { backgroundColor: colors[STATE_COLOR[item.state]] },
+              ]}
+            />
+          )}
           <Text style={styles.legendText}>{item.label}</Text>
         </View>
       ))}
@@ -516,7 +585,10 @@ const getStyles = makeStyles(theme => {
     dayBars: { flexDirection: 'row', alignItems: 'flex-end', gap: size.activity.dayBarGap },
     daySlot: { flex: 1, justifyContent: 'flex-end' },
     dayBar: { borderTopLeftRadius: size.activity.dayBarRadius, borderTopRightRadius: size.activity.dayBarRadius },
-    dayGap: { height: size.activity.dayGapHeight, backgroundColor: colors.activityMissing },
+    dash: { position: 'absolute' },
+    dayNoData: { position: 'absolute', bottom: 0 },
+    barNoData: { alignSelf: 'stretch', height: size.activity.noDataStroke },
+    dayGap: { height: size.activity.dayGapHeight },
     axisLeft: { textAlign: 'left' },
     axisRight: { textAlign: 'right' },
     axisCenter: { textAlign: 'center' },
@@ -558,7 +630,7 @@ const getStyles = makeStyles(theme => {
       marginTop: space.s,
     },
     legendItem: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-    swatch: { width: size.activity.legendSwatch, height: size.activity.legendSwatch },
+    swatch: { width: size.activity.legendSwatch, minWidth: size.activity.legendSwatch, height: size.activity.legendSwatch },
     legendText: { ...type.caption, color: colors.textMuted },
     section: {
       ...type.captionBold,
