@@ -15,6 +15,7 @@ import { HOLD_CONFIG } from '../placement/IndoorHold';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { optimizeDatabase } from '../database/DatabaseStatistics';
 import { readPages } from '../database/PagedRead';
+import { CLOUD_ROWS, backfillWifiStep, cloudRowSetup, wifiLatestReady, WIFI_BACKFILL_PAUSE_MS } from './CloudRowCounters';
 
 /**
  * How much of this phone the downloaded copy may use.
@@ -70,6 +71,21 @@ export const CLOUD_DATABASE_METHODS = ['initializeLatest', 'readArchivePublicati
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
 const initialization = new WeakMap();
+
+// cloud_wifi_latest's backfill (CloudRowCounters): once per open database, a
+// while after start, a step of ids at a time with a pause between, each its
+// own short transaction on the App's queue. A failed step stops; the next
+// start continues where the last one left off.
+export const WIFI_BACKFILL_DELAY_MS = 30000;
+const backfills = new WeakMap();
+function scheduleWifiBackfill(connection) {
+  const key = connection.lockKey || connection;
+  if (backfills.has(key)) return;
+  backfills.set(key, true);
+  const step = () => withConnectionLock(connection, () => backfillWifiStep(connection))
+    .then(more => { if (more) setTimeout(step, WIFI_BACKFILL_PAUSE_MS); }, () => { backfills.delete(key); });
+  setTimeout(step, WIFI_BACKFILL_DELAY_MS);
+}
 
 export function createCloudDatabase(connection, options = {}) {
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : CLOUD_MAX_ROWS;
@@ -256,6 +272,9 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
         through_at TEXT NOT NULL, event_id TEXT, updated_at INTEGER NOT NULL,
         PRIMARY KEY (owner_user_id, master_id)
       )`);
+      // The row count and each Master's newest Wi-Fi row, kept by triggers
+      // (CloudRowCounters); rows stored before are added in the background.
+      await connection.executeBatchAsync(cloudRowSetup());
       // Verified cloud row count per closed hour; see CloudReconcile.
       await connection.executeAsync(`CREATE TABLE IF NOT EXISTS cloud_sync_buckets (
         owner_user_id TEXT NOT NULL, master_id INTEGER NOT NULL,
@@ -271,6 +290,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       // All cloud indexes/migrations exist before statistics are collected.
       await optimizeDatabase(connection);
       });
+      ready.then(() => scheduleWifiBackfill(connection), () => {});
       initialization.set(key, ready);
       ready.catch(() => initialization.delete(key));
       return ready;
@@ -292,15 +312,20 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
      * all those newest rows are 'phone' and the receiver's own Wi-Fi history
      * would look as if it had never uploaded at all.
      *
-     * `upload_source` is not indexed, so this walks the account's rows. The
-     * caller refreshes after successful downloads, route changes and return
-     * to the foreground — never on the upload pass.
+     * The caller refreshes after successful downloads, route changes and
+     * return to the foreground — never on the upload pass. Read from
+     * cloud_wifi_latest (CloudRowCounters, kept by a trigger); until its
+     * background backfill finished, from the table as before: `upload_source`
+     * is not indexed and that walks the account's rows (2.6–38 s on about
+     * 940,000 rows, on the queue every other read of the App waits behind).
      */
     async wifiUploads(owner) {
       requireOwner(owner);
-      return Object.fromEntries(rows(await connection.executeAsync(
-        `SELECT master_id, MAX(received_at) time FROM supabase_dog_status
-          WHERE owner_user_id=? AND upload_source='wifi' GROUP BY master_id`, [owner]))
+      const query = await wifiLatestReady(connection)
+        ? 'SELECT master_id, received_at AS time FROM cloud_wifi_latest WHERE owner_user_id=?'
+        : `SELECT master_id, MAX(received_at) time FROM supabase_dog_status
+          WHERE owner_user_id=? AND upload_source='wifi' GROUP BY master_id`;
+      return Object.fromEntries(rows(await connection.executeAsync(query, [owner]))
         .map(row => [Number(row.master_id), Number(row.time)])
         .filter(([master, time]) => Number.isInteger(master) && Number.isFinite(time) && time > 0));
     },
@@ -591,7 +616,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       const result = rows(await connection.executeAsync(
         // Separate aggregate subqueries permit SQLite's fast COUNT and MIN seek,
         // while one statement keeps both answers in the same read snapshot.
-        `SELECT (SELECT COUNT(*) FROM supabase_dog_status) AS count,
+        `SELECT ${CLOUD_ROWS} AS count,
                 (SELECT MIN(received_at) FROM supabase_dog_status) AS from_at`));
       const count = Number(result[0]?.count || 0);
       return {
