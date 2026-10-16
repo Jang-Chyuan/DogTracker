@@ -429,7 +429,7 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
     activityPeriod: (owner, slaveId, period) => readActivityPeriod(connection, owner, slaveId, period),
     activityEarliest: (owner, slaveId) => readActivityEarliest(connection, owner, slaveId),
     // The open dog card's activity and battery readings (DogCardReadings).
-    dogCardRows: (owner, slaveId, since) => readDogCardRows(connection, owner, slaveId, since),
+    dogCardRows: (owner, slaveId, since, until = null) => readDogCardRows(connection, owner, slaveId, since, until),
     // Signed out (no owner) only this phone's own BLE rows: signing in is
     // optional, and the receiver's dogs still need their latest packets.
     async latestStatusRows(owner, sinceMs, now = Date.now()) {

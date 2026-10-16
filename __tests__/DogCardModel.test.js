@@ -215,7 +215,9 @@ test('the card falls back to the map blue dot when the recording service has no 
 });
 
 // 2026-10-15: a rest as long as the card's six-hour lookback read 「已 5 小時
-// 58 分」「已 6 小時」 by turns as the window slid; now 「休息中・超過 6 小時」.
+// 58 分」「已 6 小時」 by turns as the window slid; now 「休息中・超過 6 小時」
+// while no older rows are joined (since 2026-10-16 useDogCardReadings reads
+// them and the row says where the rest began: CardRestDuration.test.js).
 test('活動量: a rest reaching back to where the readings begin is 「超過 6 小時」, steady as the clock moves', () => {
   const { dogCardReadings, CARD_ACTIVITY_LOOKBACK_MS } = require('../src/activity/DogCardReadings');
   const details = [];

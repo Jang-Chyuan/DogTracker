@@ -27,6 +27,7 @@ import { createHoldStore, HOLD_LOOKBACK_MS } from '../src/placement/HoldStore';
 import { coldStartCoordinates, frameAllCoordinates, framePadding, phoneFix } from '../src/map/MapFraming';
 import { boxesOverlap, edgeHints, hintBox } from '../src/map/EdgeHints';
 import { CARD_ACTIVITY_LOOKBACK_MS, dogCardReadings } from '../src/activity/DogCardReadings';
+import { readCardReadings } from '../src/map/useDogCardReadings';
 import { dogCard, phoneReading } from '../src/map/DogCardModel';
 import { cloudClock, dogFreshness, isIndoorHold } from '../src/tracking/DogFreshness';
 import { cardAddressLine } from '../src/placement/AddressLookup';
@@ -762,7 +763,8 @@ async function card(name, { indoorStay = null } = {}) {
   const dog = state.dog(fixture.openDog);
   const now = fixture.now;
   const freshness = dogFreshness(dog, { now, cloud: fixture.cloudSync });
-  const readings = dogCardReadings(await fixture.readCardRows(dog.slaveId, now - CARD_ACTIVITY_LOOKBACK_MS), now);
+  // As the open card reads them: a rest followed back to where it began.
+  const readings = await readCardReadings(fixture.readCardRows, dog.slaveId, now);
   const model = dogCard(dog, { freshness, range: fixture.cloudDogs.ranges[dog.slaveId] ?? null,
     battery: readings.battery, activity: readings.activity, phone: phoneReading(fixture.livePhone, now), now,
     reference: freshness.source === 'cloud' ? cloudClock(fixture.cloudSync, now) : now,
@@ -794,12 +796,13 @@ test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows
   expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
 });
 
-// 2026-10-15: a rest longer than the card's six-hour lookback.
-test('card-rest-long: 「休息中・超過 6 小時」', async () => {
+// 2026-10-16: a rest longer than the card's six-hour read, followed back to
+// where it began (2026-10-15 it said 「超過 6 小時」).
+test('card-rest-long: 「休息中・已 8 小時 12 分」', async () => {
   const { rows, keys } = await card('card-rest-long');
   expect(keys).toEqual(['range', 'battery', 'activity']);
-  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '超過 6 小時', activityTone: 'rest',
-    speechDetail: '活動量低超過 6 小時', at: null });
+  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 8 小時 12 分', activityTone: 'rest',
+    speechDetail: '活動量低已 8 小時 12 分', at: null });
 });
 
 test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {

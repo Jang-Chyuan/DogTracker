@@ -942,16 +942,18 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
-  // 2026-10-15: card-ok, but 豆豆 has rested for seven hours (before the
-  // last half hour one packet a minute with its activity and no fix, so
-  // nothing holds it indoors), longer than the card's six-hour lookback:
-  // 「休息中・超過 6 小時」, not 「已 5 小時 59 分」 or 「已 6 小時」 by turns as
-  // the lookback slides.
+  // card-ok, but 豆豆 has rested since 01:18 after an hour of moving about
+  // (before the last half hour one packet a minute with its activity and no
+  // fix, so nothing holds it indoors), longer than the card's six-hour read:
+  // the card reads further back and says 「休息中・已 8 小時 12 分」
+  // (2026-10-16; 2026-10-15 it said 「超過 6 小時」).
   'card-rest-long': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
     ble: inTimeOrder([
-      ...track(bleRow, now, { slave: 4, from: 7 * 60 * MINUTE, to: 31 * MINUTE, every: MINUTE, battery: 62,
-        activity: 0.02, dog: () => null }),
+      ...track(bleRow, now, { slave: 4, from: 9 * 60 * MINUTE + 12 * MINUTE, to: 8 * 60 * MINUTE + 13 * MINUTE,
+        every: MINUTE, battery: 62, activity: 0.4, dog: () => null }),
+      ...track(bleRow, now, { slave: 4, from: 8 * 60 * MINUTE + 12 * MINUTE, to: 31 * MINUTE, every: MINUTE,
+        battery: 62, activity: 0.02, dog: () => null }),
       ...track(bleRow, now, { slave: 4, from: 30 * MINUTE, battery: 62, activity: 0.02,
         dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) }),
       ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
@@ -2161,7 +2163,8 @@ export function buildFixture(name, now = FIXTURE_NOW, page = null) {
     // Faces by collar number (useDogAvatars' avatars); the default otherwise.
     avatars,
     // CloudDatabase.dogCardRows over the fixture's rows (DogCardReadings).
-    readCardRows: async (slaveId, since) => cardRows(cardBle ?? ble, cloud?.ownerId ? cloudRows : [], slaveId, since),
+    readCardRows: async (slaveId, since, until = null) =>
+      cardRows(cardBle ?? ble, cloud?.ownerId ? cloudRows : [], slaveId, since, until),
     // 診斷 (S8): the same rows as the data pages would read them.
     diagnostics: diagnosticsSources({ ble, cloudRows, owner: cloud?.ownerId ?? null,
       today: phone?.today || [], readFailure }),
@@ -2303,10 +2306,11 @@ function fakeWifi({ ssids = [], activeSsid = '' } = {}) {
 }
 
 // What readDogCardRows would read from the two tables for one dog.
-function cardRows(ble, cloud, slaveId, since) {
+function cardRows(ble, cloud, slaveId, since, until = null) {
   const mine = (rows, time) => rows.filter(row => row.slave_id === slaveId)
     .map(row => ({ ...row, time: time(row) }));
-  const activity = rows => rows.filter(row => row.time >= since && row.activity_valid === 1)
+  const activity = rows => rows.filter(row => row.time >= since && (until == null || row.time < until)
+    && row.activity_valid === 1)
     .sort((left, right) => left.time - right.time)
     .map(row => ({ time: row.time, activity: row.activity, activity_valid: 1, activity_time: row.activity_time ?? null,
       master_id: row.master_id, slave_id: row.slave_id }));
@@ -2317,6 +2321,7 @@ function cardRows(ble, cloud, slaveId, since) {
       usb_present: row.usb_present, source }));
   const local = mine(ble, row => row.received_at);
   const remote = mine(cloud, timeOf);
+  if (until != null) return { local: activity(local), cloud: activity(remote), battery: [], since, until };
   return { local: activity(local), cloud: activity(remote),
     battery: [...newestBattery(local, 'ble'), ...newestBattery(remote, 'cloud')], since };
 }
