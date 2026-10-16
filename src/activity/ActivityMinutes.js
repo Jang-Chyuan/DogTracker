@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isCharging } from '../models/UsbPresent';
 // A dog's activity as one value per minute, and what those minutes say: 休息
 // (resting), 劇烈 (vigorous) or 一般. Shared by the dog's card (活動量 row,
 // PR 046) and the activity detail page (A4, PR 057). Pure: no React, no SQLite.
@@ -56,7 +57,6 @@ const MINUTE = 60000;
 export const minuteOf = time => Math.floor(time / MINUTE) * MINUTE;
 
 const valid = value => Number.isFinite(value) && value >= 0 && value <= 1;
-const powered = row => row?.usb_present === 1 || row?.usb_present === true || row?.usb_present === '1';
 
 /**
  * Readings from stored rows (dog_status or supabase_dog_status shape):
@@ -74,7 +74,7 @@ export function activityReadings(rows = [], source) {
     const value = row?.activity == null ? NaN : Number(row.activity);
     const flag = row?.activity_valid;
     if (!Number.isFinite(time)) continue;
-    if (powered(row)) {
+    if (isCharging(row)) {
       result.push({ time, value: NaN, key: readingKey(row, time), source, charging: true });
       continue;
     }

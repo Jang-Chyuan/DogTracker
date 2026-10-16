@@ -11,6 +11,7 @@ import { t } from '../i18n';
 // Both ask 9 minutes either side of the period: a rest that began just before
 // midnight still fills back into the first minutes of the day.
 import { activityReadings } from './ActivityMinutes';
+import { chargingSql } from '../models/UsbPresent';
 
 const MINUTE = 60000;
 export const ACTIVITY_CONTEXT_MS = 9 * MINUTE;
@@ -20,7 +21,7 @@ const rowsOf = result => result.results || result.rows?._array || [];
 const VALID = 'activity_valid=1 AND activity IS NOT NULL AND CAST(activity AS REAL) BETWEEN 0 AND 1';
 // A row on USB power (充電中, 2026-10-16): its minute is the collar's
 // charging, not the dog's activity (ActivityMinutes).
-const POWERED = 'usb_present=1';
+const POWERED = chargingSql();
 const READ = `((${VALID}) OR ${POWERED})`;
 
 const check = (slaveId, start, end) => {
@@ -62,11 +63,11 @@ export async function readActivityPeriod(db, owner, slaveId, { start, end, detai
   const cloud = owner ? rowsOf(await db.executeAsync(`SELECT CAST(t / 60000 AS INTEGER) * 60000 AS minute,
       SUM(CASE WHEN p THEN 0 ELSE v END) AS sum, SUM(CASE WHEN p THEN 0 ELSE 1 END) AS count,
       MAX(p) AS charging FROM (
-      SELECT ${CLOUD_TIME_C} AS t, CAST(c.activity AS REAL) AS v, CASE WHEN c.usb_present=1 THEN 1 ELSE 0 END AS p
+      SELECT ${CLOUD_TIME_C} AS t, CAST(c.activity AS REAL) AS v, CASE WHEN ${chargingSql('c.usb_present')} THEN 1 ELSE 0 END AS p
       FROM supabase_dog_status c
       WHERE c.owner_user_id=? AND c.slave_id=? AND ${CLOUD_TIME_C}>=? AND ${CLOUD_TIME_C}<?
         AND ((c.activity_valid=1 AND c.activity IS NOT NULL AND CAST(c.activity AS REAL) BETWEEN 0 AND 1)
-          OR c.usb_present=1)
+          OR ${chargingSql('c.usb_present')})
         AND NOT EXISTS (SELECT 1 FROM dog_status l WHERE l.slave_id=c.slave_id
           AND l.received_at BETWEEN ${CLOUD_TIME_C} - 120000 AND ${CLOUD_TIME_C} + 120000
           AND l.activity_valid=1 AND l.activity IS NOT NULL AND CAST(l.activity AS REAL) BETWEEN 0 AND 1

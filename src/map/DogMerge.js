@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { coordinate as toCoordinate } from '../tracking/RouteSamples';
 import { ridesAlong } from '../placement/RideAlong';
 import { advanceBattery, batteryReading, plausibleBattery } from '../tracking/BatteryPlausibility';
+import { isCharging } from '../models/UsbPresent';
 
 // A slave_id identifies the same dog across the whole team, whichever Master
 // received it (confirmed 2026-09-17). The home map therefore shows one marker
@@ -152,9 +153,12 @@ export function mergeDogMarkers({ point, samples = [], cloudRows = [], packetRow
       // Indoors the dog is drawn where it was last seen clearly (IndoorHold),
       // never at a hand-entered point. A charging collar keeps that place after
       // its packets stop, as the set point used to.
-      const usb = packet?.row.usb_present;
-      const charging = usb === 1 || usb === true || (usb !== 0 && usb !== false
-        && environment?.source === 'usb_rule');
+      // The collar's own USB flag on the newest packet (UsbPresent.isCharging,
+      // the same rule as the card's 活動量 row and A4; 2026-10-16). The
+      // environment model's usb_rule is not used here any more: it only reads
+      // the same flag from the raw payload when every packet of its window has
+      // it, which the stored column already carries.
+      const charging = isCharging(packet?.row);
       // Riding in the handler's vehicle beats a hold at the place it got in.
       // The dog is simply drawn where it is, with nothing said about it: it is
       // where the handler expects it, not a state to point out.

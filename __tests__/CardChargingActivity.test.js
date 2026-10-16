@@ -95,3 +95,12 @@ test('A4: the charger\'s minutes are their own state, out of the rest totals', a
     }
   });
 });
+
+test('one rule for 充電中: the stored column or the wire flag, 1 or true; unknown is not charging', () => {
+  const { isCharging, chargingSql } = require('../src/models/UsbPresent');
+  expect([{ usb_present: 1 }, { usb_present: true }, { usb_present: '1' }, { usbPresent: 1 }].map(isCharging))
+    .toEqual([true, true, true, true]);
+  expect([{ usb_present: 0 }, { usb_present: null }, {}, null, { usbPresent: false }].map(isCharging))
+    .toEqual([false, false, false, false, false]);
+  expect(chargingSql('c.usb_present')).toBe('c.usb_present=1');
+});
