@@ -17,6 +17,7 @@ import {
 import {
   dragRangeHandle,
   rangeHandles,
+  rangeLabelPlacement,
   stepRangeHandle,
   xOfTime,
 } from '../history/screen/HistoryRangeBar';
@@ -255,6 +256,8 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
   // Opened, TalkBack moves to the start handle (設計稿「範圍條在 TalkBack 開著時」).
   const startRef = useRef(null);
   useInitialFocus(startRef);
+  const places = rangeLabelPlacement({ startX, endX, container: width + TOUCH, box: TOUCH,
+    inset: sizes.rangeBar.labelEdgeInset, gap: sizes.rangeBar.labelEdgeGap, close });
   const startLabel = clock(handles.start);
   const endLabel = clock(handles.end);
   return (
@@ -304,24 +307,16 @@ function RangeBar({ range, track, dayPoints, today, onDrag, onBegin, onCommit,
       </View>
       <View style={styles.labels} pointerEvents="none">
         <Text
-          style={[
-            styles.label,
-            close
-              ? [styles.labelRight, { right: width - startX + TOUCH / 2 + sizes.rangeBar.labelEdgeGap }]
-              : [styles.labelCentre, { left: startX }],
-          ]}
+          testID="range-label-start"
+          style={[styles.label, { left: places.start.left, textAlign: places.start.align }]}
           numberOfLines={1}
           maxFontSizeMultiplier={HANDLE_LABEL_MAX_SCALE}
         >
           {startLabel}
         </Text>
         <Text
-          style={[
-            styles.label,
-            close
-              ? { left: endX + TOUCH / 2 + sizes.rangeBar.labelEdgeGap }
-              : [styles.labelCentre, { left: endX }],
-          ]}
+          testID="range-label-end"
+          style={[styles.label, { left: places.end.left, textAlign: places.end.align }]}
           numberOfLines={1}
           maxFontSizeMultiplier={HANDLE_LABEL_MAX_SCALE}
         >
@@ -556,9 +551,8 @@ const getStyles = makeStyles(theme => {
       position: 'absolute',
       color: colors.textMuted,
       fontSize: type.caption.fontSize,
+      width: TOUCH,
       ...tabularNumbers,
     },
-    labelRight: { textAlign: 'right' },
-    labelCentre: { width: TOUCH, textAlign: 'center' },
   });
 });

@@ -478,6 +478,8 @@ export const size = {
     labelBaselineLift: 6,
     summaryOverlap: 14,
     labelEdgeGap: 2,
+    // A time under a handle stays this far inside the range box's inner edge.
+    labelEdgeInset: 4,
   },
   timeline: {
     timeColumn: 54,

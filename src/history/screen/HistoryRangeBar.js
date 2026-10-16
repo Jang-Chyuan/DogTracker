@@ -20,6 +20,39 @@ function nearestTime(points, time) {
   return time - before <= after - time ? before : after;
 }
 
+/**
+ * Where the two times under the handles go, in a row `container` wide (the
+ * range box's inner width, handle boxes included): each time sits in a `box`
+ * wide slot centred under its handle, but a slot never leaves
+ * [inset, container - inset]: near an end the slot is pushed inwards and its
+ * text aligned to that inner edge (not centred), so 「23:57」 under a handle at
+ * the far right does not run over the frame. Handles closer than `box`
+ * (`close`): the start's time ends just left of its handle's centre, the end's
+ * starts just right of its own (判定表「範圍條把手太近」); the two slots
+ * never overlap. `startX`/`endX` are the handle boxes' left edges.
+ */
+export function rangeLabelPlacement({ startX, endX, container, box, inset, gap, close }) {
+  const low = inset, high = Math.max(inset, container - inset - box);
+  const slot = (left, align) => {
+    const clamped = Math.max(low, Math.min(high, left));
+    return { left: clamped, align: clamped > left ? 'left' : clamped < left ? 'right' : align };
+  };
+  let start, end;
+  if (close) {
+    start = slot(startX + box / 2 - gap - box, 'right');
+    end = slot(endX + box / 2 + gap, 'left');
+  } else {
+    start = slot(startX, 'center');
+    end = slot(endX, 'center');
+  }
+  if (start.left + box > end.left) {
+    // Squeezed by an edge: the start moves back, the end keeps its place.
+    start = { left: Math.max(low, end.left - box), align: 'right' };
+    end = { ...end, left: Math.max(end.left, start.left + box) };
+  }
+  return { start, end };
+}
+
 /** The track: today 00:00 to this minute; another day 00:00 to 24:00. */
 export function rangeTrack({ dayStart, dayEnd, today, now }) {
   return { start: dayStart, end: today ? Math.max(dayStart + MINUTE, Math.min(now, dayEnd)) : dayEnd };
