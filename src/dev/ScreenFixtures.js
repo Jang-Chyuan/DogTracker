@@ -1808,6 +1808,15 @@ const FIXTURES = {
   // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { rangeOpen: true, manual: { start: now - 100 * MINUTE, end: null, following: true } } }),
+  // 2026-10-16: the range bar open with the start handle at the far left (the
+  // day's first fix, 00:05) and the end following now at the far right: both
+  // times stay inside the range box (小黑's day, fictional).
+  'history-range-edges': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: legsPath(now, 565 * MINUTE, at(-30, -60), [
+      { stay: 60 }, { walk: 30, bearing: 40, speed: 0.8 }, { stay: 200 }, { walk: 30, bearing: 120, speed: 0.8 },
+      { stay: 205 }, { walk: 40, bearing: 200, speed: 0.8 }]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix })) }),
+    geocoder: { names: HISTORY_NAMES },
+    historyView: { rangeOpen: true, manual: { start: now - 565 * MINUTE, end: null, following: true } } }),
   // 豆豆 has one fix today: one point, no distance, no range bar (只有一筆).
   'history-single-point': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 4, ble: [bleRow({ slave: 4, time: now - 20 * MINUTE, fix: at(4, 6) })] }) }),
