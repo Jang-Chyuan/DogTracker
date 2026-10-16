@@ -12,7 +12,12 @@ const MapView = forwardRef((props, ref) => {
 });
 export default MapView;
 export const PROVIDER_GOOGLE = 'google';
-export const Marker = props => <View {...props} testID="map-marker" />;
+// A marker's bitmap redraw, called with the marker's identifier.
+export const mockMarkerRedraw = jest.fn();
+export const Marker = forwardRef((props, ref) => {
+  useImperativeHandle(ref, () => ({ redraw: () => mockMarkerRedraw(props.identifier) }), [props.identifier]);
+  return <View {...props} testID="map-marker" />;
+});
 export const Polyline = props => <View {...props} testID="map-polyline" />;
 export const Circle = props => <View {...props} testID="map-circle" />;
 export const Polygon = props => <View {...props} testID="map-polygon" />;
