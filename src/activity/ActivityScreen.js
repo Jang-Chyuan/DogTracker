@@ -33,6 +33,7 @@ import { TextButton } from '../settings/DataTable';
 import { ACTIVITY_VIEW_COPY, activityPeriod, activityChartSummary } from './views';
 import { useActivityView } from './useActivityView';
 import { linesFor } from '../utils/textScale';
+import BackRow from '../components/BackRow';
 
 export const ACTIVITY_MODES = Object.freeze([
   { mode: 'day', label: t("c444") },
@@ -121,7 +122,6 @@ export default function ActivityScreen({
   initialView = null,
   onBack,
 }) {
-  const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const insets = useSafeAreaInsets();
   useBack(onBack);
@@ -162,20 +162,13 @@ export default function ActivityScreen({
     >
       <View style={styles.header}>
         {/* 066: the back icon and the title are one 48dp target. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("c479", { value: t("c439", { name: name }) })}
+        <BackRow
+          rowId="activity-back"
+          label={t("c479", { value: t("c439", { name: name }) })}
+          title={t("c439", { name: name })}
           onPress={onBack}
-          testID="activity-back"
-          style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}
-        >
-          <Glyph name="back" color={colors.text} size={size.icon.navigation} />
-          <Text
-            style={styles.title}
-            accessibilityRole="header"
-            numberOfLines={linesFor(1)}
-          >{t("c439", { name: name })}</Text>
-        </Pressable>
+          titleLines={linesFor(1)}
+        />
       </View>
       <ScrollView
         contentContainerStyle={[
@@ -511,17 +504,6 @@ const getStyles = makeStyles(theme => {
       minHeight: touch.subpageHeader,
       paddingHorizontal: space.xs,
     },
-    backRow: {
-      minHeight: touch.min,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.s,
-      paddingLeft: space.s,
-      paddingRight: space.m,
-      flexShrink: 1,
-      borderRadius: radius.full,
-    },
-    title: { ...type.title, color: colors.text, flexShrink: 1 },
     body: { paddingHorizontal: layout.screenEdge },
     tabs: {
       flexDirection: 'row',
