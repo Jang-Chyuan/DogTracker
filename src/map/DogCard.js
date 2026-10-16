@@ -90,6 +90,8 @@ const getACTIVITY_TONE = makeStyles(theme => {
     rest: colors.activityLow,
     vigorous: colors.activityHighText,
     normal: colors.text,
+    // 充電中: a plain fact, like 一般 (the 電量 row says the same).
+    charging: colors.text,
     missing: colors.activityMissing,
   };
 });

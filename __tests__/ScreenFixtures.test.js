@@ -805,6 +805,41 @@ test('card-rest-long: 「休息中・已 8 小時 12 分」', async () => {
     speechDetail: '活動量低已 8 小時 12 分', at: null });
 });
 
+// 2026-10-16: a collar on its charger reports a valid 0; that is not a rest.
+test('card-charging: 電量 「充電中」 and 活動量 「充電中」, never 休息中', async () => {
+  const { rows } = await card('card-charging');
+  expect(rows.battery.value).toMatch(/^充電中 /);
+  expect(rows.activity).toMatchObject({ value: i18nT('c731'), detail: null, activityTone: 'charging',
+    speech: '活動量，充電中' });
+});
+
+test('card-rest-after-charging: the rest starts where the charging ended', async () => {
+  const { rows } = await card('card-rest-after-charging');
+  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘', activityTone: 'rest' });
+});
+
+test('activity-charging (A4): the charger\'s minutes are 充電中, not 休息 or 沒有資料', async () => {
+  const { buildActivityView, activityPeriod } = require('../src/activity/views');
+  const { activityViewInput } = require('../src/activity/ActivityData');
+  const fixture = buildFixture('activity-charging');
+  expect(fixture).toMatchObject({ openDog: 4, openPage: 'activity' });
+  const { mode, date } = fixture.activityView;
+  const period = activityPeriod(mode, date);
+  const view = (answer, first) => buildActivityView({ mode, date, now: fixture.now, earliest: first, since: first,
+    ...activityViewInput(answer) });
+  const first = await fixture.readActivityEarliest(4);
+  for (const detail of ['raw', 'minute']) {
+    const day = view(await fixture.readActivity(4, { start: period.start, end: period.end, detail }), first);
+    expect(day.totals.charging).toBeGreaterThanOrEqual(119);
+    expect(day.totals.charging).toBeLessThanOrEqual(121);
+    // Only the 40 minutes after the charger count as 休息.
+    expect(day.totals.rest).toBeGreaterThanOrEqual(39);
+    expect(day.totals.rest).toBeLessThanOrEqual(41);
+    expect(day.rows.find(row => row.state === 'charging').rangeLabels).toEqual(['06:50–08:50']);
+    if (detail === 'raw') expect(day.bars.filter(bar => bar.state === 'charging').length).toBeGreaterThanOrEqual(7);
+  }
+});
+
 test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {
   const { rows, keys, state } = await card('card-near-edge');
   expect(keys).toEqual(['range', 'battery', 'activity']);
@@ -832,7 +867,7 @@ test('card-problems (A3b): every problem red, 活動量 「—」, the distance 
 // 2026-10-15: its clear fixes at the door begin inside the cold start's half
 // hour, so the live rows never saw it arrive (`heldFromClipped`): the card asks
 // the history, which begins the stay at the same packet.
-test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging 62%, resting 40 minutes, no 接收範圍 row', async () => {
+test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging 62%, activity 充電中, no 接收範圍 row', async () => {
   const { model, rows, keys, state, dog } = await card('card-indoor', { indoorStay: askHistory });
   expect(dog.heldFromClipped).toBe(true);
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・室內' });
@@ -840,8 +875,8 @@ test('card-indoor (A7b): 位置 「室內・11 分」 over its address, charging
   expect(rows.position).toMatchObject({ value: '室內・11 分', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
     speech: expect.stringMatching(/^位置，室內，11 分，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
-  expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 40 分鐘',
-    speech: '活動量，休息中，活動量低已 40 分鐘' });
+  // On its charger: 充電中, not the 40 minutes of 0.02 it reads (2026-10-16).
+  expect(rows.activity).toMatchObject({ value: i18nT('c731'), detail: null, speech: '活動量，充電中' });
   expect(model.headline).toMatchObject({ kind: 'distance' });
 });
 

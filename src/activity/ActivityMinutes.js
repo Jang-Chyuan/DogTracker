@@ -25,6 +25,12 @@ import { t } from '../i18n';
 //   first one with data after whichever broke it.
 // - Otherwise 一般 when the last 10 minutes have enough data (8 of 10), and
 //   nothing ("—") when they do not.
+// - A minute in which the collar reported USB power (usb_present=1, 充電中;
+//   2026-10-16: a collar on its charger reports a valid 0 and read as 休息)
+//   is neither 休息, 一般 nor 劇烈: its readings do not count, and going back
+//   it ends a rest or a vigorous run like an active minute does, so a rest
+//   that began when the charger came off starts there. Judged at a charging
+//   minute the state is 充電中 (`charging`).
 // The thresholds are provisional (design: 暫定 0.05／10 分鐘、0.8／2 分鐘,
 // pending field data).
 
@@ -43,20 +49,23 @@ export const ACTIVITY = Object.freeze({
   restMaxMissingMinutes: REST_MAX_MISSING_MINUTES,
 });
 
-export const ACTIVITY_STATE = Object.freeze({ REST: 'rest', NORMAL: 'normal', VIGOROUS: 'vigorous' });
+export const ACTIVITY_STATE = Object.freeze({ REST: 'rest', NORMAL: 'normal', VIGOROUS: 'vigorous',
+  CHARGING: 'charging' });
 
 const MINUTE = 60000;
 export const minuteOf = time => Math.floor(time / MINUTE) * MINUTE;
 
 const valid = value => Number.isFinite(value) && value >= 0 && value <= 1;
+const powered = row => row?.usb_present === 1 || row?.usb_present === true || row?.usb_present === '1';
 
 /**
  * Readings from stored rows (dog_status or supabase_dog_status shape):
- * `{ time, activity, activity_valid, activity_time, master_id, slave_id }`,
- * where `time` is received_at (local) or track_at (cloud). Rows without a
- * valid activity are dropped.
+ * `{ time, activity, activity_valid, activity_time, master_id, slave_id,
+ * usb_present }`, where `time` is received_at (local) or track_at (cloud).
+ * Rows without a valid activity are dropped, unless the collar was on USB
+ * power: those are kept as `charging` (their value does not count).
  * @param source 'ble' | 'cloud'
- * @returns [{ time, value, key, source }]
+ * @returns [{ time, value, key, source, charging? }]
  */
 export function activityReadings(rows = [], source) {
   const result = [];
@@ -64,7 +73,12 @@ export function activityReadings(rows = [], source) {
     const time = row?.time == null ? NaN : Number(row.time);
     const value = row?.activity == null ? NaN : Number(row.activity);
     const flag = row?.activity_valid;
-    if (!Number.isFinite(time) || !valid(value) || flag === 0 || flag === false) continue;
+    if (!Number.isFinite(time)) continue;
+    if (powered(row)) {
+      result.push({ time, value: NaN, key: readingKey(row, time), source, charging: true });
+      continue;
+    }
+    if (!valid(value) || flag === 0 || flag === false) continue;
     result.push({ time, value, key: readingKey(row, time), source });
   }
   return result;
@@ -87,7 +101,9 @@ export function readingKey(row, time = Number(row?.time)) {
  * One value per finished minute that has data, oldest first.
  * @param readings activityReadings() of both sources
  * @param options.now readings in now's minute (still running) are left out
- * @returns [{ minute, value, count }] `minute` is the minute's start (ms)
+ * @returns [{ minute, value, count, charging? }] `minute` is the minute's
+ *   start (ms); a minute with a charging reading is `charging` (its value
+ *   NaN when it has no other reading, and never judged)
  */
 export function activityMinutes(readings = [], { now = Date.now() } = {}) {
   const current = minuteOf(now);
@@ -101,14 +117,19 @@ export function activityMinutes(readings = [], { now = Date.now() } = {}) {
   for (const reading of unique.values()) {
     const minute = minuteOf(reading.time);
     if (minute >= current) continue;
-    const bucket = buckets.get(minute) || { minute, sum: 0, count: 0 };
-    bucket.sum += reading.value;
-    bucket.count += 1;
+    const bucket = buckets.get(minute) || { minute, sum: 0, count: 0, charging: false };
+    if (reading.charging) bucket.charging = true;
+    else {
+      bucket.sum += reading.value;
+      bucket.count += 1;
+    }
     buckets.set(minute, bucket);
   }
   return [...buckets.values()]
     .sort((left, right) => left.minute - right.minute)
-    .map(({ minute, sum, count }) => ({ minute, value: sum / count, count }));
+    .map(({ minute, sum, count, charging }) => (charging
+      ? { minute, value: count ? sum / count : NaN, count, charging: true }
+      : { minute, value: sum / count, count }));
 }
 
 // Does the window of `length` minutes ending at minute `end` qualify?
@@ -130,12 +151,14 @@ function windowHolds(values, end, length, minData, test) {
 // a rest: only a minute failing `test` breaks it, missing data does not).
 // `maxMissing`: more minutes than this in a row without data break it too
 // (the run starts at the first minute with data after them).
-function runStart(values, end, length, extendNeeds, test, earliest, maxMissing = Infinity) {
+function runStart(values, end, length, extendNeeds, test, earliest, maxMissing = Infinity, charging = null) {
   let last = end;
   // Minutes without data at the window's far end, already in a row.
   let missing = 0;
   for (let minute = end - (length - 1) * MINUTE; minute <= end && !values.has(minute); minute += MINUTE) missing += 1;
   while (last - MINUTE >= earliest && windowHolds(values, last - MINUTE, length, extendNeeds, test)) {
+    // A minute on the charger ends the run: it starts after it.
+    if (charging?.has(last - length * MINUTE)) break;
     // The minute the window now takes in at its far end.
     missing = values.has(last - length * MINUTE) ? 0 : missing + 1;
     if (missing > maxMissing) break;
@@ -153,7 +176,7 @@ function runStart(values, end, length, extendNeeds, test, earliest, maxMissing =
  * @param options.end start of the minute to judge at
  * @param options.from where the readings were read from (the card's
  *   lookback edge), if known
- * @returns {{ state: 'rest'|'vigorous'|'normal'|null, since: number|null,
+ * @returns {{ state: 'rest'|'vigorous'|'normal'|'charging'|null, since: number|null,
  *   durationMinutes: number|null, over?: true }}
  *   `since` is when a rest or vigorous run started, `durationMinutes` how long
  *   it has lasted at the end of `end`. null state: not enough data (「—」).
@@ -166,7 +189,10 @@ function runStart(values, end, length, extendNeeds, test, earliest, maxMissing =
 export function activityState(minutes = [], { end, from = null, config = ACTIVITY } = {}) {
   const none = { state: null, since: null, durationMinutes: null };
   if (!Number.isFinite(end) || !minutes.length) return none;
-  const values = new Map(minutes.map(item => [item.minute, item.value]));
+  // Charging minutes are not data; going back they end a run (runStart).
+  const charging = new Set(minutes.filter(item => item.charging).map(item => item.minute));
+  if (charging.has(end)) return { state: ACTIVITY_STATE.CHARGING, since: null, durationMinutes: null };
+  const values = new Map(minutes.filter(item => !item.charging).map(item => [item.minute, item.value]));
   const earliest = minutes[0].minute;
   const vigorous = value => value >= config.vigorousMin;
   const rest = value => value <= config.restMax;
@@ -174,7 +200,7 @@ export function activityState(minutes = [], { end, from = null, config = ACTIVIT
   const vigorousNeeds = config.vigorousMinutes;
   const restNeeds = Math.ceil(config.restMinutes * config.coverage - 1e-9);
   const run = (length, needs, test, state, maxMissing) => {
-    const since = runStart(values, end, length, needs, test, earliest, maxMissing);
+    const since = runStart(values, end, length, needs, test, earliest, maxMissing, charging);
     return { state, since, durationMinutes: Math.round((end + MINUTE - since) / MINUTE) };
   };
   if (windowHolds(values, end, config.vigorousMinutes, vigorousNeeds, vigorous)) {
@@ -208,7 +234,8 @@ export function durationText(minutes) {
  * The card's 活動量 row: { word, detail, speechDetail, tone } —
  * 「休息中」+「已 18 分鐘」 (tone 'rest'; a rest `over` the lookback
  * 「超過 24 小時」, `lookbackMinutes`), 「劇烈活動」+「已 3 分鐘」
- * ('vigorous'), 「一般」 ('normal'), 「—」 (null) when there is not enough data
+ * ('vigorous'), 「一般」 ('normal'), 「充電中」 ('charging': the collar is on
+ * its charger, its readings are not the dog's), 「—」 (null) when there is not enough data
  * or the dog has no new position. `speechDetail` is what TalkBack says for the
  * minutes (「活動量低已 18 分鐘」): they are the collar's motion, not the
  * 室內 minutes of the 位置 row.
@@ -230,6 +257,8 @@ export function activityWords(result, { lookbackMinutes = null } = {}) {
     }
     case ACTIVITY_STATE.NORMAL:
       return { word: t("c434"), detail: null, tone: 'normal' };
+    case ACTIVITY_STATE.CHARGING:
+      return { word: t('c731'), detail: null, tone: 'charging' };
     default:
       return { word: '—', detail: null, tone: null };
   }

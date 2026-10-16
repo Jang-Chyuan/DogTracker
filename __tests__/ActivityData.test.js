@@ -9,13 +9,13 @@ const DAY = new Date(2026, 9, 6).getTime();
 function database() {
   const db = createMemoryConnection();
   db.sqlite.exec(`CREATE TABLE dog_status(slave_id INTEGER, master_id INTEGER, received_at INTEGER, activity TEXT,
-      activity_valid INTEGER, activity_time TEXT);
+      activity_valid INTEGER, activity_time TEXT, usb_present INTEGER);
     CREATE TABLE supabase_dog_status(owner_user_id TEXT, slave_id INTEGER, master_id INTEGER, received_at INTEGER,
-      track_at INTEGER, activity REAL, activity_valid INTEGER, activity_time TEXT);`);
+      track_at INTEGER, activity REAL, activity_valid INTEGER, activity_time TEXT, usb_present INTEGER);`);
   const local = (time, activity, valid = 1, slave = 6) => db.sqlite.prepare(
-    'INSERT INTO dog_status VALUES(?,?,?,?,?,NULL)').run(slave, 7, time, String(activity), valid);
+    'INSERT INTO dog_status VALUES(?,?,?,?,?,NULL,NULL)').run(slave, 7, time, String(activity), valid);
   const cloud = (time, activity, owner = 'a') => db.sqlite.prepare(
-    'INSERT INTO supabase_dog_status VALUES(?,?,?,?,?,?,?,NULL)').run(owner, 6, 9, time + 5000, time, activity, 1);
+    'INSERT INTO supabase_dog_status VALUES(?,?,?,?,?,?,?,NULL,NULL)').run(owner, 6, 9, time + 5000, time, activity, 1);
   return { db, local, cloud };
 }
 
@@ -43,8 +43,8 @@ test('日 reads raw rows of both tables with 9 minutes either side; other accoun
 test('週／月／年: one mean per minute over both tables, a downloaded copy of this phone\'s reading once', async () => {
   const { db, local, cloud } = database();
   const stamped = (table, values) => db.sqlite.prepare(table === 'local'
-    ? 'INSERT INTO dog_status VALUES(6,?,?,?,1,?)'
-    : "INSERT INTO supabase_dog_status VALUES('a',6,?,?,?,?,1,?)").run(...values);
+    ? 'INSERT INTO dog_status VALUES(6,?,?,?,1,?,NULL)'
+    : "INSERT INTO supabase_dog_status VALUES('a',6,?,?,?,?,1,?,NULL)").run(...values);
   try {
     local(DAY + 1000, 0.2);
     local(DAY + 2000, 0.4);

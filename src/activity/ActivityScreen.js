@@ -45,6 +45,7 @@ const STATE_COLOR = {
   rest: 'activityLow',
   normal: 'activityNormal',
   vigorous: 'activityHigh',
+  charging: 'activityCharging',
 };
 const BAR_GAP = { week: 8, month: 2, year: 6 };
 const HOURS = ['00:00', '06:00', '12:00', '18:00', '24:00'];
@@ -271,7 +272,7 @@ function ActivityBody({ view }) {
   return (
     <View>
       {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} />}
-      <Legend />
+      <Legend view={view} />
       {empty && (
         <Text style={styles.empty} testID="activity-empty">
           {view.emptyText}
@@ -297,8 +298,8 @@ function DayChart({ view }) {
               {!bar.pending && (bar.count > 0 ? (
                 <View testID={`activity-day-bar-${bar.index}`} style={[styles.dayBar, { height: bar.height,
                   backgroundColor: colors[STATE_COLOR[bar.state]] }]} />
-              ) : <View testID={`activity-day-gap-${bar.index}`}
-                style={styles.dayGap} />)}
+              ) : <View testID={`activity-day-${bar.state === 'charging' ? 'charging' : 'gap'}-${bar.index}`}
+                style={[styles.dayGap, bar.state === 'charging' && { backgroundColor: colors.activityCharging }]} />)}
             </View>
           ))}
         </View>
@@ -363,12 +364,14 @@ function Bars({ view }) {
   );
 }
 
-function Legend() {
+function Legend({ view }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
+  // 充電中 only in a period that has some.
+  const items = ACTIVITY_VIEW_COPY.legend.filter(item => item.state !== 'charging' || view?.totals?.charging > 0);
   return (
     <View style={styles.legend}>
-      {ACTIVITY_VIEW_COPY.legend.map(item => (
+      {items.map(item => (
         <View key={item.state} style={styles.legendItem}>
           <View
             testID={`activity-legend-${item.state}`}
@@ -387,7 +390,7 @@ function Legend() {
 function Summary({ view }) {
   const styles = useStyles(getStyles);
   const rows = view.rows.filter(
-    row => row.state !== 'missing' || row.durationMinutes > 0,
+    row => (row.state !== 'missing' && row.state !== 'charging') || row.durationMinutes > 0,
   );
   return (
     <View testID="activity-summary">

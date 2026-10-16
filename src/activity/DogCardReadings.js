@@ -38,13 +38,16 @@ export async function readDogCardRows(db, owner, slaveId, since, until = null) {
   if (!Number.isInteger(slaveId) || slaveId < 1 || !Number.isFinite(since)) throw new Error(t("c445"));
   const bounded = until != null;
   if (bounded && !Number.isFinite(until)) throw new Error(t("c445"));
-  const columns = 'activity, activity_valid, activity_time, master_id, slave_id';
+  // The activity readings, and every row on USB power (充電中: its minutes
+  // are not judged, and end a rest; ActivityMinutes).
+  const columns = 'activity, activity_valid, activity_time, master_id, slave_id, usb_present';
   const local = rowsOf(await db.executeAsync(`SELECT received_at AS time, ${columns}
-    FROM dog_status WHERE slave_id=? AND received_at>=? ${bounded ? 'AND received_at<?' : ''} AND activity_valid=1
+    FROM dog_status WHERE slave_id=? AND received_at>=? ${bounded ? 'AND received_at<?' : ''}
+    AND (activity_valid=1 OR usb_present=1)
     ORDER BY received_at`, bounded ? [slaveId, since, until] : [slaveId, since]));
   const cloud = owner ? rowsOf(await db.executeAsync(`SELECT ${CLOUD_TIME} AS time, ${columns}
     FROM supabase_dog_status WHERE owner_user_id=? AND slave_id=? AND ${CLOUD_TIME}>=?
-    ${bounded ? `AND ${CLOUD_TIME}<?` : ''} AND activity_valid=1
+    ${bounded ? `AND ${CLOUD_TIME}<?` : ''} AND (activity_valid=1 OR usb_present=1)
     ORDER BY ${CLOUD_TIME}`, bounded ? [owner, slaveId, since, until] : [owner, slaveId, since])) : [];
   if (bounded) return { local, cloud, battery: [], since, until };
   const battery = [
