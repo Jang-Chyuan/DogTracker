@@ -198,10 +198,14 @@ test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops;
   const bar = renderer.root.findAll(node => node.props.testID === 'activity-day-bar-37')[0];
   expect(StyleSheet.flatten(bar.props.style)).toMatchObject({ height: 60,
     backgroundColor: theme.colors.activityNormal, borderTopLeftRadius: 1.5, borderTopRightRadius: 1.5 });
+  // 沒有資料 draws no fill: the empty slot is transparent and a dashed line sits on the baseline.
   const gap = renderer.root.findAll(node => node.props.testID === 'activity-day-gap-0')[0];
-  expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBe(theme.colors.activityMissing);
+  expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBeUndefined();
   const legend = state => renderer.root.findAll(node => node.props.testID === `activity-legend-${state}`)[0];
-  expect(StyleSheet.flatten(legend('missing').props.style).backgroundColor).toBe(theme.colors.activityMissing);
+  expect(StyleSheet.flatten(legend('missing').props.style).backgroundColor).toBeUndefined();
+  const dashes = renderer.root.findAll(node => node.props.testID === 'activity-legend-missing')[0]
+    .findAll(node => StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.activityMissingLine);
+  expect(dashes.length).toBeGreaterThanOrEqual(1);
   expect(StyleSheet.flatten(legend('normal').props.style).backgroundColor).toBe(theme.colors.activityNormal);
   expect(text('activity-row-missing')).toContain('合計');
 });
@@ -214,4 +218,31 @@ test('066: the back icon and the title are one 48dp row whose TalkBack label nam
   expect(style.minHeight).toBeGreaterThanOrEqual(48);
   expect(style.gap).toBeGreaterThanOrEqual(8);
   expect(back.props.accessibilityLabel).toMatch(/^返回，.+・活動量$/);
+});
+
+test('A4 no-data is a dashed line, never a fill: runs, dash marks and week bars', () => {
+  const { dashMarks, missingRuns } = require('../src/activity/ActivityScreen');
+  const bar = (index, state, extra = {}) => ({ index, state, count: 0, pending: false, ...extra });
+  expect(missingRuns([bar(0, 'missing'), bar(1, 'missing'), bar(2, 'normal', { count: 2 }), bar(3, 'charging'),
+    bar(4, 'missing'), bar(5, 'missing', { pending: true })])).toEqual([[0, 1], [4, 4]]);
+  const marks = dashMarks(36);
+  expect(marks).toEqual([0, 10, 20, 30].map(left => ({ left, width: 6 })));
+  expect(dashMarks(3)).toEqual([{ left: 0, width: 3 }]);
+  expect(dashMarks(0)).toEqual([]);
+});
+
+test.each(['light', 'dark'])('week view with no data: dashed baseline, no filled segment, legend dashes (%s)', async mode => {
+  const { ThemeScope, lightTheme, darkTheme } = require('../src/theme/ThemeProvider');
+  const theme = mode === 'light' ? lightTheme : darkTheme;
+  await act(async () => {
+    renderer = Renderer.create(<ThemeScope theme={theme}><ActivityScreen name="小黑" slaveId={6} now={NOW}
+      read={async () => ({ minutes: [] })} readEarliest={async () => FIRST} onBack={jest.fn()}
+      initialView={{ mode: 'week', date: NOW - 3 * 24 * 60 * M }} /></ThemeScope>);
+  });
+  const lines = renderer.root.findAll(node => String(node.props.testID ?? '').startsWith('activity-nodata-'));
+  expect(lines.length).toBeGreaterThan(0);
+  const { StyleSheet } = require('react-native');
+  const filled = renderer.root.findAll(node => node.type === 'View'
+    && StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.activityMissing);
+  expect(filled).toHaveLength(0);
 });

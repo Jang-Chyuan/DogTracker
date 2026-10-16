@@ -591,8 +591,10 @@ function dogActivity(time) {
 // ([start, end) pairs). `answer: 'hang' | 'fail'` for 載入中 and 讀取失敗.
 // Whole 1/1024ths: sums are exact, so every reader's mean is the same number.
 const reading = time => Math.round(Math.max(0, Math.min(1, dogActivity(time))) * 1024) / 1024;
-function activityFixture({ earliest, gaps = [], now, answer = null }) {
+function activityFixture({ earliest, gaps = [], charges = [], now, answer = null }) {
   const has = time => time >= earliest && !gaps.some(([start, end]) => time >= start && time < end);
+  // [start, end) spans on the charger (usb_present 1, activity 0).
+  const powered = time => charges.some(([start, end]) => time >= start && time < end);
   const read = async (slaveId, { start, end, detail }) => {
     if (answer === 'hang') return new Promise(() => {});
     if (answer === 'fail') throw new Error('fixture: 讀取失敗');
@@ -608,8 +610,8 @@ function activityFixture({ earliest, gaps = [], now, answer = null }) {
           if (time >= now) continue;
           // The minute still running reads high: A4 must leave it out.
           const value = minute === Math.floor(now / MINUTE) * MINUTE ? 0.95 : reading(time);
-          local.push({ time, activity: value, activity_valid: 1, activity_time: null,
-            master_id: 7, slave_id: 6 });
+          local.push({ time, activity: powered(time) ? 0 : value, activity_valid: 1, activity_time: null,
+            master_id: 7, slave_id: 6, ...(powered(time) && { usb_present: 1 }) });
         }
       }
       return { local, cloud: [] };
@@ -617,7 +619,8 @@ function activityFixture({ earliest, gaps = [], now, answer = null }) {
     const minutes = [];
     for (let minute = from; minute < Math.min(to, Math.floor(now / MINUTE) * MINUTE); minute += MINUTE) {
       // The mean of the same two readings the raw answer gives.
-      if (has(minute)) minutes.push({ minute, count: 2,
+      if (has(minute) && powered(minute)) minutes.push({ minute, count: 0, value: NaN, charging: true });
+      else if (has(minute)) minutes.push({ minute, count: 2,
         value: (reading(minute + 10 * SECOND) + reading(minute + 40 * SECOND)) / 2 });
     }
     return { minutes };
@@ -1083,6 +1086,16 @@ const FIXTURES = {
   // (09:30, which reads 0.95) is not drawn or counted.
   'activity-today': now => ({ ...activityPage(now, { mode: 'day', date: now }, {
     now: now + 40 * SECOND, gaps: [[day(10, 7, 8, 40), day(10, 7, 9, 10)]] }), activityClock: now + 40 * SECOND }),
+  // 2026-10-16 (A4 colours): 日 of 10/6 with all four states plus no data:
+  // night and 12–14 時 休息, 一般 by day, 劇烈 at 07:15 and 15:30, 充電中
+  // 10:00–11:30 (green), no data 08:40–09:10 and 16:30–17:15 (dashed line).
+  'activity-all-states': now => activityPage(now, { mode: 'day', date: day(10, 6, 12) }, {
+    gaps: [[day(10, 6, 8, 40), day(10, 6, 9, 10)], [day(10, 6, 16, 30), day(10, 6, 17, 15)]],
+    charges: [[day(10, 6, 10, 0), day(10, 6, 11, 30)]] }),
+  // The same week-long: 9/27–10/3 with 10/1 all no data, 9/30 partly on the charger.
+  'activity-all-states-week': now => activityPage(now, { mode: 'week', date: day(9, 30, 12) }, {
+    gaps: [[day(10, 1, 0), day(10, 2, 0)]],
+    charges: [[day(9, 30, 10, 0), day(9, 30, 13, 0)], [day(9, 28, 9, 0), day(9, 28, 11, 0)]] }),
   // 週 9/27（日）– 10/3（六） with no data all of 10/1（四） (A4 mockup).
   'activity-week-gap': now => activityPage(now, { mode: 'week', date: day(9, 30, 12) }, {
     gaps: [[day(10, 1, 0), day(10, 2, 0)]] }),
@@ -1795,6 +1808,15 @@ const FIXTURES = {
   // the first stay (出發), the end following now.
   'history-range-open': now => ({ ...FIXTURES['history-my-route'](now),
     historyView: { rangeOpen: true, manual: { start: now - 100 * MINUTE, end: null, following: true } } }),
+  // 2026-10-16: the range bar open with the start handle at the far left (the
+  // day's first fix, 00:05) and the end following now at the far right: both
+  // times stay inside the range box (小黑's day, fictional).
+  'history-range-edges': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
+    history: historyPage(now, { slave: 6, ble: legsPath(now, 565 * MINUTE, at(-30, -60), [
+      { stay: 60 }, { walk: 30, bearing: 40, speed: 0.8 }, { stay: 200 }, { walk: 30, bearing: 120, speed: 0.8 },
+      { stay: 205 }, { walk: 40, bearing: 200, speed: 0.8 }]).map(row => bleRow({ slave: 6, time: row.time, fix: row.fix })) }),
+    geocoder: { names: HISTORY_NAMES },
+    historyView: { rangeOpen: true, manual: { start: now - 565 * MINUTE, end: null, following: true } } }),
   // 豆豆 has one fix today: one point, no distance, no range bar (只有一筆).
   'history-single-point': now => ({ ...FIXTURES['all-good'](now), openRoute: 'history',
     history: historyPage(now, { slave: 4, ble: [bleRow({ slave: 4, time: now - 20 * MINUTE, fix: at(4, 6) })] }) }),

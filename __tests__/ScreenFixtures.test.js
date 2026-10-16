@@ -829,6 +829,24 @@ test('activity-charging (A4): the charger\'s minutes are 充電中, not 休息 o
   }
 });
 
+test('activity-all-states (A4): rest, normal, vigorous, charging and no data all appear', async () => {
+  const { buildActivityView, activityPeriod } = require('../src/activity/views');
+  const { activityViewInput } = require('../src/activity/ActivityData');
+  for (const [name, detail] of [['activity-all-states', 'raw'], ['activity-all-states-week', 'minute']]) {
+    const fixture = buildFixture(name);
+    const { mode, date } = fixture.activityView;
+    const period = activityPeriod(mode, date);
+    const first = await fixture.readActivityEarliest(6);
+    const view = buildActivityView({ mode, date, now: fixture.now, earliest: first, since: first,
+      ...activityViewInput(await fixture.readActivity(6, { start: period.start, end: period.end, detail })) });
+    for (const state of ['rest', 'vigorous', 'missing', 'charging']) expect(view.totals[state]).toBeGreaterThan(0);
+    if (mode === 'day') {
+      expect(view.totals.charging).toBeGreaterThanOrEqual(89);
+      expect(view.bars.some(bar => bar.state === 'normal')).toBe(true);
+    }
+  }
+});
+
 test('card-near-edge (A3): 快離開接收範圍 in amber, no distance written', async () => {
   const { rows, keys, state } = await card('card-near-edge');
   expect(keys).toEqual(['range', 'battery', 'activity']);
