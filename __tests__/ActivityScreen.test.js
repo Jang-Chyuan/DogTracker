@@ -201,11 +201,16 @@ test.each(['light', 'dark'])('day bars use %s tokens, 1dp gaps and rounded tops;
   // 沒有資料 draws no fill: the empty slot is transparent and a dashed line sits on the baseline.
   const gap = renderer.root.findAll(node => node.props.testID === 'activity-day-gap-0')[0];
   expect(StyleSheet.flatten(gap.props.style).backgroundColor).toBeUndefined();
-  const legend = state => renderer.root.findAll(node => node.props.testID === `activity-legend-${state}`)[0];
+  const legend = state => renderer.root.findAll(node => node.props.testID === `activity-legend-${state}` && node.type === 'View')[0];
   expect(StyleSheet.flatten(legend('missing').props.style).backgroundColor).toBeUndefined();
-  const dashes = renderer.root.findAll(node => node.props.testID === 'activity-legend-missing')[0]
-    .findAll(node => StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.activityMissingLine);
-  expect(dashes.length).toBeGreaterThanOrEqual(1);
+  // The legend swatch is a small hatched square: the band's ground and one hatch pattern.
+  const swatch = renderer.root.findAll(node => node.props.testID === 'activity-legend-missing' && node.type === 'View')[0];
+  expect(swatch.findAll(node => node.props.testID === 'svg-rect' && node.props.fill === theme.colors.activityMissingBand).length).toBeGreaterThanOrEqual(1);
+  expect(swatch.findAll(node => node.props.testID === 'svg-path' && node.props.stroke === theme.colors.activityMissingLine && node.type === 'View').length).toBeGreaterThanOrEqual(1);
+  // The day's gap is a full-height band behind the bars (not a bar growing from the base).
+  await act(async () => chart.props.onLayout({ nativeEvent: { layout: { width: 360 } } }));
+  const band = renderer.root.findAll(node => node.props.testID === 'activity-day-nodata-0' && node.type === 'View')[0];
+  expect(StyleSheet.flatten(band.props.style)).toMatchObject({ height: 200, position: 'absolute', top: 0 });
   expect(StyleSheet.flatten(legend('normal').props.style).backgroundColor).toBe(theme.colors.activityNormal);
   expect(text('activity-row-missing')).toContain('合計');
 });
@@ -220,28 +225,28 @@ test('066: the back icon and the title are one 48dp row whose TalkBack label nam
   expect(back.props.accessibilityLabel).toMatch(/^返回，.+・活動量$/);
 });
 
-test('A4 no-data is a dashed line, never a fill: runs, dash marks and week bars', () => {
-  const { dashMarks, missingRuns } = require('../src/activity/ActivityScreen');
+test('A4 no-data is a hatched background band, never a bar: runs and week buckets', async () => {
+  const { missingRuns } = require('../src/activity/ActivityScreen');
   const bar = (index, state, extra = {}) => ({ index, state, count: 0, pending: false, ...extra });
   expect(missingRuns([bar(0, 'missing'), bar(1, 'missing'), bar(2, 'normal', { count: 2 }), bar(3, 'charging'),
     bar(4, 'missing'), bar(5, 'missing', { pending: true })])).toEqual([[0, 1], [4, 4]]);
-  const marks = dashMarks(36);
-  expect(marks).toEqual([0, 10, 20, 30].map(left => ({ left, width: 6 })));
-  expect(dashMarks(3)).toEqual([{ left: 0, width: 3 }]);
-  expect(dashMarks(0)).toEqual([]);
 });
 
-test.each(['light', 'dark'])('week view with no data: dashed baseline, no filled segment, legend dashes (%s)', async mode => {
+test.each(['light', 'dark'])('week view with no data: full-height hatched band, no filled segment (%s)', async mode => {
   const { ThemeScope, lightTheme, darkTheme } = require('../src/theme/ThemeProvider');
+  const { StyleSheet } = require('react-native');
   const theme = mode === 'light' ? lightTheme : darkTheme;
   await act(async () => {
     renderer = Renderer.create(<ThemeScope theme={theme}><ActivityScreen name="小黑" slaveId={6} now={NOW}
       read={async () => ({ minutes: [] })} readEarliest={async () => FIRST} onBack={jest.fn()}
       initialView={{ mode: 'week', date: NOW - 3 * 24 * 60 * M }} /></ThemeScope>);
   });
-  const lines = renderer.root.findAll(node => String(node.props.testID ?? '').startsWith('activity-nodata-'));
-  expect(lines.length).toBeGreaterThan(0);
-  const { StyleSheet } = require('react-native');
+  const slots = renderer.root.findAll(node => String(node.props.testID ?? '').endsWith('-slot') && node.type === 'View');
+  expect(slots.length).toBeGreaterThan(0);
+  await act(async () => slots.forEach(slot => slot.props.onLayout({ nativeEvent: { layout: { width: 40 } } })));
+  const bands = renderer.root.findAll(node => String(node.props.testID ?? '').startsWith('activity-nodata-') && !String(node.props.testID).endsWith('-slot') && node.type === 'View');
+  expect(bands.length).toBe(slots.length);
+  expect(StyleSheet.flatten(bands[0].props.style)).toMatchObject({ width: 40, height: 200 });
   const filled = renderer.root.findAll(node => node.type === 'View'
     && StyleSheet.flatten(node.props.style)?.backgroundColor === theme.colors.activityMissing);
   expect(filled).toHaveLength(0);
