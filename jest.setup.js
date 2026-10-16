@@ -42,4 +42,6 @@ jest.mock('./specs/NativeAlertNotifications', () => {
 // (src/app/launchLink.js hands it out once per JavaScript start).
 beforeEach(() => {
   require('./src/app/launchLink').resetLaunchLink();
+  // ...and nothing of a dog's history kept from another test (HistoryRecentDogs).
+  require('./src/mapHistory/HistoryRecentDogs').releaseRecentDogs();
 });

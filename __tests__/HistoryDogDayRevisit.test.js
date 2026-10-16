@@ -14,6 +14,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useHistoryDayRows, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
+import { releaseRecentDogs } from '../src/mapHistory/HistoryRecentDogs';
 import { HISTORY_KEPT_DAYS } from '../src/mapHistory/HistoryDayCache';
 import { exportView } from '../src/mapHistory/useHistoryExport';
 import * as models from '../src/history/screen/HistoryMultiModel';
@@ -118,6 +119,25 @@ async function open({ signedIn }) {
 }
 
 describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'s rows)', false]])('%s', (_label, signedIn) => {
+  test('closed and opened again (card → 看軌跡): a day seen a moment ago is the very model, not built again, nothing downloaded', async () => {
+    const s = await open({ signedIn });
+    try {
+      const a = await s.step('previousDay');
+      const modelA = s.screen.model;
+      expect(modelA).not.toBeNull();
+      await s.update({ closed: true });
+      await s.wait(200);
+      await s.update({ closed: false });
+      await s.wait(1500);
+      s.cloud.download.mockClear();
+      const again = await s.step('previousDay');
+      expect(again.day).toBe(a.day);
+      expect(s.screen.model).toBe(modelA);
+      expect(s.counts.builds).toBe(0);
+      expect(s.cloud.download).not.toHaveBeenCalled();
+    } finally { await s.close(); }
+  });
+
   test('‹ ‹ › › : each day seen before shows at once, the very model, built no more', async () => {
     const s = await open({ signedIn });
     try {
@@ -187,7 +207,7 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
     } finally { await s.close(); }
   });
 
-  test('memory: the models of days no longer kept are let go, and all of them once the screen closes', async () => {
+  test('memory: the models of days no longer kept are let go; closing keeps only the days kept, for reopening', async () => {
     v8.setFlagsFromString('--expose_gc');
     const gc = vm.runInNewContext('gc');
     const s = await open({ signedIn });
@@ -204,6 +224,13 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
       await s.update({ closed: true });
       await s.update({ closed: true });
       await s.update({ closed: true });
+      await s.wait(100);
+      // 2026-10-16: the same days stay for opening the dog again
+      // (HistoryRecentDogs), nothing more: no render, cleanup or timer of
+      // the closed screen holds a model.
+      expect(living().map(entry => entry.day).sort()).toEqual(seen.slice(-HISTORY_KEPT_DAYS).sort());
+      releaseRecentDogs();
+      // (A WeakRef read keeps its target for the rest of the job.)
       await s.wait(100);
       expect(living()).toEqual([]);
     } finally { await s.close(); }

@@ -334,24 +334,36 @@ export function createHistoryDatabase(db) {
           ...(replaced ? { replaced: true } : {}) };
       }
       const out = [], seed = [];
-      const columnsOf = async name => new Set(rows(await db.executeAsync(`PRAGMA table_info(${name})`)).map(column => column.name));
+      const columnsOf = async (name, conn) => new Set(rows(await conn.executeAsync(
+        `SELECT name FROM pragma_table_info('${name}')`)).map(column => column.name));
       const optional = (columns, names) => names.filter(name => columns.has(name)).map(name => `, ${name}`).join('');
       const first = !Object.keys(after).length;
       for (const [key, name, time, wanted] of [
         ['local', 'dog_status', 'received_at', true],
         ['cloud', 'supabase_dog_status', 'CAST(COALESCE(track_at, received_at) AS INTEGER)', !!owner],
       ]) {
-        if (!wanted || !(await table(name))) continue;
-        const columns = await columnsOf(name);
+        // This phone's rows read on the route's read lane too (#215): a
+        // dog's day reopened waited behind the cloud sync's queue. The
+        // downloaded copy stays on the App's queue with its publication fence.
+        const conn = key === 'local' ? route : db;
+        if (!wanted || !rows(await conn.executeAsync(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])).length) continue;
+        const columns = await columnsOf(name, conn);
         const extra = optional(columns, ['satellites', 'hdop', 'usb_present', 'rssi', 'snr', 'gps_time', 'track_at', 'speed_kmh', 'distance_meters']);
         const scope = `slave_id = ?${key === 'cloud' ? ' AND owner_user_id = ?' : ''}`;
         const params = key === 'cloud' ? [slaveId, owner] : [slaveId];
+        // This phone's rows: the (slave_id, received_at) index finds the day's
+        // ids first (span), as for my route. Paged on `slave_id, id` alone,
+        // SQLite walked every row the dog has (30 days: 1.1–1.4 s on an
+        // emulator, the same queue the day's proof waited on).
         const found = await pages(key, `SELECT id, received_at, master_id, slave_id, slave_lat, slave_lon${extra}
-          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, until]);
+          FROM ${name} WHERE ${scope} AND ${time} >= ? AND ${time} < ?`, [...params, since, until],
+        key === 'local' ? `SELECT MIN(id) AS low, MAX(id) AS high, COUNT(*) AS n FROM dog_status
+          WHERE slave_id = ? AND received_at >= ? AND received_at < ? AND +id > CAST(? AS INTEGER)` : null, conn);
         out.push(...found.map(row => dogHistoryRow(row, key)));
         if (first && columns.has('satellites')) {
           stopped();
-          seed.push(...rows(await db.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,
+          seed.push(...rows(await conn.executeAsync(`SELECT ${time} AS time, slave_lat AS latitude, slave_lon AS longitude,
             master_id, satellites${columns.has('hdop') ? ', hdop' : ''} FROM ${name}
             WHERE ${scope} AND ${time} < ? AND satellites >= ?
               AND slave_lat IS NOT NULL AND slave_lon IS NOT NULL AND NOT (slave_lat = 0 AND slave_lon = 0)

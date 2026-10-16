@@ -3,6 +3,7 @@ import { historyDiagnosticsEnabled } from '../logger';
 import { createHistoryReadDiagnostics, historyPublicationFlags } from '../diagnostics/HistoryReadDiagnostics';
 import { sameHistoryInput, createExactHistoryModelCache } from './HistoryExactSnapshot';
 import { createDayCache, HISTORY_KEPT_DAYS, HISTORY_KEPT_ROWS } from './HistoryDayCache';
+import { recentDogModels, recentDogRows } from './HistoryRecentDogs';
 import { startupPhase, markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 // The state of the v3 history screen (055a/055b: one dog, 2–4 dogs or my
@@ -163,8 +164,12 @@ export function useHistoryDayRows({
   // kept rows themselves are what a fresh read is compared with: nothing is
   // copied when rows are added (audit M4: a deep copy of the whole day on
   // every poll, 92 ms per 11k rows).
-  const accepted = useRef(null);
-  if (!accepted.current) accepted.current = createDayCache({ rowsOf: entry => entry.rows.length + entry.seed.length });
+  const ownAccepted = useRef(null);
+  if (!ownAccepted.current) ownAccepted.current = createDayCache({ rowsOf: entry => entry.rows.length + entry.seed.length });
+  // A dog's kept days outlive the opening (HistoryRecentDogs): reopening its
+  // day finds the rows (and through them the model) it had a moment ago.
+  const accepted = subject === 'dog' && slaveId != null
+    ? { current: recentDogRows(`${slaveId}|${owner ?? ''}`) } : ownAccepted;
   // My route's rows as last read, kept when the reader stops (the screen
   // closed, the app went to the background): coming back to
   // the same day continues from the cursor — the rows added since and a
@@ -190,7 +195,7 @@ export function useHistoryDayRows({
       ? JSON.stringify([subject, slaveId, day, owner, scope, requireFresh ? revision : 0, requireFresh && subject !== 'phone' ? rowRevision : 0, readEnd, rowIdentity.current.epoch])
       : null;
   // Closed (no one shown): the days kept go.
-  if (!key && accepted.current.size) accepted.current.clear();
+  if (!key && ownAccepted.current.size) ownAccepted.current.clear();
   // Phone rows are local: publishing dog telemetry must not cancel their
   // in-flight read or restart the full-day cursor. Explicit reloads still do.
   const readerPublicationRevision = subject === 'phone' ? 0 : `${rowRevision}|${publicationState?.latestReadReady ?? true}`;
@@ -1000,8 +1005,11 @@ export function useHistoryScreen({
       () => multiDayModel(subjects, { ...options, measure: diagnostic?.measure }));
     // My route's identity leaves out the opening: an unchanged past day
     // shown again (back from the background) is the same model.
-    const built = exactModel.current.cache(subject === 'phone' ? ['phone', owner, memoryScope, read]
-      : [owner, pub?.scope, pub?.generation, sessionKey, memoryScope, read], subjects, cachedOptions, build);
+    // A dog view's models outlive the opening (HistoryRecentDogs): its
+    // identity is the view (baseKey), not this opening of it.
+    const models = subject === 'dog' && baseKey ? recentDogModels(`${baseKey}|${owner ?? ''}`) : exactModel.current.cache;
+    const built = models(subject === 'phone' ? ['phone', owner, memoryScope, read]
+      : [owner, pub?.scope, pub?.generation, baseKey, memoryScope, read], subjects, cachedOptions, build);
     modelBuildCost.current = Date.now() - started;
     buildCost.current = modelBuildCost.current;
     diagnostic?.emit('model', 'end', started, { ...historyPublicationFlags(cloud?.getPublication?.(), owner),
