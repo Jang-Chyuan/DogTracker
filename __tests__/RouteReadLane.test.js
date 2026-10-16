@@ -67,7 +67,7 @@ test('a day whose ids are far apart (a row written under a wrong clock) is read 
     const { conn, read } = lanes(db);
     const result = await createHistoryDatabase(conn).historyDayRows({ subject: 'phone', start: day, end: day + DAY });
     expect(result.rows.filter(row => row.time >= day && row.time < day + DAY)).toHaveLength(3001);
-    const page = read.find(sql => /\+id > CAST\(\? AS INTEGER\) ORDER BY id/.test(sql));
+    const page = read.find(sql => /\+id > CAST\(\? AS INTEGER\) ORDER BY \+id/.test(sql));
     expect(page).toBeDefined();
     const plan = db.sqlite.prepare(`EXPLAIN QUERY PLAN ${page}`).all(day, day + DAY, 0).map(row => row.detail).join(' | ');
     expect(plan).toMatch(/idx_myLocationTracker_time/);
@@ -135,5 +135,26 @@ test('a dog\'s day: this phone\'s rows on the read lane, found by (slave_id, rec
     expect(plan(span)).toMatch(/slave_id=\? AND received_at>\? AND received_at<\?/);
     const page = read.find(sql => /FROM dog_status WHERE slave_id = \? .* AND id > \? AND id <= \? ORDER BY id/s.test(sql));
     expect(page).toBeDefined();
+  } finally { db.close(); }
+});
+
+test('a dog\'s day with ids far apart: read on (slave_id, received_at) and sorted, never a walk of every row of the dog', async () => {
+  const db = createMemoryConnection();
+  try {
+    await createDogDatabase(db).initialize();
+    const insert = db.sqlite.prepare('INSERT INTO dog_status(received_at, master_id, slave_id, slave_lat, slave_lon, satellites) VALUES (?, 3, 12, 24.99, 121.31, 9)');
+    db.sqlite.exec('BEGIN');
+    insert.run(day + 9 * 3600000); // id 1, dated into the day
+    for (let i = 0; i < 30 * 1440; i += 1) insert.run(day - 30 * DAY + i * 60000);
+    for (let i = 0; i < 500; i += 1) insert.run(day + 8 * 3600000 + i * 1000);
+    db.sqlite.exec('COMMIT');
+    db.sqlite.exec('ANALYZE');
+    const { conn, read } = lanes(db);
+    const result = await createHistoryDatabase(conn).historyDayRows({ subject: 'dog', slaveId: 12, start: day, end: day + DAY });
+    expect(result.rows.filter(row => row.time >= day && row.time < day + DAY)).toHaveLength(501);
+    const page = read.find(sql => /FROM dog_status WHERE slave_id = \? .*\+id > CAST\(\? AS INTEGER\) ORDER BY \+id/s.test(sql));
+    expect(page).toBeDefined();
+    const plan = db.sqlite.prepare(`EXPLAIN QUERY PLAN ${page}`).all(12, day, day + DAY, 0).map(row => row.detail).join(' | ');
+    expect(plan).toMatch(/slave_id=\? AND received_at>\? AND received_at<\?/);
   } finally { db.close(); }
 });

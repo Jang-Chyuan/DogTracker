@@ -259,6 +259,8 @@ export function createHistoryDatabase(db) {
       // on a phone). A window whose ids are far apart (a row written while
       // the clock was set a day or a year wrong) is read on the time index
       // and sorted instead: a walk between its ids would cross the table.
+      // (`ORDER BY +id`: ordered by id, SQLite walked the (slave_id, id)
+      // index — every row of the dog — to skip the sort: 1.3 s on 5554.)
       async function pages(key, sql, params, span = null, conn = db) {
         const found = [];
         let cursor = cursors[key] ?? { id: -1 };
@@ -274,7 +276,7 @@ export function createHistoryDatabase(db) {
         for (;;) {
           stopped();
           const page = rows(await conn.executeAsync(sparse
-            ? `${sql} AND +id > CAST(? AS INTEGER) ORDER BY id LIMIT ${DAY_PAGE}`
+            ? `${sql} AND +id > CAST(? AS INTEGER) ORDER BY +id LIMIT ${DAY_PAGE}`
             : `${sql} AND id > ?${through == null ? '' : ' AND id <= ?'} ORDER BY id LIMIT ${DAY_PAGE}`,
           [...params, from, ...(through == null || sparse ? [] : [through])]));
           if (!page.length) break;
