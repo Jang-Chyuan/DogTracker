@@ -7,6 +7,7 @@ import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Glyph from '../map/Glyph';
+import ShimmerLabel from '../components/ShimmerLabel';
 import PressedOverlay from '../components/PressedOverlay';
 import {
   clock,
@@ -366,6 +367,8 @@ export default function HistoryRangeSummary({
   previewScope,
   active,
   pending = false,
+  // Today's view kept while its newest rows are fetched: 「更新中」.
+  updating = false,
   compact = false,
   externalControls = false,
   layoutKey,
@@ -415,6 +418,7 @@ export default function HistoryRangeSummary({
               <Glyph name={item.icon} color={colors.textMuted} size={sizes.icon.adjust} />
               <Text style={styles.detail}>{km(item.distanceM)}</Text>
             </View>)}
+            {updating && <ShimmerLabel testID="history-summary-updating" />}
           </View>}
         </View>
         {enabled && (

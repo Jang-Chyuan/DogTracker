@@ -585,6 +585,7 @@ ref) {
           {...rangeProps}
           model={model}
           pending={screen.rangePending}
+          updating={!!screen.updating}
           subject={subject}
           open={rangeOpen}
           onToggle={() => openRange(!rangeOpen)}

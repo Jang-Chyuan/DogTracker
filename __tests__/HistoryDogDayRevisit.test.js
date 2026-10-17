@@ -14,7 +14,7 @@ import { createDogDatabase } from '../src/database/DogDatabase';
 import { createCloudDatabase } from '../src/cloud/CloudDatabase';
 import { createHistoryDatabase } from '../src/mapHistory/HistoryDatabase';
 import { useHistoryDayRows, useHistoryScreen } from '../src/mapHistory/useHistoryScreen';
-import { releaseRecentDogs } from '../src/mapHistory/HistoryRecentDogs';
+import { HISTORY_TODAY_REUSE_MS, releaseRecentDogs } from '../src/mapHistory/HistoryRecentDogs';
 import { HISTORY_KEPT_DAYS } from '../src/mapHistory/HistoryDayCache';
 import { exportView } from '../src/mapHistory/useHistoryExport';
 import * as models from '../src/history/screen/HistoryMultiModel';
@@ -215,12 +215,13 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
     try {
       for (let i = 0; i < 5; i += 1) await s.step('previousDay');
       await s.wait(100);
-      // Exactly the days kept (the last three seen): not today, not the
-      // days before them, not a model a cleanup or timer of an older render
-      // still held.
+      // Exactly the days kept (the last three seen), and today's view for
+      // reopening it (HISTORY_TODAY_REUSE_MS): not the days before them, not
+      // a model a cleanup or timer of an older render still held.
       const kept = living();
       const seen = Array.from({ length: 5 }, (_, i) => dayKey(new Date(TODAY - (i + 1) * DAY_MS)));
-      expect(kept.map(entry => entry.day).sort()).toEqual(seen.slice(-HISTORY_KEPT_DAYS).sort());
+      const expected = [...seen.slice(-HISTORY_KEPT_DAYS), dayKey(new Date(TODAY))].sort();
+      expect(kept.map(entry => entry.day).sort()).toEqual(expected);
       await s.update({ closed: true });
       await s.update({ closed: true });
       await s.update({ closed: true });
@@ -228,6 +229,11 @@ describe.each([['signed in (a proof per day)', true], ['signed out (this phone\'
       // 2026-10-16: the same days stay for opening the dog again
       // (HistoryRecentDogs), nothing more: no render, cleanup or timer of
       // the closed screen holds a model.
+      expect(living().map(entry => entry.day).sort()).toEqual(expected);
+      // Today's view goes once it is too old to be shown.
+      await s.wait(100);
+      jest.advanceTimersByTime(HISTORY_TODAY_REUSE_MS);
+      await s.wait(100);
       expect(living().map(entry => entry.day).sort()).toEqual(seen.slice(-HISTORY_KEPT_DAYS).sort());
       releaseRecentDogs();
       // (A WeakRef read keeps its target for the rest of the job.)
