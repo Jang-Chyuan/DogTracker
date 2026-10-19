@@ -69,7 +69,9 @@ test('rest: 10 calm minutes; it lasts from the first one', () => {
   expect(activityState(short, { end: lastFinished }).state).toBe('normal');
 });
 
-test('rest tolerates a missing minute here and there (8 of 10), not three', () => {
+// 2026-10-19: a minute without a packet between readings at most 3 minutes
+// apart carries the previous value (fillActivityGaps); 休息 needs all 10.
+test('rest: minutes without a packet between close readings are filled; a gap over 3 minutes is not', () => {
   const gaps = time => {
     const minute = Math.ceil((NOW - time) / MINUTE);
     return [3, 7].includes(minute) ? null : 0.01;
@@ -78,10 +80,21 @@ test('rest tolerates a missing minute here and there (8 of 10), not three', () =
   for (let time = at(30); time < NOW; time += 10000) rows.push({ time, activity: gaps(time), slave_id: 4 });
   const minutes = activityMinutes(activityReadings(rows, 'ble'), { now: NOW });
   expect(activityState(minutes, { end: lastFinished }).state).toBe('rest');
-  // Missing every third minute: never 8 of 10, so neither rest nor normal.
+  // Missing every third minute: each one is filled, so it is a rest.
   const sparse = activityMinutes(readings(30, 0, 0.01).filter(item =>
     Math.ceil((NOW - item.time) / MINUTE) % 3 !== 0), { now: NOW });
-  expect(activityState(sparse, { end: lastFinished })).toEqual({ state: null, since: null, durationMinutes: null });
+  expect(activityState(sparse, { end: lastFinished }).state).toBe('rest');
+  // Three minutes in a row without a packet (a 4-minute gap): not filled,
+  // 7 of 10 minutes, neither rest nor normal.
+  const holed = activityMinutes([...readings(30, 5, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
+  expect(activityState(holed, { end: lastFinished })).toEqual({ state: null, since: null, durationMinutes: null });
+  // Two in a row (a 3-minute gap) are filled.
+  const two = activityMinutes([...readings(30, 4, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
+  expect(activityState(two, { end: lastFinished })).toMatchObject({ state: 'rest', since: at(30) });
+  // Judged at a minute before the next packet, the minutes since the last
+  // one are not filled yet (a later reading is not used): 8 of 10, 一般.
+  expect(activityState(two, { end: at(3) }).state).toBe('normal');
+  expect(activityState(two, { end: at(2) })).toMatchObject({ state: 'rest', since: at(30) });
 });
 
 // 2026-10-13: going back, a rest is broken only by an active minute. Windows
@@ -106,8 +119,8 @@ test('rest: minutes without data do not restart the run; an active minute does',
   // Now still needs 8 of the last 10 minutes.
   const stale = activityMinutes([...readings(40, 5, 0.02)], { now: NOW });
   expect(activityState(stale, { end: lastFinished }).state).toBeNull();
-  // Vigorous is unchanged: a minute without data still breaks it.
-  const vigorous = activityMinutes([...readings(20, 3, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
+  // Vigorous: a gap over 3 minutes still breaks it.
+  const vigorous = activityMinutes([...readings(20, 5, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
   expect(activityState(vigorous, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
 });
 
@@ -145,13 +158,19 @@ test('vigorous: both of the last 2 minutes at 0.8 or more, both with data', () =
   // One vigorous minute is not enough.
   const one = activityMinutes([...readings(20, 1, 0.3), ...readings(1, 0, 0.95)], { now: NOW });
   expect(activityState(one, { end: lastFinished }).state).toBe('normal');
-  // A missing minute breaks it (both minutes need data): the run restarts
+  // A minute without a packet between two vigorous readings is filled and
+  // bridges them (2026-10-19); three in a row break it: the run restarts
   // after the hole.
   const gap = activityMinutes([...readings(20, 3, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
-  expect(activityState(gap, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
-  const hole = activityMinutes([...readings(20, 2, 0.9), ...readings(1, 0, 0.9)], { now: NOW });
-  expect(activityState(hole, { end: at(1) }).state).toBe('normal');
-  expect(activityState(hole, { end: at(3) }).state).toBe('vigorous');
+  expect(activityState(gap, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(20) });
+  const hole = activityMinutes([...readings(20, 5, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
+  expect(activityState(hole, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
+  expect(activityState(hole, { end: at(6) }).state).toBe('vigorous');
+  // One vigorous reading and the minute filled after it are not a pair.
+  const once = activityMinutes([...readings(20, 3, 0.3), ...readings(3, 2, 0.9), ...readings(1, 0, 0.3)],
+    { now: NOW });
+  expect(activityState(once, { end: lastFinished }).state).toBe('normal');
+  expect(activityState(once, { end: at(3) }).state).toBe('normal');
 });
 
 test('no data, or judged where nothing was read: 「—」', () => {

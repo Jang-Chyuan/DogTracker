@@ -15,17 +15,27 @@ import { isCharging } from '../models/UsbPresent';
 //   and the local copy wins.
 // - A minute's value is the mean of its readings. The minute still running is
 //   left out (it would judge on a few seconds).
-// - 休息: of the last 10 minutes at least 8 have data, and every one of them is
-//   at most 0.05. 劇烈: the last 2 minutes both have data and both are at least
-//   0.8. Once either holds, it holds from the first minute of the first window
+// - Gap fill (2026-10-19): collars send sparsely to save battery (30–110 s
+//   apart, now and then longer). A minute without a reading between two
+//   minutes with readings at most 3 minutes apart (FILL_MAX_GAP_MINUTES: at
+//   most 2 empty minutes in a row) carries the previous minute's value; it is
+//   not 沒有資料. Longer gaps are. Charging and not charging never fill into
+//   each other (fillActivityGaps). Counted on whole minutes, not on the
+//   readings' own times, because week, month and year only have per-minute
+//   sums: a reading at 10:00:00 and the next at 10:03:59 fill 10:01 and 10:02.
+// - 休息: every one of the last 10 minutes has a value (a reading, or filled:
+//   no gap over 3 minutes) and every one is at most 0.05. 劇烈: the last 2
+//   minutes both have a value at least 0.8, and the newer one is a reading of
+//   its own (a filled minute never makes the pair: one packet is not 2 minutes
+//   of 劇烈). Once either holds, it holds from the first minute of the first window
 //   that qualified (rest fills back 10 minutes, vigorous 2) until a window no
 //   longer qualifies. Going back, a rest is broken by a minute above 0.05, or
 //   by more than REST_MAX_MISSING_MINUTES in a row without data; shorter
-//   stretches without data (a window with fewer than 8 of 10) do not end it,
-//   so a few lost packets do not restart 「已 N 分鐘」. Its first minute is the
-//   first one with data after whichever broke it.
-// - Otherwise 一般 when the last 10 minutes have enough data (8 of 10), and
-//   nothing ("—") when they do not.
+//   stretches without data do not end it, so a few lost packets do not
+//   restart 「已 N 分鐘」. Its first minute is the first one with data after
+//   whichever broke it.
+// - Otherwise 一般 when the last 10 minutes have enough data (8 of 10, filled
+//   minutes count), and nothing ("—") when they do not.
 // - A minute in which the collar reported USB power (usb_present=1, 充電中;
 //   2026-10-16: a collar on its charger reports a valid 0 and read as 休息)
 //   is neither 休息, 一般 nor 劇烈: its readings do not count, and going back
@@ -40,14 +50,21 @@ import { isCharging } from '../models/UsbPresent';
 // range) ends it there. A first guess: revisit against real Supabase data.
 export const REST_MAX_MISSING_MINUTES = 30;
 
+// The longest gap between two minutes with readings whose minutes in between
+// carry the earlier value (3: at most 2 empty minutes in a row; the user's
+// decision of 2026-10-19 for battery-saving collars).
+export const FILL_MAX_GAP_MINUTES = 3;
+
 export const ACTIVITY = Object.freeze({
   restMax: 0.05,
   restMinutes: 10,
   vigorousMin: 0.8,
   vigorousMinutes: 2,
-  // Share of a window's minutes that must have data.
+  // Share of the last restMinutes that must have a value (after the gap
+  // fill) for 一般 rather than 「—」. 休息 needs all of them.
   coverage: 0.8,
   restMaxMissingMinutes: REST_MAX_MISSING_MINUTES,
+  fillMaxGapMinutes: FILL_MAX_GAP_MINUTES,
 });
 
 export const ACTIVITY_STATE = Object.freeze({ REST: 'rest', NORMAL: 'normal', VIGOROUS: 'vigorous',
@@ -98,6 +115,19 @@ export function readingKey(row, time = Number(row?.time)) {
 }
 
 /**
+ * The readings with each copy of a reading counted once: the local copy wins
+ * over the cloud copy of the same reading (readingKey).
+ */
+export function uniqueReadings(readings = []) {
+  const unique = new Map();
+  for (const reading of readings) {
+    const old = unique.get(reading.key);
+    if (!old || (old.source !== 'ble' && reading.source === 'ble')) unique.set(reading.key, reading);
+  }
+  return [...unique.values()];
+}
+
+/**
  * One value per finished minute that has data, oldest first.
  * @param readings activityReadings() of both sources
  * @param options.now readings in now's minute (still running) are left out
@@ -107,14 +137,8 @@ export function readingKey(row, time = Number(row?.time)) {
  */
 export function activityMinutes(readings = [], { now = Date.now() } = {}) {
   const current = minuteOf(now);
-  const unique = new Map();
-  for (const reading of readings) {
-    const old = unique.get(reading.key);
-    // The local copy wins over the cloud copy of the same reading.
-    if (!old || (old.source !== 'ble' && reading.source === 'ble')) unique.set(reading.key, reading);
-  }
   const buckets = new Map();
-  for (const reading of unique.values()) {
+  for (const reading of uniqueReadings(readings)) {
     const minute = minuteOf(reading.time);
     if (minute >= current) continue;
     const bucket = buckets.get(minute) || { minute, sum: 0, count: 0, charging: false };
@@ -130,6 +154,39 @@ export function activityMinutes(readings = [], { now = Date.now() } = {}) {
     .map(({ minute, sum, count, charging }) => (charging
       ? { minute, value: count ? sum / count : NaN, count, charging: true }
       : { minute, value: sum / count, count }));
+}
+
+/**
+ * The minutes with the gaps of at most `fillMaxGapMinutes` filled in (see the
+ * rules above), in one pass. A minute between two minutes with readings that
+ * are both charging or both not is filled: `{ minute, value, count: 0,
+ * filled: true }` with the earlier minute's value, or `{ minute, value: NaN,
+ * count: 0, charging: true, filled: true }` between two charging minutes.
+ * Between a charging minute and one that is not nothing is filled.
+ * @param minutes activityMinutes() or ActivityData.mergeMinutes() (oldest
+ *   first, one entry per minute)
+ * @param options.before minutes from here on are left out before filling (the
+ *   minute still running; the card's judged minute + 1), so a later reading
+ *   never fills a minute judged without it
+ */
+export function fillActivityGaps(minutes = [], { config = ACTIVITY, before = Infinity } = {}) {
+  const most = (config.fillMaxGapMinutes ?? FILL_MAX_GAP_MINUTES) * MINUTE;
+  const result = [];
+  let previous = null;
+  for (let index = 0; index < minutes.length; index += 1) {
+    const item = minutes[index];
+    if (!(item.minute < before)) continue;
+    const gap = previous ? item.minute - previous.minute : 0;
+    if (gap > MINUTE && gap <= most && !previous.charging === !item.charging) {
+      for (let minute = previous.minute + MINUTE; minute < item.minute; minute += MINUTE) {
+        result.push(previous.charging ? { minute, value: NaN, count: 0, charging: true, filled: true }
+          : { minute, value: previous.value, count: 0, filled: true });
+      }
+    }
+    result.push(item);
+    previous = item;
+  }
+  return result;
 }
 
 // Does the window of `length` minutes ending at minute `end` qualify?
@@ -189,16 +246,21 @@ function runStart(values, end, length, extendNeeds, test, earliest, maxMissing =
 export function activityState(minutes = [], { end, from = null, config = ACTIVITY } = {}) {
   const none = { state: null, since: null, durationMinutes: null };
   if (!Number.isFinite(end) || !minutes.length) return none;
+  // Judged on what was read up to `end`: a later reading fills nothing here.
+  const filled = fillActivityGaps(minutes, { config, before: end + MINUTE });
   // Charging minutes are not data; going back they end a run (runStart).
-  const charging = new Set(minutes.filter(item => item.charging).map(item => item.minute));
+  const charging = new Set(filled.filter(item => item.charging).map(item => item.minute));
   if (charging.has(end)) return { state: ACTIVITY_STATE.CHARGING, since: null, durationMinutes: null };
-  const values = new Map(minutes.filter(item => !item.charging).map(item => [item.minute, item.value]));
+  const values = new Map(filled.filter(item => !item.charging).map(item => [item.minute, item.value]));
+  // The newest minute is never filled (nothing after it is used), so `end`
+  // with a value is a minute with a reading of its own.
   const earliest = minutes[0].minute;
   const vigorous = value => value >= config.vigorousMin;
   const rest = value => value <= config.restMax;
-  // 劇烈 needs every one of its (few) minutes; 休息 tolerates gaps.
+  // 劇烈 and 休息 need every one of their minutes (filled ones count).
   const vigorousNeeds = config.vigorousMinutes;
-  const restNeeds = Math.ceil(config.restMinutes * config.coverage - 1e-9);
+  const restNeeds = config.restMinutes;
+  const normalNeeds = Math.ceil(config.restMinutes * config.coverage - 1e-9);
   const run = (length, needs, test, state, maxMissing) => {
     const since = runStart(values, end, length, needs, test, earliest, maxMissing, charging);
     return { state, since, durationMinutes: Math.round((end + MINUTE - since) / MINUTE) };
@@ -207,14 +269,14 @@ export function activityState(minutes = [], { end, from = null, config = ACTIVIT
     return run(config.vigorousMinutes, vigorousNeeds, vigorous, ACTIVITY_STATE.VIGOROUS);
   }
   if (windowHolds(values, end, config.restMinutes, restNeeds, rest)) {
-    // Now needs 8 of 10 minutes; going back, only an active minute ends it.
+    // Now needs all 10 minutes; going back, only an active minute ends it.
     const result = run(config.restMinutes, 0, rest, ACTIVITY_STATE.REST,
       config.restMaxMissingMinutes ?? REST_MAX_MISSING_MINUTES);
     const edge = Number.isFinite(from) && result.since === earliest
       && earliest - minuteOf(from) < config.restMinutes * MINUTE;
     return edge ? { ...result, over: true } : result;
   }
-  if (windowHolds(values, end, config.restMinutes, restNeeds, () => true)) {
+  if (windowHolds(values, end, config.restMinutes, normalNeeds, () => true)) {
     return { state: ACTIVITY_STATE.NORMAL, since: null, durationMinutes: null };
   }
   return none;

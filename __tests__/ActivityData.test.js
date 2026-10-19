@@ -19,24 +19,26 @@ function database() {
   return { db, local, cloud };
 }
 
-test('日 reads raw rows of both tables with 9 minutes either side; other accounts and dogs stay out', async () => {
+test('日 reads raw rows of both tables with 12 minutes either side (2026-10-19: 9 + the 3-minute gap fill); other accounts and dogs stay out', async () => {
   const { db, local, cloud } = database();
   try {
-    local(DAY - 9 * M, 0.02);
-    local(DAY - 10 * M, 0.02); // outside the context
+    local(DAY - 12 * M, 0.02);
+    local(DAY - 13 * M, 0.02); // outside the context
     local(DAY + 5 * M + 1000, 0.4);
     local(DAY + 5 * M + 2000, 0.9, 0); // not a valid reading
     local(DAY + 6 * M, 0.4, 1, 4); // another dog
     cloud(DAY + 7 * M, 0.6);
     cloud(DAY + 8 * M, 0.7, 'b'); // another account
     const answer = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
-    expect(answer.local.map(row => row.time)).toEqual([DAY - 9 * M, DAY + 5 * M + 1000]);
+    expect(answer.local.map(row => row.time)).toEqual([DAY - 12 * M, DAY + 5 * M + 1000]);
     expect(answer.cloud.map(row => row.time)).toEqual([DAY + 7 * M]);
     const signedOut = await readActivityPeriod(db, null, 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
     expect(signedOut.cloud).toEqual([]);
     const view = buildDayView({ date: DAY, now: DAY + 2 * 1440 * M, earliest: DAY, ...activityViewInput(answer) });
     expect(view.points[5]).toMatchObject({ value: 0.4, state: 'normal' });
     expect(view.points[7]).toMatchObject({ value: 0.6, state: 'normal' });
+    // The minute between (no packet, readings 2 minutes apart) carries 0.4.
+    expect(view.points[6]).toMatchObject({ value: 0.4, count: 0, state: 'normal' });
   } finally { db.close(); }
 });
 

@@ -129,6 +129,19 @@ function track(make, now, { from, to = 5 * SECOND, every = 10 * SECOND, dog, rec
   return rows;
 }
 
+// 2026-10-19: a battery-saving collar's packets, 30–110 s apart (50–80 an
+// hour), oldest first: like track, but at these uneven steps.
+const SPARSE_GAPS = [30, 110, 45, 90, 100, 35, 110, 60, 75, 30];
+function sparseTrack(make, now, { from, to = 5 * SECOND, dog, receiver = () => RECEIVER, ...rest }) {
+  const rows = [];
+  for (let ago = from, index = 0; ago >= to; ago -= SPARSE_GAPS[index % SPARSE_GAPS.length] * SECOND, index += 1) {
+    const progress = from === to ? 1 : (from - ago) / (from - to);
+    const where = receiver(progress);
+    rows.push(make({ ...rest, time: now - ago, receiver: where, fix: dog(progress, where) }));
+  }
+  return rows;
+}
+
 // dog_status ids follow the order the service wrote the rows (time order), and
 // the live feed's newest row is the one with the highest id.
 function inTimeOrder(rows) {
@@ -598,8 +611,8 @@ function activityFixture({ earliest, gaps = [], charges = [], now, answer = null
   const read = async (slaveId, { start, end, detail }) => {
     if (answer === 'hang') return new Promise(() => {});
     if (answer === 'fail') throw new Error('fixture: 讀取失敗');
-    const from = Math.max(Math.floor((start - 9 * MINUTE) / MINUTE) * MINUTE, earliest ?? Infinity);
-    const to = Math.min(end + 9 * MINUTE, now + MINUTE);
+    const from = Math.max(Math.floor((start - ACTIVITY_CONTEXT_MS) / MINUTE) * MINUTE, earliest ?? Infinity);
+    const to = Math.min(end + ACTIVITY_CONTEXT_MS, now + MINUTE);
     if (slaveId !== 6 || earliest == null) return detail === 'raw' ? { local: [], cloud: [] } : { minutes: [] };
     if (detail === 'raw') {
       const local = [];
@@ -963,6 +976,29 @@ const FIXTURES = {
     ]),
     cloudRows: dog8Cloud(now),
   }),
+  // 2026-10-19: 豆豆's collar saves battery and sends sparsely (30–110 s
+  // apart), moving about (0.3) until 40 minutes ago and lying still (0.02)
+  // since, with no packet at all 75–71 minutes ago (a gap over 3 minutes):
+  // 活動量 「休息中・已 39 分鐘」 (minutes without a packet between readings
+  // at most 3 minutes apart carry the previous reading; before 2026-10-19
+  // 「—」, fewer than 8 of the last 10 minutes had a packet).
+  'card-rest-sparse': now => ({
+    receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
+    ble: inTimeOrder([
+      ...sparseTrack(bleRow, now, { slave: 4, from: 3 * 60 * MINUTE + 25 * SECOND, battery: 62,
+        activity: restingFor(now, 40 * MINUTE),
+        dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) })
+        .filter(row => row.received_at < now - 75 * MINUTE || row.received_at >= now - 71 * MINUTE),
+      ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
+        dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
+    ]),
+    cloudRows: dog8Cloud(now),
+  }),
+  // A4 今天 for the same 豆豆: 一般 with no 沒有資料 between the sparse
+  // packets, 沒有資料 only 08:15–08:19, 休息 39 分 (before 2026-10-19: 52
+  // minutes of 沒有資料 in 49 pieces, 休息 25 分).
+  'activity-sparse': now => ({ ...FIXTURES['card-rest-sparse'](now), openPage: 'activity',
+    activityView: { mode: 'day', date: now } }),
   // 2026-10-16: a collar on its charger reports activity 0, marked valid
   // (newer firmware), and read as 「休息中・超過 6 小時」. 豆豆 walked until
   // 08:10, then has been on USB power at home (一筆 every 30 s, activity 0,
