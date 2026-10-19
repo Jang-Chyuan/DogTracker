@@ -806,7 +806,9 @@ class HistoryExportModule(private val context: ReactApplicationContext) : ReactC
           Paint(Paint.ANTI_ALIAS_FLAG).apply { color = surface })
         canvas.drawRoundRect(RectF(px - 27f - half, py - 27f, px + 27f + half, py + 27f), 27f, 27f,
           Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (indoor) color(op.getString("indoor")) else colour })
-        if (indoor) drawIcon(canvas, op.getJSONObject("house"), px - 21f, py - 21f, 42f, color(op.getString("onRoute")))
+        // A hold's icon (HoldIcons.js): 遮蔽處 a pavilion, 充電中 a bolt.
+        if (indoor) drawIcon(canvas, op.getJSONObject("holdIcons").getJSONObject(place.optString("icon", "shelter")),
+          px - 21f, py - 21f, 42f, color(op.getString("onRoute")))
         else drawText(canvas, if (place.isNull("number")) "" else place.get("number").toString(), px, py - 22f, 44f, 34f,
           true, color(op.getString("onRoute")), "center")
       }

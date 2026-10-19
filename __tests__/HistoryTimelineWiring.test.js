@@ -452,3 +452,12 @@ describe('the history screen shows the list', () => {
     Platform.OS = original;
   });
 });
+
+// 2026-10-19: both hold kinds in one list, beside a coral stay.
+test('history-shelter-charging: a stay, 在遮蔽處, then 充電中, each with its own icon', async () => {
+  const { holdIcon } = require('../src/placement/HoldIcons');
+  const { model } = await fixtureList('history-shelter-charging');
+  const rows = model.nodes.filter(n => ['indoor', 'stop'].includes(n.type))
+    .map(n => [n.type, nodePill(n).text.replace(/\s*\d.*$/, ''), n.type === 'indoor' ? holdIcon(n.reason) : null]);
+  expect(rows).toEqual([['stop', '停', null], ['indoor', '在遮蔽處', 'shelter'], ['indoor', '充電中', 'bolt']]);
+});

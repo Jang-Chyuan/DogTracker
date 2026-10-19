@@ -8,6 +8,7 @@ import { dogFreshness, isIndoorHold, staleSpeech, staleText } from '../tracking/
 import { RANGE_STATUS } from '../tracking/ReceiverRange';
 import { dogProblems } from '../tracking/DogProblems';
 import { holdWord, isChargingHold } from '../placement/HoldWords';
+import { holdIcon } from '../placement/HoldIcons';
 
 /** The dog's name on the map: its given name, or 「狗 6」. */
 export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId, aliases));
@@ -90,6 +91,8 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
     tag: indoor ? `${name}・${word}` : name,
     indoor,
     holdWord: word,
+    // Its badge (HoldIcons): a pavilion, or a bolt on the charger.
+    holdIcon: indoor ? holdIcon(dog.heldReason) : null,
     stale: freshness.stale,
     // 070: drawn at opacity.catchingUp while a return to the app is still
     // reading; its colours are the ones the user left it with.

@@ -10,6 +10,7 @@ import { historyMapPresentation, listedTimeMarkers, placeMarkers, routeLines, ti
 import { clock, interruptionText, km, leavesFrom, nodePill, nodeTimes, placeLines, sectionText, vehicleExclusion } from '../history/HistoryText';
 import { captureExportSnapshot } from './ExportData';
 import { exportLightTheme, exportRouteColor } from '../theme/exportPalette';
+import { holdIcon } from '../placement/HoldIcons';
 
 const isSection = node => node?.type === 'movement' || node?.type === 'gap';
 const isVehicle = mode => mode === 'driving' || mode === 'ride';
@@ -77,6 +78,7 @@ export function exportTimelineRows(nodes, addressOf) {
     if (node.type === 'end' && ['now', 'no-fix'].includes(node.endState)) pill = nodePill({ ...node, endState: 'fixed', label: t('c330') });
     const next = shown[index + 1];
     return { kind: 'place', type: node.type, number: node.number ?? null, times: [nodeTimes(node)[0]],
+      ...(node.type === 'indoor' ? { holdIcon: holdIcon(node.reason) } : {}),
       title: lines.title, coordinates: '', missing: lines.missing, pill,
       note: interruptionText(node), line: isSection(next) ? lineOf(next) : null,
       leave: leavesFrom(node, next),
@@ -112,6 +114,7 @@ export function exportMapLayer(model, color, { multi = false, subject = 'dog' } 
     lines: lines.map(line => ({ width: line.width, vehicle: line.vehicle,
       coordinates: line.coordinates.map(p => [p.latitude, p.longitude]) })),
     places: places.map(place => ({ kind: place.kind, number: place.label ?? place.number,
+      ...(place.kind === 'indoor' ? { icon: holdIcon(place.reason) } : {}),
       latitude: place.coordinate.latitude, longitude: place.coordinate.longitude })),
     times: times.map(marker => ({ label: marker.label, end: marker.end, last: !!marker.last, first: !!marker.first, time: marker.time,
       latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude })),

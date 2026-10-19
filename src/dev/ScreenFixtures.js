@@ -1835,12 +1835,24 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
   // 豆豆 goes inside for 25 minutes after a walk (clear fixes, then packets
-  // without a fix): the house node 「室內・N 分」, unnumbered, no distance.
+  // without a fix): the pavilion node 「在遮蔽處 N 分」, unnumbered, no distance.
   'history-indoor': now => {
     const path = legsPath(now, 80 * MINUTE, at(10, 8), [{ walk: 22, bearing: 60, speed: 1.3 }, { stay: 13 },
       { inside: 25 }, { walk: 20, bearing: 200, speed: 1.3 }]);
     const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
       ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
+  },
+  // 2026-10-19: both kinds of hold in one list beside a coral stay — 豆豆
+  // walks, stays (停 13 分), 25 minutes without a fix: 「在遮蔽處 N 分」 with
+  // the pavilion; walks home, is on its charger (usb 1, no fix) for 20
+  // minutes: 「充電中 N 分」 with the bolt; then walks out again.
+  'history-shelter-charging': now => {
+    const path = legsPath(now, 110 * MINUTE, at(10, 8), [{ walk: 22, bearing: 60, speed: 1.3 }, { stay: 13 },
+      { inside: 25 }, { walk: 20, bearing: 200, speed: 1.3 }, { inside: 20 }, { walk: 10, bearing: 280, speed: 1.3 }]);
+    const charging = time => time >= now - 30 * MINUTE && time < now - 10 * MINUTE;
+    const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
+      ...(charging(row.time) ? { usb: 1 } : {}), ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
   // ---- the list's last node (057a): every way a day's list can end -------
@@ -1902,7 +1914,7 @@ const FIXTURES = {
       historyView: { goTo: dayKey(new Date(midnight - 60 * MINUTE)) }, geocoder: { names: HISTORY_NAMES } };
   },
   // 豆豆 walks, stays, then goes inside for the last 30 minutes (packets
-  // without a fix until now): the list ends on the house node 「室內・N 分」.
+  // without a fix until now): the list ends on the pavilion node 「在遮蔽處 N 分」.
   'history-indoor-end': now => {
     const path = legsPath(now, 85 * MINUTE, at(10, 8), [{ walk: 25, bearing: 60, speed: 1.3 }, { stay: 15 },
       { walk: 2, bearing: 90, speed: 0.4 }, { stay: 13 }, { inside: 30 }]);

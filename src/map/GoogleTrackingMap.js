@@ -1,6 +1,7 @@
 import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
 import { holdWord } from '../placement/HoldWords';
+import { holdIcon } from '../placement/HoldIcons';
 import { logger } from '../logger';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, {
@@ -288,6 +289,7 @@ const DogMarker = React.memo(function DogMarker({ source, marker, tag, avatar, z
     marker.problem,
     marker.stale,
     marker.indoor,
+    marker.holdIcon,
     marker.selected,
     marker.staleRing,
     marker.tint,
@@ -658,7 +660,7 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
           onPress={onStopPress ? event => onStopPress(place, event) : undefined}
         >
           {place.kind === 'indoor' ? (
-            <IndoorMarkerView />
+            <IndoorMarkerView icon={holdIcon(place.reason)} />
           ) : (
             <StopMarkerView number={place.number} label={place.label ?? null} color={route.color} selected={!!place.selected} />
           )}

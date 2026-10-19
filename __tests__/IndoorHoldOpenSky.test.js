@@ -234,3 +234,32 @@ test('my route never holds and never says 遮蔽處 or 室內', () => {
   expect(model.nodes.some(n => n.type === 'indoor')).toBe(false);
   expect(JSON.stringify(model.nodes.map(nodePill))).not.toMatch(/遮蔽處|室內/);
 });
+
+// 2026-10-19 (user's choice from four mockups): a pavilion for 遮蔽處, a bolt
+// for 充電中, on the same receiver-blue disc everywhere a hold is drawn.
+describe('the hold icons', () => {
+  const { holdIcon, HOLD_ICON_PATHS } = require('../src/placement/HoldIcons');
+  const { exportTimelineRows } = require('../src/mapHistory/ExportSnapshot');
+  const { EXPORT_ICONS, mapOp } = require('../src/mapHistory/ExportDraw');
+  test('a pavilion for any shelter, a bolt on the charger', () => {
+    expect(['室內', '窗邊', 'GPS 沒有定位', 'GPS 訊號弱', undefined].map(holdIcon)).toEqual(Array(5).fill('shelter'));
+    expect(holdIcon('充電中')).toBe('bolt');
+    expect(EXPORT_ICONS.shelter).toBe(HOLD_ICON_PATHS.shelter);
+    expect(EXPORT_ICONS.bolt).toBe(HOLD_ICON_PATHS.bolt);
+    expect(EXPORT_ICONS.house).toBeUndefined();
+  });
+  test('the live marker, the export list and the export map carry the icon', () => {
+    const dog = reason => ({ slaveId: 4, coordinate: CHARGER, fixAt: T0, packetAt: T0, charging: reason === '充電中',
+      heldReason: reason, heldSource: 'good' });
+    const [shelterMarker, chargingMarker, freeMarker] = dogMarkers([dog('GPS 沒有定位'), { ...dog('充電中'), slaveId: 6 },
+      { ...dog(null), slaveId: 8, heldReason: undefined }], { now: T0 + 5000 });
+    expect([shelterMarker.holdIcon, chargingMarker.holdIcon, freeMarker.holdIcon]).toEqual(['shelter', 'bolt', null]);
+    const nodes = [{ type: 'indoor', start: T0, end: T0 + 25 * MINUTE, reason: '充電中', latitude: 24.99, longitude: 121.31 },
+      { type: 'indoor', start: T0 + 26 * MINUTE, end: T0 + 40 * MINUTE, reason: '室內', latitude: 24.99, longitude: 121.31 }];
+    expect(exportTimelineRows(nodes, () => null).filter(item => item.type === 'indoor').map(item => item.holdIcon))
+      .toEqual(['bolt', 'shelter']);
+    const op = mapOp({ y: 0, width: 100, height: 100, padding: 0, subjects: [] });
+    expect(Object.keys(op.holdIcons).sort()).toEqual(['bolt', 'shelter']);
+    expect(op.house).toBeUndefined();
+  });
+});
