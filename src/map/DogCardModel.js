@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { holdWord } from '../placement/HoldWords';
+import { holdWord, isChargingHold } from '../placement/HoldWords';
 // What a dog's summary card (design v3 A3/A3b/A7b, DESIGN.md「摘要卡片」「卡片
 // 的狀態列」) says, as plain values: always three rows — 位置 or 接收範圍
 // (with the direction and distance from the phone), 電量 and 活動量. Pure: no
@@ -142,16 +142,22 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   const alert = out ? rangeLabel(view, clock) : null;
   let place;
   if (indoor) {
-    // Two lines (56dp) held: 「遮蔽處」 or 「充電中」 (HoldWords, 2026-10-19)
-    // and the address under it (A7b).
+    // Two lines (56dp) held: 「遮蔽處」 (HoldWords, 2026-10-19) and the
+    // address under it (A7b).
     // No minutes (2026-10-16, the user's decision: the card does not time
     // the stay; the history does). Still asking: no second line and no
     // spinner, the row keeps its two lines so nothing jumps. None found,
     // offline or timed out: useAddress gives the place's coordinates instead
     // (2026-10-14), read out the same. Silent too: 「09:05 之後沒有新資料」
     // over the same address.
+    // On its charger (2026-10-19, user): no 「充電中」 here — the 電量 and
+    // 活動量 rows already say it — but the dog's own line, 「09:30 更新」
+    // (its newest packet), over the same address.
+    const fresh = isChargingHold(dog.heldReason)
+      ? (Number.isFinite(positionAt) ? t('c1416', { time: lastTimeText(positionAt, now) }) : '—')
+      : holdWord(dog.heldReason);
     place = { key: 'position', label: t('c073'),
-      value: stale ? staleText(freshness, now) : holdWord(dog.heldReason),
+      value: stale ? staleText(freshness, now) : fresh,
       tone: stale ? 'crit' : null, detail: address, twoLine: true, alert };
   } else if (stale) {
     place = { key: 'position', label: t('c073'), value: staleText(freshness, now), tone: 'crit', detail: null,

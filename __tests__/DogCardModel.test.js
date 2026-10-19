@@ -104,6 +104,21 @@ test('a battery reading 10 minutes older than the position carries its time', ()
     .toBe('62%');
 });
 
+// 2026-10-19 (user): on its charger the 位置 row does not say 「充電中」 (電量
+// and 活動量 do): the dog's own 「09:29 更新」 over the address and distance.
+test('held on its charger: 位置 「HH:MM 更新」 over the address, 充電中 only on 電量 and 活動量', () => {
+  const held = dog({ heldReason: '充電中', heldSource: 'good', charging: true, batteryPercentage: 62,
+    packetAt: new Date(2026, 9, 7, 9, 29).getTime() });
+  const model = card(held, { freshness: { ...fresh, basis: 'packet' }, address: '桃園區中正路 1 號附近',
+    activity: { minutes: [], newestAt: held.packetAt } });
+  expect(row(model, 'position')).toMatchObject({ value: '09:29 更新', detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，09:29 更新，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
+  expect(row(model, 'battery').value).toBe('充電中 62%');
+  expect(row(model, 'activity').value).toBe('充電中');
+  expect(row(card(held, { freshness: { ...stale, basis: 'packet' }, address: '桃園區中正路 1 號附近' }), 'position'))
+    .toMatchObject({ value: '09:05 之後沒有新資料', tone: 'crit', detail: '桃園區中正路 1 號附近' });
+});
+
 test('A7b: held indoors — 位置 「遮蔽處」 (address line when known), no 接收範圍 row', () => {
   const held = dog({ heldReason: '室內', heldSource: 'weak' });
   const freshness = { ...fresh, basis: 'packet' };

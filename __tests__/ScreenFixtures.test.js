@@ -871,14 +871,16 @@ test('card-problems (A3b): every problem red, 活動量 「—」, the distance 
 
 // 2026-10-16 (user): the card says where the dog is held over the address,
 // no minutes (the history times the stay). 2026-10-19 (user): on its charger
-// that word is 「充電中」.
-test('card-indoor (A7b): 位置 「充電中」 over its address, charging 62%, activity 充電中, no 接收範圍 row', async () => {
+// the 位置 row does not say 「充電中」 (電量 and 活動量 do): 「09:29 更新」 over
+// the address, as a dog's own line.
+test('card-indoor (A7b): 位置 「HH:MM 更新」 over its address, charging 62%, activity 充電中, no 接收範圍 row', async () => {
   const { model, rows, keys, state, dog } = await card('card-indoor');
   expect(dog.heldFromClipped).toBe(true);
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・充電中' });
   expect(keys).toEqual(['position', 'battery', 'activity']);
-  expect(rows.position).toMatchObject({ value: '充電中', tone: null, detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: expect.stringMatching(/^位置，充電中，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
+  expect(rows.position).toMatchObject({ value: expect.stringMatching(/^\d\d:\d\d 更新$/), tone: null,
+    detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: expect.stringMatching(/^位置，\d\d:\d\d 更新，桃園區中正路 1 號附近，.+方 [\d.]+ 公(尺|里)，離手機$/) });
   expect(rows.battery).toMatchObject({ value: '充電中 62%', tone: null });
   // On its charger: 充電中, not the 40 minutes of 0.02 it reads (2026-10-16).
   expect(rows.activity).toMatchObject({ value: i18nT('c731'), detail: null, speech: '活動量，充電中' });
@@ -922,17 +924,18 @@ test('card-battery-blip: one 0% packet without a voltage keeps 43%, no red 「!�
 // coordinates on the second line, as the history list, read out the same.
 const held = dog => `${dog.coordinate.latitude.toFixed(4)}, ${dog.coordinate.longitude.toFixed(4)}`;
 
-test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「充電中」 (on its charger) over the coordinates', async () => {
+test('dog-indoor-no-address: offline, nothing is asked; 位置 is 「HH:MM 更新」 (on its charger) over the coordinates', async () => {
   const { rows, state, dog } = await card('dog-indoor-no-address');
   expect(state.marker(6)).toMatchObject({ indoor: true, tag: '小黑・充電中' });
   expect(held(dog)).toMatch(/^\d+\.\d{4}, \d+\.\d{4}$/);
-  expect(rows.position).toMatchObject({ value: '充電中', detail: held(dog), twoLine: true,
-    speech: expect.stringMatching(new RegExp(`^位置，充電中，${held(dog).replace(/\./g, '\\.')}，.+方 [\\d.]+ 公(尺|里)，離手機$`)) });
+  expect(rows.position).toMatchObject({ value: expect.stringMatching(/^\d\d:\d\d 更新$/), detail: held(dog), twoLine: true,
+    speech: expect.stringMatching(new RegExp(`^位置，\\d\\d:\\d\\d 更新，${held(dog).replace(/\./g, '\\.')}，.+方 [\\d.]+ 公(尺|里)，離手機$`)) });
 });
 
 test('card-indoor-geocoder asks this phone\'s own Geocoder (none under jest: the coordinates)', async () => {
   const { rows, dog } = await card('card-indoor-geocoder');
-  expect(rows.position).toMatchObject({ value: '充電中', detail: held(dog) });
+  expect(rows.position).toMatchObject({ value: expect.stringMatching(/^\d\d:\d\d 更新$/), detail: held(dog) });
+  expect(rows.position.value).not.toContain('充電中');
 });
 
 test('card-cloud-dog: a cloud dog has no 接收範圍 row, 位置 says when its position is from; running hard', async () => {
