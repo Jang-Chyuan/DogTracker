@@ -726,7 +726,7 @@ const FIXTURES = {
       masterBattery: 15 }) }),
   // 小黑 (dog 6, heard by receiver 7) went inside twelve minutes ago: clear
   // fixes in one spot, then packets without a fix. The real indoor-hold rules
-  // (HoldStore + the bundled environment model) hold it there as 室內.
+  // (HoldStore + the bundled environment model) hold it there: 「小黑・遮蔽處」.
   'dog-indoor': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: [
@@ -825,7 +825,7 @@ const FIXTURES = {
   }),
   // 豆豆, 小黑 and 阿福 went into the same kennel twelve minutes ago (a few
   // metres apart, as GPS sees separate cages): all three held indoors, their
-  // name tags merge into 「3 隻・室內」. Dog 5 walks outside on its own.
+  // name tags merge into 「3 隻・遮蔽處」. Dog 5 walks outside on its own.
   'dogs-indoor-stacked': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: inTimeOrder([
@@ -850,9 +850,9 @@ const FIXTURES = {
     cloudRows: [],
   }),
   // A face on another dog's name (fictional places): 狗 18 walks just below
-  // and right of 狗 16, held indoors, so its face sits on 「狗 16・室內」
-  // while the two names do not touch; 狗 108 does the same to 「狗 104・室內」,
-  // both held. Each pair merges into one 「2 隻」／「2 隻・室內」. 豆豆 far
+  // and right of 狗 16, held indoors, so its face sits on 「狗 16・遮蔽處」
+  // while the two names do not touch; 狗 108 does the same to 「狗 104・遮蔽處」,
+  // both held. Each pair merges into one 「2 隻」／「2 隻・遮蔽處」. 豆豆 far
   // away keeps the map zoomed out.
   'dogs-labels-touching': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),

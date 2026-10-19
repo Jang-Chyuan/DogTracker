@@ -1,5 +1,6 @@
 import { markStartupPhase } from '../diagnostics/StartupPhases';
 import { t } from '../i18n';
+import { holdWord } from '../placement/HoldWords';
 import { logger } from '../logger';
 import { useTheme, useStyles, makeStyles } from '../theme/ThemeProvider';
 import React, {
@@ -651,9 +652,9 @@ const HistoryRoute = React.memo(function HistoryRoute({ route, onStopPress, metr
         <RouteMarker
           key={place.key}
           coordinate={place.coordinate}
-          look={`${place.kind}:${place.label ?? place.number}:${!!place.selected}`}
+          look={`${place.kind}:${place.label ?? place.number}:${place.reason ?? ''}:${!!place.selected}`}
           zIndex={place.kind === 'indoor' ? 26 : 25}
-          label={place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.label ?? place.number })}
+          label={place.kind === 'indoor' ? holdWord(place.reason) : t('c136', { duration: place.label ?? place.number })}
           onPress={onStopPress ? event => onStopPress(place, event) : undefined}
         >
           {place.kind === 'indoor' ? (

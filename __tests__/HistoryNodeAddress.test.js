@@ -77,7 +77,7 @@ test('indoor list and PNG export reuse the live card address cache', async () =>
   const addressLines = exporter.renderPng.mock.calls[0][2].flatMap(page => page.ops)
     .filter(op => op.t === 'text' && op.bold && op.size === 40).map(op => op.text);
   expect(addressLines.slice(1).join(' ')).toBe(address);
-  expect(pages).toContain('室內・40 分');
+  expect(pages).toContain('在遮蔽處 40 分');
   expect(native.reverseGeocode).toHaveBeenCalledTimes(cardRequests);
   await act(async () => renderer.unmount());
 });

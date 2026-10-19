@@ -267,6 +267,10 @@ const packetCases = [
     rows: Array.from({ length: 6 }, (_, i) => holdRow(T + 2 * M + i * 5000, 200 + i * 50, { usb_present: 1 })) },
   { name: 'continuity: window drive releases on consistent far good progression', initial: indoorRows,
     rows: Array.from({ length: 6 }, (_, i) => holdRow(T + 2 * M + i * 5000, 200 + i * 50)) },
+  // 2026-10-19: ten minutes that clearly see the sky let go 50 m from the
+  // anchor, where no distance rule would (IndoorHold.openSky).
+  { name: 'release: open sky near the anchor', initial: indoorRows,
+    rows: Array.from({ length: 16 }, (_, i) => holdRow(T + 2 * M + i * 40000, 50, { satellites: 34, hdop: 0.6 })) },
   { name: 'continuity: opposed far fixes are not a charging drive', initial: stableHeldRows,
     rows: [200, -200, 200].map((metres, i) => holdRow(T + 4 * M + i * 5000, metres, { usb_present: 1 })) },
 ];
@@ -304,7 +308,10 @@ test('K03: native indoor entry and every release path agree with the foreground 
   expect(fs.readFileSync(INDOOR_FIXTURE, 'utf8')).toBe(result);
   expect(results[0].rows[0].expect.held).toBe(true);
   const released = results.flatMap(value => value.rows.map(row => row.expect.why)).filter(Boolean);
-  expect(new Set(released)).toEqual(new Set(['good-fixes-away', 'good-fixes-nearby', 'weak-fixes-away', 'travelling']));
+  expect(new Set(released)).toEqual(new Set(['good-fixes-away', 'good-fixes-nearby', 'weak-fixes-away', 'travelling', 'open-sky']));
+  const openSky = results.find(value => value.name === 'release: open sky near the anchor').rows;
+  expect(openSky[0].expect.held).toBe(true);
+  expect(openSky.at(-1).expect).toMatchObject({ held: false, why: 'open-sky' });
   const continuity = Object.fromEntries(results.filter(value => value.name.startsWith('continuity:')).map(value => [value.name, value.rows]));
   const stationary = Object.fromEntries(results.filter(value => value.name.startsWith('stationary tail:')).map(value => [value.name, value.rows]));
   expect(stationary['stationary tail: compact zero-speed offset survives handover'].every(step => step.expect.held)).toBe(true);

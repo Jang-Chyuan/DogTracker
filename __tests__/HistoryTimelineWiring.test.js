@@ -137,7 +137,7 @@ describe('words (copy deck)', () => {
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE })).toEqual({ text: '停 17 分', tone: 'stay' });
     // 2026-10-15 (user): no 「接續前一天」 — the row's 00:00 says it.
     expect(nodePill({ type: 'stop', durationMs: 17 * MINUTE, continuesPreviousDay: true }).text).toBe('停 17 分');
-    expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '室內・40 分', tone: 'indoor' });
+    expect(nodePill({ type: 'indoor', start: 0, end: 40 * MINUTE })).toEqual({ text: '在遮蔽處 40 分', tone: 'indoor' });
     expect(nodePill({ type: 'resume' }).text).toBe(i18nT('c335'));
     expect(nodePill({ type: 'switch' })).toBeNull();
     expect(nodePill({ type: 'end', label: i18nT('c130') }).text).toBe(i18nT('c130'));
@@ -242,7 +242,7 @@ describe('fixtures', () => {
     expect(kinds).toContain('indoor');
     const house = model.nodes.find(n => n.type === 'indoor');
     expect(house.number).toBeUndefined();
-    expect(nodePill(house).text).toMatch(/^室內・2\d 分$/);
+    expect(nodePill(house).text).toMatch(/^在遮蔽處 2\d 分$/);
   });
 });
 

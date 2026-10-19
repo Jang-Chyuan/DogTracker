@@ -185,6 +185,26 @@ class IndoorHold(saved: String? = null) {
     }
     return false
   }
+  // IndoorHold.openSky (2026-10-19): ten minutes of rows that clearly see
+  // the sky let the dog go, however close to the anchor. Never while plugged in.
+  private fun hdopValue(raw: Double?): Double? {
+    if (raw == null || raw == 65535.0 || abs(raw - 655.35) < 0.01 || raw < 0.3) return null
+    return if (raw >= 100) raw / 100 else raw
+  }
+  private fun noteSky(packet: Packet, p: JSONObject?) {
+    val entry = JSONObject().put("time", packet.time).put("good", p != null && packet.good)
+      .put("satellites", if (p != null) packet.satellites ?: 0.0 else 0.0)
+      .put("hdop", (if (p != null) hdopValue(packet.hdop) else null) ?: JSONObject.NULL)
+    set("sky", (points("sky") + entry).filter { packet.time - time(it) <= OPEN_SKY_WINDOW_MS })
+  }
+  private fun openSky(): Boolean {
+    val sky = points("sky")
+    if (s.optBoolean("usb") || sky.size < OPEN_SKY_ROWS) return false
+    if (sky.count { it.optBoolean("good") } < sky.size * OPEN_SKY_GOOD_SHARE) return false
+    val hdops = sky.mapNotNull { (it.opt("hdop") as? Number)?.toDouble() }
+    return hdops.isNotEmpty() && median(sky.map { it.optDouble("satellites", 0.0) }) >= OPEN_SKY_MIN_SATELLITES
+      && median(hdops) <= OPEN_SKY_MAX_HDOP
+  }
   private fun environment(packet: Packet) {
     val bucket = packet.time / 120000 * 120000
     val buckets = s.optJSONObject("buckets") ?: JSONObject().also { s.put("buckets", it) }
@@ -224,10 +244,12 @@ class IndoorHold(saved: String? = null) {
     val copy = p != null && seen.any { t - time(it) in 0..60000 && (it.optString("master") != master || time(it) == t) && distance(p, it) == 0.0 }
     s.put("lastTime", t)
     if (same || copy) return
+    noteSky(packet, p)
+    val clearSky = openSky()
     if (p != null) set("rawTail", (points("rawTail") + p).filter { t - time(it) <= 600000 }.takeLast(300))
     if (p != null) { seen.add(JSONObject(p.toString()).put("master", master)); set("recentFixes", seen.filter { t - time(it) <= 60000 }) }
     val measured = if (p == null) "none" else if (packet.good) "good" else "weak"
-    val backed = previous?.optString("quality") == "good" && t - previous.getLong("time") <= 90000
+    val backed = (previous?.optString("quality") == "good" && t - previous.getLong("time") <= 90000) || (clearSky && measured == "good")
     val quality = if (measured == "good" && !backed) "weak" else measured
     var ended = false
     if (measured == "good" && backed && previous != null && !previous.optBoolean("trusted")) {
@@ -240,9 +262,10 @@ class IndoorHold(saved: String? = null) {
     s.put("previous", JSONObject().put("time", t).put("quality", measured).put("point", p ?: JSONObject.NULL).put("trusted", quality == "good"))
     set("goods", points("goods").takeLast(64))
     if (held != null) ended = whileHeld(p, quality, t)
+    if (held != null && clearSky) ended = release(t, "open-sky")
     if (quality == "good" && p != null) { set("goods", points("goods") + p); s.put("lastGoodAt", t) }
     else if (quality == "weak" && p != null) set("weak", (points("weak") + p).takeLast(300))
-    if (held != null || ended || quality == "good") return
+    if (held != null || ended || quality == "good" || clearSky) return
     val quiet = num(s, "lastGoodAt")?.let { t - it }?.toDouble() ?: Double.POSITIVE_INFINITY
     val why = evidence(t)
     val weakSince = points("weak").any { (num(s, "lastGoodAt") == null || time(it) > num(s, "lastGoodAt")!!) && t - time(it) < max(60000.0, typicalGap() * 3) }
@@ -258,6 +281,11 @@ class IndoorHold(saved: String? = null) {
   fun coordinate() = held?.getJSONObject("anchor")?.let(::coord)
   fun write() = s.toString()
   companion object {
+    const val OPEN_SKY_WINDOW_MS = 600000L
+    const val OPEN_SKY_ROWS = 6
+    const val OPEN_SKY_GOOD_SHARE = 0.9
+    const val OPEN_SKY_MIN_SATELLITES = 28.0
+    const val OPEN_SKY_MAX_HDOP = 1.0
     /** Older foreground snapshots only contained the held anchor. Preserve it until release evidence arrives. */
     fun fromDog(dog: AlertDog): IndoorHold {
       if (dog.indoorState != null) return IndoorHold(dog.indoorState)

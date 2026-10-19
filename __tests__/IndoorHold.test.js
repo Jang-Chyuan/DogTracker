@@ -254,7 +254,7 @@ describe('the card times a hold from where the history\'s 室內 node starts', (
     const dog = mergeDogMarkers({ packetRows: [packet], holds: { 4: hold }, now: last.time, windowMs: 180000 })[0];
     const card = dogCard(dog, { freshness: { stale: false, basis: 'packet' }, now: last.time, name: '小黑' });
     return { hold, node, dog, value: card.rows.find(row => row.key === 'position').value,
-      history: i18nT('c344', { duration: listDuration(presentationDurationMs(node)) }) };
+      history: i18nT('c1432', { duration: listDuration(presentationDurationMs(node)) }) };
   };
 
   test('silence after the last good fix: from the first packet after it, not the fix', () => {
@@ -266,8 +266,8 @@ describe('the card times a hold from where the history\'s 室內 node starts', (
     expect(result.node.start).toBe(T + 20 * 60000);
     expect(result.hold.from).toBe(result.node.start);
     expect(result.dog.heldFrom).toBe(result.node.start);
-    // The card says 「室內」 only (2026-10-16); the history times the stay.
-    expect(result.value).toBe('室內');
+    // The card says 「遮蔽處」 only (2026-10-16, 2026-10-19); the history times the stay.
+    expect(result.value).toBe('遮蔽處');
   });
 
   test('drift right after the last good fix: from the first drifting row, as the history draws it', () => {

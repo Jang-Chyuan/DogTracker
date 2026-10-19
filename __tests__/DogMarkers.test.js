@@ -46,16 +46,24 @@ test('charging with a low battery is not a problem, but is read out', () => {
   expect(dogProblems({ batteryPercentage: null }, null, null).any).toBe(false);
 });
 
-test('held indoors: house, 「小黑・室內」 whatever held it, and the full spoken label', () => {
-  for (const reason of ['室內', '窗邊', '充電中', 'GPS 沒有定位', 'GPS 訊號弱']) {
+// 2026-10-19 (user): held on the charger 「充電中」, held for any other
+// reason 「遮蔽處」; 「室內」 is no longer said of a dog.
+test('held: house, 「小黑・遮蔽處」 whatever held it but the charger, and the full spoken label', () => {
+  for (const reason of ['室內', '窗邊', 'GPS 沒有定位', 'GPS 訊號弱']) {
     expect(one(dog(6, { heldReason: reason, heldSource: 'good' }))).toMatchObject({
-      indoor: true, problem: false, tag: '小黑・室內', label: '小黑・室內' });
+      indoor: true, problem: false, tag: '小黑・遮蔽處', label: '小黑・遮蔽處' });
   }
+  expect(one(dog(6, { heldReason: '充電中', heldSource: 'good' }))).toMatchObject({
+    indoor: true, problem: false, tag: '小黑・充電中', label: '小黑・充電中' });
   const worst = one(dog(6, { heldReason: '充電中', heldSource: 'good', batteryPercentage: 62, charging: true,
     packetAt: new Date(2026, 9, 7, 9, 5).getTime() }), { ranges: { 6: { status: 'out' } } });
   // The design's example sentence, word for word.
-  expect(worst.label).toBe('小黑・室內，充電中 62%，不在接收範圍，09:05 之後沒有新資料');
-  expect(worst).toMatchObject({ indoor: true, stale: true, problem: true, size: 48, tag: '小黑・室內' });
+  // 充電中 said once, with the battery.
+  expect(worst.label).toBe('小黑・充電中 62%，不在接收範圍，09:05 之後沒有新資料');
+  expect(worst).toMatchObject({ indoor: true, stale: true, problem: true, size: 48, tag: '小黑・充電中' });
+  const sheltered = one(dog(6, { heldReason: 'GPS 沒有定位', heldSource: 'weak', batteryPercentage: 62,
+    packetAt: new Date(2026, 9, 7, 9, 5).getTime() }), { ranges: { 6: { status: 'out' } } });
+  expect(sheltered.label).toBe('小黑・遮蔽處，不在接收範圍，09:05 之後沒有新資料');
   // Riding along is drawn like any other dog.
   expect(one(dog(6, { heldReason: null, heldSource: 'ride' })).indoor).toBe(false);
 });
@@ -77,10 +85,13 @@ describe('name tags that run into each other', () => {
     const tags = nameTags(list, { 4: { x: 100, y: 100 }, 6: { x: 110, y: 104 }, 8: { x: 120, y: 112 } });
     expect(tags).toEqual({ 4: null, 6: null, 8: { text: '3 隻', group: 3, problem: true, members: [4, 6, 8] } });
   });
-  test('all held indoors: 「2 隻・室內」; one not held: just 「2 隻」', () => {
+  test('all held under one word: 「2 隻・遮蔽處」; one not held, or one charging: just 「2 隻」', () => {
     const held = extra => dog(extra, { heldReason: '室內', heldSource: 'good' });
     const points = { 4: { x: 100, y: 100 }, 6: { x: 104, y: 102 } };
-    expect(nameTags(markers(held(4), held(6)), points)[6]).toEqual({ text: '2 隻・室內', group: 2, problem: false, members: [4, 6] });
+    expect(nameTags(markers(held(4), held(6)), points)[6]).toEqual({ text: '2 隻・遮蔽處', group: 2, problem: false, members: [4, 6] });
+    const charging = extra => dog(extra, { heldReason: '充電中', heldSource: 'good' });
+    expect(nameTags(markers(charging(4), charging(6)), points)[6].text).toBe('2 隻・充電中');
+    expect(nameTags(markers(held(4), charging(6)), points)[6].text).toBe('2 隻');
     expect(nameTags(markers(held(4), dog(6)), points)[6].text).toBe('2 隻');
   });
   test('the selected dog keeps its own tag and leaves the group; a group of one is no group', () => {
@@ -114,27 +125,27 @@ describe('name tags that run into each other', () => {
     expect(Object.values(chain).filter(Boolean)).toEqual([{ text: '3 隻', group: 3, problem: false, members: [4, 6, 8] }]);
     expect(Object.values(nameTags(list, {})).every(tag => tag.group === 1)).toBe(true);
   });
-  // The phone's 「狗 6・室內」 cut off by dog 8 and 「狗 104・室內」 under dog
+  // The phone's 「狗 6・室內」 (now 遮蔽處) cut off by dog 8 and 「狗 104・室內」 under dog
   // 108 (fictional places): the other dog's face sat on the name while the two
   // names themselves did not touch, so no 「N 隻」 was made.
   const unnamed = (...dogs) => dogMarkers(dogs, { now: NOW, aliases: {} });
   const held = (slaveId, extra) => dog(slaveId, { heldReason: '室內', heldSource: 'good', ...extra });
   test('a face drawn over another dog\'s name merges the two, though the names never touch', () => {
     const list = unnamed(held(6), dog(8));
-    // Dog 8 a little below and right of dog 6: its face covers 「狗 6・室內」,
+    // Dog 8 a little below and right of dog 6: its face covers 「狗 6・遮蔽處」,
     // its own name is below that.
     const points = { 6: { x: 200, y: 300 }, 8: { x: 215, y: 342 } };
-    const six = tagSize('狗 6・室內');
+    const six = tagSize('狗 6・遮蔽處');
     const eight = tagSize('狗 8');
     const sixTop = 300 + 20 + 2;
     const eightTop = 342 + 20 + 2;
     expect(sixTop + six.height).toBeLessThan(eightTop);
     expect(eight.width).toBeLessThan(six.width);
     expect(nameTags(list, points)).toEqual({ 6: null, 8: { text: '2 隻', group: 2, problem: false, members: [6, 8] } });
-    // Both held: 「2 隻・室內」, under the lower face.
+    // Both held: 「2 隻・遮蔽處」, under the lower face.
     const indoor = unnamed(held(104), held(108));
     expect(nameTags(indoor, { 104: { x: 120, y: 500 }, 108: { x: 96, y: 536 } })).toEqual({
-      104: null, 108: { text: '2 隻・室內', group: 2, problem: false, members: [104, 108] } });
+      104: null, 108: { text: '2 隻・遮蔽處', group: 2, problem: false, members: [104, 108] } });
   });
   test('faces side by side with their names clear of each other stay apart', () => {
     const list = unnamed(dog(6), dog(8));
@@ -147,18 +158,18 @@ describe('name tags that run into each other', () => {
   });
   test('a group tag that runs into a third dog takes that dog in too', () => {
     const list = unnamed(held(6), held(8), dog(10));
-    // 6 and 8 share a place; the 「2 隻・室內」 tag under them is wider than
+    // 6 and 8 share a place; the 「2 隻・遮蔽處」 tag under them is wider than
     // either name and reaches dog 10's face, which their own names did not.
-    const points = { 6: { x: 200, y: 300 }, 8: { x: 200, y: 301 }, 10: { x: 264, y: 350 } };
+    const points = { 6: { x: 200, y: 300 }, 8: { x: 200, y: 301 }, 10: { x: 272, y: 350 } };
     const alone = nameTags(unnamed(held(6), dog(10)), { 6: points[6], 10: points[10] });
-    expect(alone[6]).toEqual({ text: '狗 6・室內', group: 1, problem: false });
+    expect(alone[6]).toEqual({ text: '狗 6・遮蔽處', group: 1, problem: false });
     expect(Object.values(nameTags(list, points)).filter(Boolean)).toEqual([
       { text: '3 隻', group: 3, problem: false, members: [6, 8, 10] }]);
   });
   test('without grouping (zoomed in) every dog keeps its own name', () => {
     const list = unnamed(held(6), dog(8));
     expect(nameTags(list, { 6: { x: 200, y: 300 }, 8: { x: 215, y: 342 } }, 1, { group: false })).toEqual({
-      6: { text: '狗 6・室內', group: 1, problem: false }, 8: { text: '狗 8', group: 1, problem: false } });
+      6: { text: '狗 6・遮蔽處', group: 1, problem: false }, 8: { text: '狗 8', group: 1, problem: false } });
   });
   test('tags grow with the font size', () => {
     expect(tagSize('小黑', 2).height).toBeGreaterThan(tagSize('小黑').height);
@@ -185,7 +196,7 @@ describe('the marker view', () => {
     // Centre on the rim, a quarter face below its centre.
     expect(style(house[0])).toMatchObject({ ...houseBadgePosition(48), backgroundColor: colors.receiver });
     expect(byId(renderer, 'dog-avatar-classic-stale')).toHaveLength(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain('小黑・室內');
+    expect(JSON.stringify(renderer.toJSON())).toContain('小黑・遮蔽處');
   });
   test('a group tag instead of a name, no tag at all for the others', async () => {
     const marker = one(dog(6));

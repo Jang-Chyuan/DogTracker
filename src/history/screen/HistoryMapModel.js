@@ -413,6 +413,8 @@ export function placeMarkers(locations, nodes = null) {
     .map(n => ({
       key: `${n.type}${n.start}`,
       kind: n.type === 'indoor' ? 'indoor' : 'number',
+      // A hold's word on the map (HoldWords): 充電中 or 遮蔽處.
+      ...(n.type === 'indoor' ? { reason: n.reason ?? null } : {}),
       // For TalkBack (MarkerA11yLayer.stopSpeech): a stay or a switch, and
       // the stay's own length (interruptions left out, as its pill).
       type: n.type,

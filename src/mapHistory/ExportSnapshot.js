@@ -152,7 +152,7 @@ export function buildExportSnapshot({ day, range, subject, look = {}, addresses 
       // The rows of the day in the source, deduplicated (historySourceStream's packets).
       rows: model.packets || [],
       holds: nodes.filter(n => n.type === 'indoor').map(n => ({ start: n.start, end: n.end,
-        latitude: n.latitude, longitude: n.longitude, address: addressOf(n) })),
+        latitude: n.latitude, longitude: n.longitude, address: addressOf(n), reason: n.reason ?? null })),
       // Display fallback is not a newly calculated GPX stay/waypoint — unless
       // the list numbers it (a stationary stay in the middle, 2026-10-14):
       // every number the list shows is a waypoint.

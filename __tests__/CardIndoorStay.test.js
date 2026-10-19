@@ -50,15 +50,15 @@ const position = dog => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑
 
 describe('a stay begun before the live rows', () => {
   // 2026-10-16: the card no longer times a stay (no history read for it); a
-  // hold the live rows only saw part of still says 「室內」.
-  test('the live hold knows only that it began before its half hour; the card says 「室內」', async () => {
+  // hold the live rows only saw part of still says 「遮蔽處」.
+  test('the live hold knows only that it began before its half hour; the card says 「遮蔽處」', async () => {
     const db = await kennel();
     try {
       const { hold, dog } = await coldStartDog(db);
       expect(hold.fromClipped).toBe(true);
       expect(dog.heldFromClipped).toBe(true);
       expect(dog.heldFrom).toBeGreaterThanOrEqual(NOW - HOLD_LOOKBACK_MS);
-      expect(position(dog)).toBe('室內');
+      expect(position(dog)).toBe('遮蔽處');
     } finally { db.close(); }
   });
 
@@ -178,7 +178,7 @@ describe('a hold the live rows cannot start', () => {
         slave_lon: HOME.longitude, satellites: 3, hdop: 4.5, battery_percentage: 80, battery_valid: 1, source: 'ble' };
       const dog = mergeDogMarkers({ packetRows: [packet], holds: { ...seen.at(-1), ...holds }, now: NOW, windowMs: 180000 })[0];
       expect(dog).toMatchObject({ coordinate: HOME, heldFrom: INSIDE + 30000 });
-      expect(position(dog)).toBe('室內');
+      expect(position(dog)).toBe('遮蔽處');
     } finally { db.close(); }
   });
 

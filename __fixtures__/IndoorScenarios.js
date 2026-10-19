@@ -31,7 +31,7 @@ const lerp = (a, b, f) => ({ latitude: a.latitude + (b.latitude - a.latitude) * 
   longitude: a.longitude + (b.longitude - a.longitude) * f });
 
 /**
- * A segment: { kind, minutes, from, to, usb, fix, goodShare, master }
+ * A segment: { kind, minutes, from, to, usb, fix, goodShare, master, sats, hdop }
  * kind: open | forest | indoor | window | drive | silent
  * fix: share of rows with any fix (indoor/window)
  * master: where the receiver is; 'home' (default), 'dog' (handler next to the
@@ -94,7 +94,9 @@ export function generate(segments, { seed = 1, stepSeconds = 5, loss = 0.05, dri
         // A collar on the floor of a van, in a crate: no fix at all.
         none();
       } else if (segment.kind === 'open' || segment.kind === 'drive') {
-        emit(random.uniform(8, 12), random.uniform(0.7, 1.3), random.gauss(3), random.gauss(3));
+        // `sats` / `hdop` ranges: a newer collar sees 30+ satellites (2026-10-19).
+        emit(random.uniform(...(segment.sats ?? [8, 12])), random.uniform(...(segment.hdop ?? [0.7, 1.3])),
+          random.gauss(3), random.gauss(3));
       } else if (segment.kind === 'forest') {
         if (random() < 0.15) none();
         else if (random() < (segment.goodShare ?? 0.25)) {

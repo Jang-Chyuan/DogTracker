@@ -104,19 +104,19 @@ test('a battery reading 10 minutes older than the position carries its time', ()
     .toBe('62%');
 });
 
-test('A7b: held indoors — 位置 「室內」 (address line when known), no 接收範圍 row', () => {
+test('A7b: held indoors — 位置 「遮蔽處」 (address line when known), no 接收範圍 row', () => {
   const held = dog({ heldReason: '室內', heldSource: 'weak' });
   const freshness = { ...fresh, basis: 'packet' };
   const model = card(held, { freshness, range: range(RANGE_STATUS.NEAR), address: '桃園區中正路 1 號附近' });
   expect(model.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
-  expect(row(model, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
-    speech: '位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
+  expect(row(model, 'position')).toMatchObject({ value: i18nT('c1431'), tone: null, detail: '桃園區中正路 1 號附近',
+    speech: '位置，遮蔽處，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
   // Out of range before it was held: still one row, its last line says so,
   // with the time it was confirmed (red 「!」, the 室內 words stay black).
   const out = card(held, { freshness, address: '桃園區中正路 1 號附近',
     range: { ...range(RANGE_STATUS.OUT), judgedAt: new Date(2026, 9, 7, 9, 5).getTime() } });
   expect(out.rows.map(item => item.key)).toEqual(['position', 'battery', 'activity']);
-  expect(row(out, 'position')).toMatchObject({ value: i18nT('c114'), tone: null, detail: '桃園區中正路 1 號附近',
+  expect(row(out, 'position')).toMatchObject({ value: i18nT('c1431'), tone: null, detail: '桃園區中正路 1 號附近',
     alert: '不在接收範圍・最後確認 09:05' });
   // Held and stale: 沒有新資料 in red over the same address.
   const silent = card(held, { freshness: { ...stale, basis: 'packet' }, address: '桃園區中正路 1 號附近' });
@@ -127,7 +127,7 @@ test('A7b: held indoors — 位置 「室內」 (address line when known), no �
 // 2026-10-16 (user): the card no longer times a stay. 「室內」 and the
 // address, nothing more (the history times it); the 活動量 row still says how
 // long the collar has been calm.
-test('A7b: 位置 「室內」 with the address, no minutes; 活動量 apart', () => {
+test('A7b: 位置 「遮蔽處」 with the address, no minutes; 活動量 apart', () => {
   const from = new Date(2026, 9, 7, 9, 3, 50).getTime();
   const held = dog({ heldReason: '室內', heldSource: 'good', heldSince: from - 4 * MINUTE, heldFrom: from,
     heldFromClipped: true, packetAt: new Date(2026, 9, 7, 9, 29, 10).getTime() });
@@ -138,8 +138,8 @@ test('A7b: 位置 「室內」 with the address, no minutes; 活動量 apart', (
   }
   const activity = { minutes: activityMinutes(activityReadings(rows, 'ble'), { now: NOW }), newestAt: NOW - 10000 };
   const model = card(held, { freshness, address: '桃園區中正路 1 號附近', activity });
-  expect(row(model, 'position')).toMatchObject({ value: i18nT('c114'), detail: '桃園區中正路 1 號附近', twoLine: true,
-    speech: '位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
+  expect(row(model, 'position')).toMatchObject({ value: i18nT('c1431'), detail: '桃園區中正路 1 號附近', twoLine: true,
+    speech: '位置，遮蔽處，桃園區中正路 1 號附近，東北方 850 公尺，離手機' });
   expect(row(model, 'activity')).toMatchObject({ value: i18nT('c069'), detail: '已 12 分鐘',
     speech: '活動量，休息中，活動量低已 12 分鐘' });
   // Stale indoors: the row still says 沒有新資料.

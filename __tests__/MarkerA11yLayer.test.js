@@ -43,7 +43,9 @@ test('a history stop reads its number, times and minutes, and what a double tap 
   expect(stopSpeech({ kind: 'number', number: 2, start: at(9, 35), end: at(10, 5) }))
     .toBe('停留 2，09:35 到 10:05，30 分鐘，點兩下跳到開始');
   expect(stopSpeech({ kind: 'indoor', start: at(9, 10), end: at(9, 50) }))
-    .toBe('室內，09:10 到 09:50，40 分鐘，點兩下跳到開始');
+    .toBe('遮蔽處，09:10 到 09:50，40 分鐘，點兩下跳到開始');
+  expect(stopSpeech({ kind: 'indoor', reason: '充電中', start: at(9, 10), end: at(9, 50) }))
+    .toBe('充電中，09:10 到 09:50，40 分鐘，點兩下跳到開始');
 });
 
 test('a switch of transport and an interrupted stay are read as on the list (060 review)', () => {
