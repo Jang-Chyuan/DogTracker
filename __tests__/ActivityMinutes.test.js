@@ -69,9 +69,9 @@ test('rest: 10 calm minutes; it lasts from the first one', () => {
   expect(activityState(short, { end: lastFinished }).state).toBe('normal');
 });
 
-// 2026-10-19: a minute without a packet between readings at most 3 minutes
+// 2026-10-19: a minute without a packet between readings at most 4 minutes
 // apart carries the previous value (fillActivityGaps); 休息 needs all 10.
-test('rest: minutes without a packet between close readings are filled; a gap over 3 minutes is not', () => {
+test('rest: minutes without a packet between close readings are filled; a gap over 4 minutes is not', () => {
   const gaps = time => {
     const minute = Math.ceil((NOW - time) / MINUTE);
     return [3, 7].includes(minute) ? null : 0.01;
@@ -84,17 +84,37 @@ test('rest: minutes without a packet between close readings are filled; a gap ov
   const sparse = activityMinutes(readings(30, 0, 0.01).filter(item =>
     Math.ceil((NOW - item.time) / MINUTE) % 3 !== 0), { now: NOW });
   expect(activityState(sparse, { end: lastFinished }).state).toBe('rest');
-  // Three minutes in a row without a packet (a 4-minute gap): not filled,
-  // 7 of 10 minutes, neither rest nor normal.
-  const holed = activityMinutes([...readings(30, 5, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
-  expect(activityState(holed, { end: lastFinished })).toEqual({ state: null, since: null, durationMinutes: null });
-  // Two in a row (a 3-minute gap) are filled.
-  const two = activityMinutes([...readings(30, 4, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
-  expect(activityState(two, { end: lastFinished })).toMatchObject({ state: 'rest', since: at(30) });
+  // Four minutes in a row without a packet (a 5-minute gap): not filled, so
+  // not a rest; the judged minute has a reading: 一般 (as on A4).
+  const holed = activityMinutes([...readings(30, 6, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
+  expect(activityState(holed, { end: lastFinished })).toEqual({ state: 'normal', since: null, durationMinutes: null });
+  // Three in a row (a 4-minute gap) are filled.
+  const three = activityMinutes([...readings(30, 5, 0.01), ...readings(2, 0, 0.01)], { now: NOW });
+  expect(activityState(three, { end: lastFinished })).toMatchObject({ state: 'rest', since: at(30) });
   // Judged at a minute before the next packet, the minutes since the last
-  // one are not filled yet (a later reading is not used): 8 of 10, 一般.
-  expect(activityState(two, { end: at(3) }).state).toBe('normal');
-  expect(activityState(two, { end: at(2) })).toMatchObject({ state: 'rest', since: at(30) });
+  // one are not filled yet (a later reading is not used) and the judged
+  // minute itself has no value: 「—」.
+  expect(activityState(three, { end: at(3) }).state).toBeNull();
+  expect(activityState(three, { end: at(2) })).toMatchObject({ state: 'rest', since: at(30) });
+});
+
+// 2026-10-19: the rest line is 0.10 (was 0.05).
+test('rest: values up to 0.10 are calm, above it not', () => {
+  expect(ACTIVITY.restMax).toBe(0.1);
+  const calm = activityMinutes([...readings(30, 12, 0.3), ...readings(12, 0, 0.08)], { now: NOW });
+  expect(activityState(calm, { end: lastFinished })).toEqual({ state: 'rest', since: at(12), durationMinutes: 12 });
+  const edge = activityMinutes([...readings(30, 12, 0.3), ...readings(12, 0, 0.1)], { now: NOW });
+  expect(activityState(edge, { end: lastFinished }).state).toBe('rest');
+  const above = activityMinutes([...readings(30, 12, 0.3), ...readings(12, 0, 0.11)], { now: NOW });
+  expect(activityState(above, { end: lastFinished }).state).toBe('normal');
+});
+
+// 2026-10-19: the card's 一般 is any judged minute with a value, as on A4
+// (no longer 8 of the last 10 minutes).
+test('一般 needs only the judged minute to have a value', () => {
+  const lone = activityMinutes([...readings(40, 39, 0.3), ...readings(1, 0, 0.3)], { now: NOW });
+  expect(activityState(lone, { end: lastFinished }).state).toBe('normal');
+  expect(activityState(lone, { end: at(5) }).state).toBeNull();
 });
 
 // 2026-10-13: going back, a rest is broken only by an active minute. Windows
@@ -119,8 +139,8 @@ test('rest: minutes without data do not restart the run; an active minute does',
   // Now still needs 8 of the last 10 minutes.
   const stale = activityMinutes([...readings(40, 5, 0.02)], { now: NOW });
   expect(activityState(stale, { end: lastFinished }).state).toBeNull();
-  // Vigorous: a gap over 3 minutes still breaks it.
-  const vigorous = activityMinutes([...readings(20, 5, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
+  // Vigorous: a gap over 4 minutes still breaks it.
+  const vigorous = activityMinutes([...readings(20, 6, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
   expect(activityState(vigorous, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
 });
 
@@ -159,13 +179,13 @@ test('vigorous: both of the last 2 minutes at 0.8 or more, both with data', () =
   const one = activityMinutes([...readings(20, 1, 0.3), ...readings(1, 0, 0.95)], { now: NOW });
   expect(activityState(one, { end: lastFinished }).state).toBe('normal');
   // A minute without a packet between two vigorous readings is filled and
-  // bridges them (2026-10-19); three in a row break it: the run restarts
+  // bridges them (2026-10-19); four in a row break it: the run restarts
   // after the hole.
   const gap = activityMinutes([...readings(20, 3, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
   expect(activityState(gap, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(20) });
-  const hole = activityMinutes([...readings(20, 5, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
+  const hole = activityMinutes([...readings(20, 6, 0.9), ...readings(2, 0, 0.9)], { now: NOW });
   expect(activityState(hole, { end: lastFinished })).toMatchObject({ state: 'vigorous', since: at(2) });
-  expect(activityState(hole, { end: at(6) }).state).toBe('vigorous');
+  expect(activityState(hole, { end: at(7) }).state).toBe('vigorous');
   // One vigorous reading and the minute filled after it are not a pair.
   const once = activityMinutes([...readings(20, 3, 0.3), ...readings(3, 2, 0.9), ...readings(1, 0, 0.3)],
     { now: NOW });

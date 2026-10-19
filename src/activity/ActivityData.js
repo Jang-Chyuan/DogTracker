@@ -8,9 +8,9 @@ import { t } from '../i18n';
 //   SQLite sums each minute's readings, leaving out a downloaded reading that
 //   is a copy of one this phone heard (same key as the card's dedupe), and the
 //   mean of both tables is the minute's value. The judgement on top is the same.
-// Both ask 12 minutes either side of the period: a rest that began just before
+// Both ask 13 minutes either side of the period: a rest that began just before
 // midnight still fills back into the first minutes of the day (its 10-minute
-// window reaches 9 minutes back), and the gaps of up to 3 minutes at either
+// window reaches 9 minutes back), and the gaps of up to 4 minutes at either
 // edge of those minutes are filled from the readings around them.
 import { ACTIVITY, activityReadings } from './ActivityMinutes';
 import { chargingSql } from '../models/UsbPresent';

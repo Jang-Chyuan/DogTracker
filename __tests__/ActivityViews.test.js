@@ -17,8 +17,8 @@ test('day averages and deduplicates with shared BLE precedence; missing curve is
     { time: START, value: 0.2, key: 'same', source: 'cloud' },
     { time: START, value: 0.4, key: 'same', source: 'ble' },
     { time: START + 30000, value: 0.6, key: 'other', source: 'ble' },
-    // Three minutes without a packet in between (a gap over 3 minutes).
-    ...input(START + 4 * M, [0.3]),
+    // Four minutes without a packet in between (a gap over 4 minutes).
+    ...input(START + 5 * M, [0.3]),
   ];
   const original = JSON.stringify(readings);
   const view = buildDayView({ ...options, readings });
@@ -26,11 +26,11 @@ test('day averages and deduplicates with shared BLE precedence; missing curve is
   expect(view.points[0]).toMatchObject({ value: 0.5, count: 2, state: 'normal' });
   expect(view.points[1]).toMatchObject({ value: null, count: 0, state: 'missing' });
   expect(view.totals).toEqual({ rest: 0, normal: 2, vigorous: 0, missing: 1438, charging: 0 });
-  expect(view.gaps[0]).toEqual({ start: START + M, end: START + 4 * M, durationMinutes: 3 });
+  expect(view.gaps[0]).toEqual({ start: START + M, end: START + 5 * M, durationMinutes: 4 });
   expect(JSON.stringify(readings)).toBe(original);
 });
 
-// 2026-10-19: a minute without a packet between readings at most 3 minutes
+// 2026-10-19: a minute without a packet between readings at most 4 minutes
 // apart carries the previous value and counts as its state.
 test('rest backfills ten; minutes without a packet between close readings are filled and counted', () => {
   const readings = input(START, [0.05, 0.05, null, 0.05, 0.05, null, 0.05, 0.05, 0.05, 0.05, 0.3]);
@@ -43,20 +43,20 @@ test('rest backfills ten; minutes without a packet between close readings are fi
   expect(view.rows[2].rangeLabels).toEqual(['00:11–24:00']);
 });
 
-test('a gap over 3 minutes is 沒有資料 and breaks a rest; the readings still count as normal', () => {
+test('a gap over 4 minutes is 沒有資料 and breaks a rest; the readings still count as normal', () => {
   const view = buildDayView({ ...options, readings: input(START,
-    [0, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0]) });
+    [0, null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0]) });
   expect(view.totals.rest).toBe(0);
   expect(view.totals.normal).toBe(10);
-  expect(view.rows[2].rangeLabels[0]).toBe('00:01–00:04');
+  expect(view.rows[2].rangeLabels[0]).toBe('00:01–00:05');
 });
 
-test('vigorous includes 0.8, backfills two, ends on normal and cannot bridge a gap over 3 minutes', () => {
-  const view = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, null, null, 1]) });
+test('vigorous includes 0.8, backfills two, ends on normal and cannot bridge a gap over 4 minutes', () => {
+  const view = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, null, null, null, 1]) });
   expect(view.totals.vigorous).toBe(2);
   expect(view.bands.vigorous).toEqual([{ start: START, end: START + 2 * M }]);
-  expect(view.points.slice(0, 8).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'normal',
-    'missing', 'missing', 'missing', 'normal']);
+  expect(view.points.slice(0, 9).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'normal',
+    'missing', 'missing', 'missing', 'missing', 'normal']);
   // One minute without a packet between two vigorous readings is bridged.
   const bridged = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, 1]) });
   expect(bridged.points.slice(0, 6).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'vigorous',
@@ -89,7 +89,7 @@ test('context on either side of midnight preserves backfill without leaking dura
 
 test('gap ranges truncate to three with additional count and full-day copy', () => {
   const day = buildDayView({ ...options, readings: input(START,
-    [null, 0.3, null, null, null, 0.3, null, null, null, 0.3, null, null, null, 0.3]) });
+    [null, 0.3, null, null, null, null, 0.3, null, null, null, null, 0.3, null, null, null, null, 0.3]) });
   expect(day.rows[2].rangeLabels).toHaveLength(3);
   expect(day.rows[2].additionalRanges).toBe(2);
   expect(day.rows[2].additionalText).toBe('另外 2 段');
@@ -145,9 +145,9 @@ test('empty data, durations, legend and thresholds use A4 text', () => {
   expect(view.rows.map(row => row.label)).toEqual([i18nT('c086'), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
   expect(view.rows[2].durationText).toBe('24 小時');
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
-  expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
+  expect(view.thresholds).toEqual({ restMax: 0.1, vigorousMin: 0.8 });
   expect(view.thresholdBands).toEqual([
-    { state: 'rest', min: 0, max: 0.05, label: i18nT('c086') },
+    { state: 'rest', min: 0, max: 0.1, label: i18nT('c086') },
     { state: 'vigorous', min: 0.8, max: 1, label: i18nT('c088') },
   ]);
   expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual([i18nT('c086'), i18nT("c434"), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
@@ -248,7 +248,7 @@ describe('classify matches activityState at every minute', () => {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
-  // Series 6 and 7: sparse (45% of minutes without a packet), gaps over 3 minutes too.
+  // Series 6 and 7: sparse (45% of minutes without a packet), gaps over 4 minutes too.
   test.each([0, 1, 2, 3, 4, 5, 6, 7])('random series %i', series => {
     const values = Float64Array.from({ length: 600 }, (_, i) => {
       const r = random();

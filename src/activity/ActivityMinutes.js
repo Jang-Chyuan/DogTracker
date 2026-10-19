@@ -16,34 +16,35 @@ import { isCharging } from '../models/UsbPresent';
 // - A minute's value is the mean of its readings. The minute still running is
 //   left out (it would judge on a few seconds).
 // - Gap fill (2026-10-19): collars send sparsely to save battery (30–110 s
-//   apart, now and then longer). A minute without a reading between two
-//   minutes with readings at most 3 minutes apart (FILL_MAX_GAP_MINUTES: at
-//   most 2 empty minutes in a row) carries the previous minute's value; it is
+//   apart, now and then 3–4 minutes). A minute without a reading between two
+//   minutes with readings at most 4 minutes apart (FILL_MAX_GAP_MINUTES: at
+//   most 3 empty minutes in a row) carries the previous minute's value; it is
 //   not 沒有資料. Longer gaps are. Charging and not charging never fill into
 //   each other (fillActivityGaps). Counted on whole minutes, not on the
 //   readings' own times, because week, month and year only have per-minute
-//   sums: a reading at 10:00:00 and the next at 10:03:59 fill 10:01 and 10:02.
+//   sums: a reading at 10:00:00 and the next at 10:04:59 fill 10:01–10:03.
 // - 休息: every one of the last 10 minutes has a value (a reading, or filled:
-//   no gap over 3 minutes) and every one is at most 0.05. 劇烈: the last 2
+//   no gap over 4 minutes) and every one is at most 0.10. 劇烈: the last 2
 //   minutes both have a value at least 0.8, and the newer one is a reading of
 //   its own (a filled minute never makes the pair: one packet is not 2 minutes
 //   of 劇烈). Once either holds, it holds from the first minute of the first window
 //   that qualified (rest fills back 10 minutes, vigorous 2) until a window no
-//   longer qualifies. Going back, a rest is broken by a minute above 0.05, or
+//   longer qualifies. Going back, a rest is broken by a minute above 0.10, or
 //   by more than REST_MAX_MISSING_MINUTES in a row without data; shorter
 //   stretches without data do not end it, so a few lost packets do not
 //   restart 「已 N 分鐘」. Its first minute is the first one with data after
 //   whichever broke it.
-// - Otherwise 一般 when the last 10 minutes have enough data (8 of 10, filled
-//   minutes count), and nothing ("—") when they do not.
+// - Otherwise 一般 when the judged minute has a value, as on A4 (2026-10-19:
+//   no longer 8 of the last 10 minutes), and nothing ("—") when it has none.
 // - A minute in which the collar reported USB power (usb_present=1, 充電中;
 //   2026-10-16: a collar on its charger reports a valid 0 and read as 休息)
 //   is neither 休息, 一般 nor 劇烈: its readings do not count, and going back
 //   it ends a rest or a vigorous run like an active minute does, so a rest
 //   that began when the charger came off starts there. Judged at a charging
 //   minute the state is 充電中 (`charging`).
-// The thresholds are provisional (design: 暫定 0.05／10 分鐘、0.8／2 分鐘,
-// pending field data).
+// The thresholds are provisional (design: 暫定 0.10／10 分鐘、0.8／2 分鐘,
+// pending field data; 2026-10-19 the user raised 0.05 to 0.10 and the gap
+// fill from 3 to 4 minutes after replaying a sparse collar's day).
 
 // The longest stretch of minutes without any data that a rest is carried
 // across when counting back to its start; a longer one (collar off, out of
@@ -51,18 +52,16 @@ import { isCharging } from '../models/UsbPresent';
 export const REST_MAX_MISSING_MINUTES = 30;
 
 // The longest gap between two minutes with readings whose minutes in between
-// carry the earlier value (3: at most 2 empty minutes in a row; the user's
-// decision of 2026-10-19 for battery-saving collars).
-export const FILL_MAX_GAP_MINUTES = 3;
+// carry the earlier value (4: at most 3 empty minutes in a row; the user's
+// decision of 2026-10-19 for battery-saving collars, whose packets are now and
+// then 210–250 s apart).
+export const FILL_MAX_GAP_MINUTES = 4;
 
 export const ACTIVITY = Object.freeze({
-  restMax: 0.05,
+  restMax: 0.1,
   restMinutes: 10,
   vigorousMin: 0.8,
   vigorousMinutes: 2,
-  // Share of the last restMinutes that must have a value (after the gap
-  // fill) for 一般 rather than 「—」. 休息 needs all of them.
-  coverage: 0.8,
   restMaxMissingMinutes: REST_MAX_MISSING_MINUTES,
   fillMaxGapMinutes: FILL_MAX_GAP_MINUTES,
 });
@@ -260,7 +259,6 @@ export function activityState(minutes = [], { end, from = null, config = ACTIVIT
   // 劇烈 and 休息 need every one of their minutes (filled ones count).
   const vigorousNeeds = config.vigorousMinutes;
   const restNeeds = config.restMinutes;
-  const normalNeeds = Math.ceil(config.restMinutes * config.coverage - 1e-9);
   const run = (length, needs, test, state, maxMissing) => {
     const since = runStart(values, end, length, needs, test, earliest, maxMissing, charging);
     return { state, since, durationMinutes: Math.round((end + MINUTE - since) / MINUTE) };
@@ -276,9 +274,8 @@ export function activityState(minutes = [], { end, from = null, config = ACTIVIT
       && earliest - minuteOf(from) < config.restMinutes * MINUTE;
     return edge ? { ...result, over: true } : result;
   }
-  if (windowHolds(values, end, config.restMinutes, normalNeeds, () => true)) {
-    return { state: ACTIVITY_STATE.NORMAL, since: null, durationMinutes: null };
-  }
+  // 一般: the judged minute has a value (a reading of its own), as on A4.
+  if (values.has(end)) return { state: ACTIVITY_STATE.NORMAL, since: null, durationMinutes: null };
   return none;
 }
 

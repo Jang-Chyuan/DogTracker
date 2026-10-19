@@ -4,8 +4,9 @@ import { buildDayView, buildWeekView } from '../src/activity/views';
 
 // 2026-10-19: collars send sparsely to save battery (50–80 packets an hour,
 // gaps of 30–110 s, now and then a few minutes). A minute without a packet
-// between two readings at most 3 minutes apart carries the previous reading's
-// value; only longer gaps are 沒有資料. Fictional data only.
+// between two readings at most 4 minutes apart carries the previous reading's
+// value; only longer gaps are 沒有資料 (the user's decision, first 3 minutes,
+// then 4 after replaying a real day). Fictional data only.
 const M = 60000;
 const S = 1000;
 const date = (month, day, hour = 0, minute = 0, second = 0) =>
@@ -72,22 +73,22 @@ test('sparse packets: no 沒有資料 between them, and a rest forms', () => {
     durationMinutes: (end + M - date(10, 1, 8, 20)) / M });
 });
 
-test('a gap of 4 minutes stays 沒有資料; one of 3 minutes is filled', () => {
+test('a gap of 5 minutes stays 沒有資料; one of 4 minutes is filled', () => {
   const at = (hour, minute, activity = 0.3) => ({ time: date(10, 1, hour, minute, 10), activity,
     activity_valid: 1, slave_id: 4, master_id: 7 });
-  const rows = [at(10, 0), at(10, 4), at(11, 0), at(11, 3)];
+  const rows = [at(10, 0), at(10, 5), at(11, 0), at(11, 4)];
   const view = buildDayView({ ...options, readings: readingsOf(rows) });
-  expect(states(view, date(10, 1, 10, 0), date(10, 1, 10, 5))).toEqual({ normal: 2, missing: 3 });
-  expect(states(view, date(10, 1, 11, 0), date(10, 1, 11, 4))).toEqual({ normal: 4 });
+  expect(states(view, date(10, 1, 10, 0), date(10, 1, 10, 6))).toEqual({ normal: 2, missing: 4 });
+  expect(states(view, date(10, 1, 11, 0), date(10, 1, 11, 5))).toEqual({ normal: 5 });
   // A filled minute carries the previous reading's value and has no packet.
   const filled = view.points.find(point => point.minute === date(10, 1, 11, 1));
   expect(filled).toMatchObject({ value: 0.3, count: 0, state: 'normal' });
-  // A rest with a 4-minute hole in it: the hole is 沒有資料 and splits it.
+  // A rest with a hole over 4 minutes in it: the hole is 沒有資料 and splits it.
   const calm = [...sparse(date(10, 1, 12, 0, 5), date(10, 1, 12, 15, 30), 0.02),
-    at(12, 19, 0.02), ...sparse(date(10, 1, 12, 19, 40), date(10, 1, 12, 35), 0.02)];
+    at(12, 21, 0.02), ...sparse(date(10, 1, 12, 21, 40), date(10, 1, 12, 37), 0.02)];
   const holed = buildDayView({ ...options, readings: readingsOf(calm) });
-  const hole = states(holed, date(10, 1, 12, 0), date(10, 1, 12, 35));
-  expect(hole.missing).toBeGreaterThanOrEqual(3);
+  const hole = states(holed, date(10, 1, 12, 0), date(10, 1, 12, 37));
+  expect(hole.missing).toBeGreaterThanOrEqual(4);
   expect(holed.bands.rest.length).toBe(2);
 });
 
@@ -156,7 +157,7 @@ test('vigorous: a filled minute never makes a pair on its own', () => {
   expect(one.points.slice(17 * 60, 17 * 60 + 3).map(point => point.state)).toEqual(['normal', 'normal', 'normal']);
 });
 
-test('vigorous: V . . V bridges two readings 3 minutes apart; a longer gap does not', () => {
+test('vigorous: V . . . V bridges two readings 4 minutes apart; a longer gap does not', () => {
   const at = (minute, activity) => ({ time: date(10, 1, 16, minute, 10), activity, activity_valid: 1,
     slave_id: 4, master_id: 7 });
   const three = buildDayView({ ...options, readings: readingsOf([at(0, 0.9), at(3, 0.9), at(4, 0.3)]) });
@@ -164,7 +165,32 @@ test('vigorous: V . . V bridges two readings 3 minutes apart; a longer gap does 
     .toEqual(['vigorous', 'vigorous', 'vigorous', 'vigorous', 'normal']);
   const four = buildDayView({ ...options, readings: readingsOf([at(0, 0.9), at(4, 0.9), at(5, 0.3)]) });
   expect(four.points.slice(16 * 60, 16 * 60 + 6).map(point => point.state))
-    .toEqual(['normal', 'missing', 'missing', 'missing', 'normal', 'normal']);
+    .toEqual(['vigorous', 'vigorous', 'vigorous', 'vigorous', 'vigorous', 'normal']);
+  const five = buildDayView({ ...options, readings: readingsOf([at(0, 0.9), at(5, 0.9), at(6, 0.3)]) });
+  expect(five.points.slice(16 * 60, 16 * 60 + 7).map(point => point.state))
+    .toEqual(['normal', 'missing', 'missing', 'missing', 'missing', 'normal', 'normal']);
+});
+
+// What the real replay of 2026-10-19 showed: a dog lying still sends 0.06–0.09
+// (above the old 0.05 line), sparsely, with gaps of 210–250 s now and then
+// (4 minutes apart). With the 3-minute fill and 0.05 it never rested.
+test('a sparse dog lying at 0.06–0.09 with 210–250 s gaps rests (4-minute fill, 0.10 line)', () => {
+  const seconds = [40, 110, 230, 60, 30, 110, 250, 90, 45, 210, 60, 110, 30, 240, 90, 60];
+  const values = [0.07, 0.06, 0.09, 0.08, 0.06, 0.07, 0.09, 0.06, 0.08, 0.07, 0.06, 0.09, 0.07, 0.08, 0.06, 0.07];
+  const rows = [{ time: date(10, 1, 18, 0, 5), activity: 0.4, activity_valid: 1, slave_id: 4, master_id: 7 }];
+  let time = date(10, 1, 18, 1, 5);
+  for (let i = 0; i < 40; i += 1) {
+    rows.push({ time, activity: values[i % values.length], activity_valid: 1, slave_id: 4, master_id: 7 });
+    time += seconds[i % seconds.length] * S;
+  }
+  const lastCalm = Math.floor(rows[rows.length - 1].time / M) * M;
+  const view = buildDayView({ ...options, readings: readingsOf(rows) });
+  const tally = states(view, date(10, 1, 18, 1), lastCalm + M);
+  expect(tally.missing).toBeUndefined();
+  expect(tally).toEqual({ rest: (lastCalm - date(10, 1, 18, 1)) / M + 1 });
+  // The card at the newest packet agrees.
+  const minutes = activityMinutes(readingsOf(rows), { now: lastCalm + M });
+  expect(activityState(minutes, { end: lastCalm })).toMatchObject({ state: 'rest', since: date(10, 1, 18, 1) });
 });
 
 test('unplugged → charging: the minutes between are not filled either way', () => {
@@ -207,7 +233,7 @@ test('a year built month by month equals the whole year on sparse minutes', () =
   for (let month = 8; month <= 10; month += 1) {
     const period = activityPeriod('month', date(month, 1));
     months.push(buildActivityView({ mode: 'month', date: period.start, now, earliest: date(1, 1), since: start,
-      minutes: minutes.filter(item => item.minute >= period.start - 12 * M && item.minute < period.end + 12 * M) }));
+      minutes: minutes.filter(item => item.minute >= period.start - 13 * M && item.minute < period.end + 13 * M) }));
   }
   const combined = combineYearView({ date: now, now, earliest: start, months });
   expect(combined.totals).toEqual(whole.totals);

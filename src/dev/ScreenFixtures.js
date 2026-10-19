@@ -241,7 +241,7 @@ function stalePhone(now, age) {
   return { route, position: route[route.length - 1], today };
 }
 
-// An activity reading that is calm (0.02, under the 0.05 rest line) for the
+// An activity reading that is calm (0.02, under the 0.10 rest line) for the
 // last `minutes` before now and ordinary (0.3) before that.
 const restingFor = (now, span) => time => (time >= now - span ? 0.02 : 0.3);
 
@@ -978,9 +978,9 @@ const FIXTURES = {
   }),
   // 2026-10-19: 豆豆's collar saves battery and sends sparsely (30–110 s
   // apart), moving about (0.3) until 40 minutes ago and lying still (0.02)
-  // since, with no packet at all 75–71 minutes ago (a gap over 3 minutes):
+  // since, with no packet at all 76–71 minutes ago (a gap over 4 minutes):
   // 活動量 「休息中・已 39 分鐘」 (minutes without a packet between readings
-  // at most 3 minutes apart carry the previous reading; before 2026-10-19
+  // at most 4 minutes apart carry the previous reading; before 2026-10-19
   // 「—」, fewer than 8 of the last 10 minutes had a packet).
   'card-rest-sparse': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now), openDog: 4,
@@ -988,15 +988,15 @@ const FIXTURES = {
       ...sparseTrack(bleRow, now, { slave: 4, from: 3 * 60 * MINUTE + 25 * SECOND, battery: 62,
         activity: restingFor(now, 40 * MINUTE),
         dog: (progress, where) => northEastOf(where, 420 + 30 * progress, progress) })
-        .filter(row => row.received_at < now - 75 * MINUTE || row.received_at >= now - 71 * MINUTE),
+        .filter(row => row.received_at < now - 76 * MINUTE || row.received_at >= now - 71 * MINUTE),
       ...track(bleRow, now, { slave: 6, from: 10 * MINUTE, to: 8 * SECOND,
         dog: (progress, where) => offset(where, -250 + progress * 20, -150) }),
     ]),
     cloudRows: dog8Cloud(now),
   }),
   // A4 今天 for the same 豆豆: 一般 with no 沒有資料 between the sparse
-  // packets, 沒有資料 only 08:15–08:19, 休息 39 分 (before 2026-10-19: 52
-  // minutes of 沒有資料 in 49 pieces, 休息 25 分).
+  // packets, 沒有資料 only 08:13–08:19, 休息 39 分 (before 2026-10-19: 53
+  // minutes of 沒有資料 in 48 pieces, 休息 25 分).
   'activity-sparse': now => ({ ...FIXTURES['card-rest-sparse'](now), openPage: 'activity',
     activityView: { mode: 'day', date: now } }),
   // 2026-10-16: a collar on its charger reports activity 0, marked valid
