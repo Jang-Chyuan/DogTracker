@@ -29,6 +29,14 @@ export const TAIL_OVERLAP_MS = 5 * 60000;
 // it once it has published past the window's start; until then a day's
 // download also fetches what the archive still lacks, at most this far back.
 export const CARRY_OVER_MS = 24 * 3600000;
+// missingRows: the automatic archive is current when it published at most
+// this long before the question; then the rows received after its cutoff are
+// its next round's (every 30 s). An archive further behind (catching up,
+// failing) proves nothing past its cutoff, so the whole window is counted.
+export const ARCHIVE_CURRENT_MS = 5 * 60000;
+// missingRows: a closed window's cloud count is asked again after this long
+// (a Master that buffered offline can still upload into it, CloudReconcile).
+export const COUNT_KEEP_MS = 10 * 60000;
 
 const iso = value => new Date(value).toISOString();
 
@@ -59,6 +67,21 @@ async function oneTime(query, signal, ms) {
   }
 }
 
+async function countOnce(query, signal, ms) {
+  const limit = limited(signal, ms);
+  try {
+    const { count, error } = await query.abortSignal(limit.signal);
+    if (error) throw new Error(error.message || t("c809"));
+    if (!Number.isInteger(count) || count < 0) throw new Error(t("c578"));
+    return count;
+  } catch (error) {
+    if (limit.signal.aborted && !signal?.aborted) throw new Error(t("c811"));
+    throw error;
+  } finally {
+    limit.done();
+  }
+}
+
 /**
  * `client` the Supabase client, `database` the cloud database (savePage),
  * `owner` the account, `runManual(work, abort)` the sync's slot.
@@ -75,6 +98,9 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
   // `${dog}:${window start}` whose night before was fetched and published
   // (this process): a later tail of the same day does not fetch it again.
   const carried = new Set();
+  // missingRows: the cloud's count of a closed window, per
+  // `${dog}:${from}:${to}`: { count, at } (this phone's clock).
+  const counted = new Map();
   return {
     owner,
     coverageRequired: true,
@@ -98,6 +124,48 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
       const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
       const time = await oneTime(rows(slaveId).order('received_at', { ascending: true }).limit(1), signal, questionMs);
       return time == null ? null : time - offset;
+    },
+    /**
+     * Whether the cloud holds rows of the dog's day that this phone lacks (A4,
+     * 2026-10-21): one count, the way the hourly reconcile asks
+     * (CloudReconcile), instead of downloading a day the automatic sync has
+     * already brought (~15 requests and 14,000 rows a dog-day). The window
+     * is the download's main one by reception time: from DOWNLOAD_BEFORE_MS
+     * before the day to its proof's `received_before`. A4 reads by track
+     * time with 13 minutes either side; those rows were received inside
+     * this window, except phone uploads that reached the cloud late. Those
+     * have a later reception time, so the automatic archive has them
+     * whenever it has the day's own rows, and the cache drops oldest
+     * reception first. When the archive is current (ARCHIVE_CURRENT_MS) the
+     * window stops at its cutoff: what came after is its next round's.
+     * Rows on this phone only ever come from the cloud, one per event, so
+     * fewer here means some are missing. No proof is written from a count
+     * (HistoryCoverage: a proof is a completed download).
+     * @returns {{ missing: boolean, cloud: number, local: number }}
+     */
+    async missingRows({ slaveId, dayStart, dayEnd, cutoff = Date.now(), serverOffset = serverClock.offset(), signal, at = Date.now() }) {
+      const offset = Number.isFinite(serverOffset) ? serverOffset : 0;
+      const from = dayStart - DOWNLOAD_BEFORE_MS;
+      const whole = historyCoverage(dayStart, dayEnd, cutoff, offset).received_before;
+      let archived = null;
+      if (typeof database.readArchivePublication === 'function') {
+        try { archived = (await database.readArchivePublication(owner))?.cutoff ?? null; } catch { archived = null; }
+      }
+      const current = Number.isFinite(archived) && cutoff - archived <= ARCHIVE_CURRENT_MS;
+      const to = current ? Math.min(whole, archived) : whole;
+      if (!(to > from)) return { missing: false, cloud: 0, local: 0 };
+      const key = `${slaveId}:${from}:${to}`;
+      const kept = counted.get(key);
+      let cloud = kept && at - kept.at < COUNT_KEEP_MS ? kept.count : null;
+      if (cloud == null) {
+        cloud = await countOnce(client.from('dog_telemetry').select('event_id', { count: 'exact', head: true })
+          .eq('slave_id', slaveId).gte('received_at', iso(from)).lt('received_at', iso(to)), signal, questionMs);
+        // The day's whole window, already past on the server's clock: closed.
+        if (to === dayEnd + DOWNLOAD_AFTER_MS && to <= cutoff + offset) counted.set(key, { count: cloud, at });
+      }
+      if (signal?.aborted) throw new Error(t("c576"));
+      const local = cloud > 0 ? await database.countSlaveRange(owner, slaveId, from, to) : 0;
+      return { missing: local < cloud, cloud, local };
     },
     /**
      * Downloads the dog's (or dogs') rows of [dayStart, dayEnd) into this phone.

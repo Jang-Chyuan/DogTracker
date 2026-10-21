@@ -16,11 +16,13 @@ const PUBLICATION_RETRY_MS = 15000;
  * @param read (slaveId, { start, end, detail }) => Promise<ActivityData answer>
  * @param readEarliest (slaveId) => Promise<number|null>
  * @param now the screen's clock (a fixture's fixed time); only its minute counts
- * @returns {{ status: 'loading'|'ready'|'error', view, retry, earliest }} `earliest`:
+ * @param downloadRevision changes when A4 downloaded days (ActivityDownloads):
+ *   read again; the answer says which one it read (`downloadRevision`)
+ * @returns {{ status: 'loading'|'ready'|'error', view, retry, earliest, downloadRevision }} `earliest`:
  *   the dog's first reading as last read (null: none; undefined: not read yet)
  */
 export function useActivityView({ read, readEarliest, slaveId, mode, date, now, active = true,
-  owner = null, getPublication = null, revision = 0, publishedReads = false }) {
+  owner = null, getPublication = null, revision = 0, publishedReads = false, downloadRevision = 0 }) {
   const minute = minuteOf(now);
   const [state, setState] = useState({ key: null, status: 'loading', view: null });
   const [attempt, setAttempt] = useState(0);
@@ -99,7 +101,7 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
         }
         if (!accepted()) return;
         setFirst({ key: `${source}|${owner ?? ''}|${slaveId}`, time: earliest });
-        setState({ key, status: 'ready', view });
+        setState({ key, status: 'ready', view, downloadRevision });
       } catch {
         if (accepted()) setState(previous => ({ key, status: 'error', view: previous.key === key ? previous.view : null }));
       }
@@ -110,7 +112,7 @@ export function useActivityView({ read, readEarliest, slaveId, mode, date, now, 
     };
     // `minute` only matters through `clock` (the running period).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, clock, active, read, readEarliest, attempt, owner, getPublication, revision, publishedReads]);
+  }, [key, clock, active, read, readEarliest, attempt, owner, getPublication, revision, publishedReads, downloadRevision]);
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const earliest = first.key === `${source}|${owner ?? ''}|${slaveId}` ? first.time : undefined;
   // A different period or source shows 載入中 until its own answer, never the old one.

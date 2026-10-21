@@ -121,6 +121,9 @@ dogtracker://dev/fixture?name=<名稱>&page=<頁>   開在設定的某一頁：s
 | `activity-none` | 小黑沒有任何活動量讀數：「沒有活動量資料」，‹ › 都不能按 |
 | `activity-loading` | A4 週：一直在讀（載入中…） |
 | `activity-error` | A4 日：讀取失敗＋重試 |
+| `activity-download` | A4 日：10/6 只在雲端，自動下載（載入中＋「下載 10/06 的紀錄…」3.5 秒），下載完顯示 |
+| `activity-download-week` | A4 週 9/27–10/3：10/1、10/2 只在雲端，其他天先顯示，「下載紀錄 0/2…」逐天補上 |
+| `activity-download-offline` | A4 日：10/6 只在雲端、沒有網路：「沒有網路，10/06 的紀錄還沒下載…」＋重試，不寫沒有資料 |
 | `dog-photo-avatar` | 小黑用照片當頭像（新位置、彩色），地圖和卡片都是照片 |
 | `dog-photo-stale` | `dogs-aged` 裡的阿福用照片當頭像：40 分鐘沒有新位置，地圖和卡片上的照片都轉灰階（白框、紅色「!」照原色） |
 | `phone-recording` | 和 `all-good` 一樣：記錄中、今天走了 2.7 km → 右下藍色走路小人「今天 2.7 km」（A1） |

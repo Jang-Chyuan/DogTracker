@@ -71,7 +71,7 @@ export function latestCloudStatusQuery(validFix, full = false) {
 // The tracking session forwards these to the owner of the SQLite connection;
 // keep both sides in step or a caller gets `undefined is not a function`.
 export const CLOUD_DATABASE_METHODS = ['initializeLatest', 'readArchivePublication', 'readLatestSnapshot', 'publishLatestSnapshot', 'initialize', 'beginDownload', 'publishDownload', 'beginManualScope', 'publishManualScope', 'loadSyncState', 'savePage',
-  'loadBuckets', 'saveBucket', 'countRange', 'latestBySlave', 'trackBySlave',
+  'loadBuckets', 'saveBucket', 'countRange', 'countSlaveRange', 'latestBySlave', 'trackBySlave',
   'listHistory', 'count', 'usage', 'pendingTrackTimes', 'repairTrackTimes', 'latestStatusRows', 'activityPeriod', 'activityEarliest', 'dogCardRows', 'holdRows', 'loadRangeState', 'saveRangeState', 'historyDownloadStates', 'setHistoryDownloadState', 'wifiUploads'];
 
 /** `maxRows` is only for tests: filling a real cap takes half a million rows. */
@@ -537,6 +537,16 @@ function createCloudDatabaseCore(connection, { maxRows = CLOUD_MAX_ROWS, history
       const result = rows(await connection.executeAsync(`SELECT COUNT(*) AS count
         FROM supabase_dog_status WHERE owner_user_id = ? AND master_id = ?
         AND received_at >= ? AND received_at < ?`, [owner, masterId, fromMs, toMs]));
+      return Number(result[0]?.count || 0);
+    },
+    // One dog's downloaded rows received in [fromMs, toMs) (the server's
+    // clock), whichever Master reported them: A4 compares it with the cloud's
+    // count before downloading a day (HistoryCloud.missingRows). A read only.
+    async countSlaveRange(owner, slaveId, fromMs, toMs) {
+      requireOwner(owner);
+      const result = rows(await connection.executeAsync(`SELECT COUNT(*) AS count
+        FROM supabase_dog_status WHERE slave_id = ? AND received_at >= ? AND received_at < ?
+        AND owner_user_id = ?`, [slaveId, fromMs, toMs, owner]));
       return Number(result[0]?.count || 0);
     },
     // Newest downloaded fix per dog, whichever Master reported it; 0,0 is no fix.

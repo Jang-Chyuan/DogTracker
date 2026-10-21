@@ -5,7 +5,7 @@ import { LoadingContent } from '../components/Skeleton';
 // bottom, the minutes without data left blank on top). Opened from the 活動量
 // row of the dog's card; ‹ and the back key return to the card.
 // Design v3 A4, 判定表「A4 活動量」「A4 怎麼算」「A4 日的柱子」「A4 柱子的比例」.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
   Pressable,
@@ -34,6 +34,11 @@ import { ACTIVITY_VIEW_COPY, activityPeriod, activityChartSummary } from './view
 import { useActivityView } from './useActivityView';
 import { linesFor } from '../utils/textScale';
 import BackRow from '../components/BackRow';
+import ShimmerLabel from '../components/ShimmerLabel';
+import { ACTIVITY_DOWNLOAD_PENDING, ACTIVITY_DOWNLOAD_SETTLE_MS, ACTIVITY_RETRY_DELAYS_MS,
+  useActivityDownloads } from './ActivityDownloads';
+import { shortDate } from '../history/screen/HistoryCalendar';
+import { dayKey } from '../history/screen/HistoryScreenDates';
 
 export const ACTIVITY_MODES = Object.freeze([
   { mode: 'day', label: t("c444") },
@@ -103,10 +108,36 @@ function useBack(onBack) {
   }, [onBack]);
 }
 
+// The cloud's first row of a dog, per adapter (account), asked once in a
+// while: ‹ reaches back to it, not only to this phone's first reading (after a
+// reinstall the cloud holds older days). The same question and answer as the
+// history calendar's (HistoryCloud.earliest).
+const CLOUD_FIRST_KEEP_MS = 10 * 60000;
+const cloudFirsts = new WeakMap();
+function useCloudFirst(cloud, slaveId, online, active) {
+  const [first, setFirst] = useState(() => cloudFirsts.get(cloud ?? {})?.get(slaveId)?.time);
+  useEffect(() => {
+    if (!cloud?.earliest || !online || !active || slaveId == null) return undefined;
+    const kept = cloudFirsts.get(cloud)?.get(slaveId);
+    if (kept && Date.now() - kept.at < CLOUD_FIRST_KEEP_MS) { setFirst(kept.time); return undefined; }
+    const controller = new AbortController();
+    cloud.earliest({ slaveId, signal: controller.signal }).then(time => {
+      if (!cloudFirsts.has(cloud)) cloudFirsts.set(cloud, new Map());
+      cloudFirsts.get(cloud).set(slaveId, { time, at: Date.now() });
+      if (!controller.signal.aborted) setFirst(time);
+    }, () => {});
+    return () => controller.abort();
+  }, [cloud, slaveId, online, active]);
+  return cloud ? first : undefined;
+}
+
 /**
  * @param read (slaveId, { start, end, detail }) => Promise — CloudDatabase.activityPeriod
  * @param readEarliest (slaveId) => Promise<number|null>
  * @param initialView { mode, date } (screen fixtures)
+ * @param cloud HistoryCloud's adapter (signed in), for the days only the cloud
+ *   holds (ActivityDownloads); `online` its network; `downloadsActive` the app
+ *   in front with this page shown
  */
 export default function ActivityScreen({
   name,
@@ -120,6 +151,11 @@ export default function ActivityScreen({
   revision = 0,
   publishedReads = false,
   initialView = null,
+  cloud = null,
+  online = true,
+  downloadsActive = active,
+  downloadSettleMs = ACTIVITY_DOWNLOAD_SETTLE_MS,
+  downloadRetryDelays = ACTIVITY_RETRY_DELAYS_MS,
   onBack,
 }) {
   const styles = useStyles(getStyles);
@@ -127,16 +163,37 @@ export default function ActivityScreen({
   useBack(onBack);
   const [mode, setMode] = useState(initialView?.mode ?? 'day');
   const [date, setDate] = useState(initialView?.date ?? now);
-  const { status, view, retry, earliest } = useActivityView({
+  const cloudFirst = useCloudFirst(cloud, slaveId, online, downloadsActive);
+  const cloudFirstRef = useRef(cloudFirst);
+  cloudFirstRef.current = cloudFirst;
+  const readEarliestAll = useMemo(() => (!readEarliest || !cloud ? readEarliest : async id => {
+    const local = await readEarliest(id);
+    const remote = cloudFirstRef.current;
+    return Number.isFinite(remote) && (local == null || remote < local) ? remote : local;
+  }), [readEarliest, cloud]);
+  const downloads = useActivityDownloads({
+    cloud, online, slaveId, mode, date: Math.max(date, earliestBound(cloudFirst)), now,
+    active: downloadsActive, publication: revision, settleMs: downloadSettleMs, retryDelays: downloadRetryDelays,
+  });
+  const downloadRevision = `${downloads.revision}:${cloudFirst ?? ''}`;
+  const { status, view, retry, earliest, downloadRevision: viewRevision } = useActivityView({
     read,
-    readEarliest,
+    readEarliest: readEarliestAll,
     slaveId,
     mode,
     date,
     now,
     active,
-    owner, getPublication, revision, publishedReads,
+    owner, getPublication, revision, publishedReads, downloadRevision,
   });
+  // Not known yet while the days it needs are found or downloaded, or until
+  // the page has read what was downloaded: never 沒有資料 then.
+  const pending = ACTIVITY_DOWNLOAD_PENDING.includes(downloads.status)
+    || (!!view && viewRevision !== downloadRevision);
+  const noData = !view || !!view.emptyText;
+  const unknown = downloads.status === 'offline' ? noData || downloads.missing.some(day => dayWithoutData(view, day))
+    : ['failed', 'cancelled'].includes(downloads.status);
+  const loading = status === 'loading' || (status !== 'error' && pending && noData);
   // Until the answer the arrows keep the last navigation they had.
   const [navigation, setNavigation] = useState(null);
   useEffect(() => {
@@ -183,11 +240,59 @@ export default function ActivityScreen({
           onPrevious={() => go(navigation?.previous)}
           onNext={() => go(navigation?.next)}
         />
-        <LoadingContent loading={status === 'loading'} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
+        <DownloadRow downloads={downloads} mode={mode} show={unknown || ['downloading', 'partial'].includes(downloads.status)} />
+        <LoadingContent loading={loading} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
           {status === 'error' && <Failure onRetry={retry} />}
-          {view && <ActivityBody view={view} />}
+          {view && !(unknown && noData && mode === 'day') && (
+            <ActivityBody view={view} hideEmpty={pending || unknown}
+              waiting={pending || unknown ? downloads.missing : null} />
+          )}
         </LoadingContent>
       </ScrollView>
+    </View>
+  );
+}
+
+// The first day a download may reach: the cloud's first row's day.
+const earliestBound = first => (Number.isFinite(first) ? first : -Infinity);
+
+// 週／月: the day's bar has no minute of data at all.
+function dayWithoutData(view, day) {
+  if (!view) return true;
+  if (view.mode === 'day') return !!view.emptyText;
+  const bar = view.bars?.find(item => dayKey(new Date(item.start)) === day);
+  return !bar || bar.segments.every(segment => segment.minutes === 0);
+}
+
+// The days only the cloud holds (ActivityDownloads): 「下載 10/19 的紀錄…」
+// with the 更新中 capsule's shimmer and 取消 while they download; offline,
+// failed or stopped: what is missing, and 重試.
+function DownloadRow({ downloads, mode, show }) {
+  const styles = useStyles(getStyles);
+  if (!show) return null;
+  const { status, day, done, total, missing, left } = downloads;
+  const one = mode === 'day';
+  if (status === 'downloading') {
+    return (
+      <View style={styles.download} testID="activity-download">
+        <ShimmerLabel testID="activity-download-text"
+          text={one ? t('c155', { date: shortDate(day) }) : t('c1440', { done, total })} />
+        <TextButton title={t('c046')} onPress={downloads.cancel} testID="activity-download-cancel" />
+      </View>
+    );
+  }
+  const words = status === 'offline'
+    ? (one ? t('c157', { date: shortDate(missing[0]) }) : t('c1441', { count: missing.length }))
+    : status === 'partial' || !one ? t('c686') : t('c321');
+  const detail = status !== 'partial' ? null : mode === 'year' ? t('c1442') : t('c1443', { count: left });
+  return (
+    <View style={styles.download} testID="activity-download">
+      <Text style={styles.downloadText} testID="activity-download-text">
+        {words}{detail && <Text>{'\n'}{detail}</Text>}
+      </Text>
+      {status !== 'partial' && (
+        <TextButton title={t('c049')} onPress={downloads.retry} testID="activity-download-retry" />
+      )}
     </View>
   );
 }
@@ -297,19 +402,21 @@ function Failure({ onRetry }) {
   );
 }
 
-function ActivityBody({ view }) {
+// `waiting`: the days not on this phone yet (being downloaded, or offline):
+// their bars are a skeleton, not 沒有資料, and the 沒有資料 row waits.
+function ActivityBody({ view, hideEmpty = false, waiting = null }) {
   const styles = useStyles(getStyles);
-  const empty = !!view.emptyText;
+  const empty = !!view.emptyText && !hideEmpty;
   return (
     <View>
-      {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} />}
+      {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} waiting={waiting} />}
       <Legend view={view} />
       {empty && (
         <Text style={styles.empty} testID="activity-empty">
           {view.emptyText}
         </Text>
       )}
-      <Summary view={view} />
+      <Summary view={view} hideMissing={hideEmpty} />
     </View>
   );
 }
@@ -366,7 +473,7 @@ function BarNoData({ testID }) {
   );
 }
 
-function Bars({ view }) {
+function Bars({ view, waiting = null }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const gap = BAR_GAP[view.mode];
@@ -392,7 +499,10 @@ function Bars({ view }) {
               );
             })}
             {bar.totals.missing > 0 && bar.segments.every(segment => segment.minutes === 0) && (
-              <BarNoData testID={`activity-nodata-${bar.start}`} />
+              waiting?.includes(dayKey(new Date(bar.start)))
+                ? <View style={[styles.barNoData, { backgroundColor: colors.skeleton }]}
+                  testID={`activity-waiting-${bar.start}`} />
+                : <BarNoData testID={`activity-nodata-${bar.start}`} />
             )}
           </View>
         ))}
@@ -448,10 +558,11 @@ function Legend({ view }) {
   );
 }
 
-function Summary({ view }) {
+function Summary({ view, hideMissing = false }) {
   const styles = useStyles(getStyles);
   const rows = view.rows.filter(
-    row => (row.state !== 'missing' && row.state !== 'charging') || row.durationMinutes > 0,
+    row => (row.state !== 'missing' && row.state !== 'charging') || (row.durationMinutes > 0
+      && !(hideMissing && row.state === 'missing')),
   );
   return (
     <View testID="activity-summary">
@@ -554,6 +665,15 @@ const getStyles = makeStyles(theme => {
       justifyContent: 'center',
       gap: space.s,
     },
+    download: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      minHeight: touch.min,
+      gap: space.s,
+    },
+    downloadText: { ...type.caption, color: colors.textMuted, flexShrink: 1 },
     loadingRow: {
       flexDirection: 'row',
       alignItems: 'center',

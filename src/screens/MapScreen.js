@@ -1456,6 +1456,11 @@ export default function MapScreen({
           getPublication={fixture ? null : historyPublication}
           revision={fixture ? 0 : cloudSync?.publishedRevision ?? cloudSync?.mapSuccessRevision ?? 0}
           publishedReads={!fixture && typeof database?.publishManualScope === 'function'}
+          // The days only the cloud holds are downloaded with the history's
+          // adapter (A4, 2026-10-21); signed out it is null and nothing is asked.
+          cloud={historyCloud?.cloud ?? null}
+          online={historyCloud?.online !== false}
+          downloadsActive={active && tracking.foreground !== false}
           onBack={closePage}
         />
       )}
