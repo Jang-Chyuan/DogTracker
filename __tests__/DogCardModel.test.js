@@ -43,7 +43,7 @@ test('A3: a fresh dog in range — always three rows: 接收範圍 (with the dis
   expect(row(model, 'range')).toMatchObject({ value: i18nT('c348'), tone: null, alert: null });
   expect(row(model, 'activity')).toMatchObject({ value: '—', pressable: true });
   expect(model.headline).toEqual({ kind: 'distance', distance: '850 m', bearing: expect.any(Number),
-    compass: i18nT('c739'), phoneAge: null });
+    compass: i18nT('c739') });
   // TalkBack reads the distance with the first row.
   expect(row(model, 'range').speech).toBe('接收範圍，在範圍內，東北方 850 公尺，離手機');
   // No receiver row, ever.
@@ -154,18 +154,22 @@ test('battery: a reading kept from an earlier packet (DogMerge batteryAt) carrie
   expect(row(card(dog({ batteryPercentage: 43, batteryAt: NOW - 6000 })), 'battery').value).toBe('43%');
 });
 
-test('the phone: none or over 10 minutes old is 手機沒有定位; 30 s to 10 minutes says how old', () => {
+test('the phone: none or over 10 minutes old is 手機沒有定位; younger, the distance without its age', () => {
   expect(phoneReading({ running: false, position: phone.position }, NOW)).toBeNull();
   expect(phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 11 * MINUTE } }, NOW)).toBeNull();
   const model = card(dog(), { phone: null });
   expect(model.headline).toEqual({ kind: 'no-phone', text: i18nT("c726") });
   expect(model.rows[0].speech).toBe('位置，09:29 更新，手機沒有定位');
   const threeMinutes = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * MINUTE - 5000 } }, NOW);
-  expect(cardHeadline({ dog: dog(), phone: threeMinutes }).phoneAge).toBe('手機位置 3 分鐘前');
+  // 2026-10-21 (user): no 「手機位置 N 分鐘前」. A stop held in low-power mode
+  // (fixes about every 30 s, at most 5 minutes without one) keeps the distance.
+  expect(cardHeadline({ dog: dog(), phone: threeMinutes })).toEqual({ kind: 'distance', distance: '850 m',
+    bearing: expect.any(Number), compass: i18nT('c739') });
   expect(card(dog(), { phone: threeMinutes, range: range(RANGE_STATUS.IN) }).rows[0].speech)
-    .toBe('接收範圍，在範圍內，東北方 850 公尺，離手機，手機位置 3 分鐘前');
-  const twentySeconds = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 20000 } }, NOW);
-  expect(cardHeadline({ dog: dog(), phone: twentySeconds }).phoneAge).toBeNull();
+    .toBe('接收範圍，在範圍內，東北方 850 公尺，離手機');
+  const held = phoneReading({ running: true, lowPower: true,
+    position: { ...HOME, timestamp: NOW - 5 * MINUTE, motionState: 'stationary' } }, NOW);
+  expect(cardHeadline({ dog: dog(), phone: held }).kind).toBe('distance');
 });
 
 test('活動量: judged at now; 「—」 when stale; old readings judged when they stopped, with their time', () => {
