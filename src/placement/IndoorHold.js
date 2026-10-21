@@ -108,6 +108,22 @@ export const HOLD_CONFIG = Object.freeze({
   stationaryTailMs: 120000,
   stationaryTailFixes: 6,
   stationaryTailMaxDelayMs: 180000,
+  // Open sky (2026-10-19, the user's decision): when the last openSkyWindowMs
+  // of rows clearly see the sky, the dog is outside whatever the distance to
+  // the anchor (a yard 77 m from the charger never reached releaseRadiusM).
+  // At least openSkyRows rows (fewer is no evidence either way), at least
+  // openSkyGoodShare of them good as measured (before the trust-gap check),
+  // and the medians of their satellites (0 without a fix) and of their HDOP
+  // at or past these. Set on a new collar's real day: a yard 28–38 satellites
+  // at HDOP 0.6–0.85; indoors on the charger 12–18 at 1.3–1.6; a still collar
+  // under a roof edge 17–24 at 0.83–1.3, which 27 would have let go for two
+  // hours of jitter; older collars 6–10. A plugged-in collar is never open
+  // sky: on a charger it is not on a dog, so 充電中 wins.
+  openSkyWindowMs: 600000,
+  openSkyRows: 6,
+  openSkyGoodShare: 0.9,
+  openSkyMinSatellites: 28,
+  openSkyMaxHdop: 1,
 });
 
 const EARTH_RADIUS_M = 6371000;
@@ -144,15 +160,19 @@ export function hasFix(row) {
     && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
 }
 
+// HDOP arrives divided by 100 (cloud payloads, BLE JSON); 65535 / 655.35
+// means "no HDOP", and nothing real is below 0.3. Any other value of 100 or more can only be the raw ×100
+// integer, which real HDOP never reaches.
+function hdopOf(row) {
+  const hdop = finite(row.hdop);
+  if (hdop === 65535 || (hdop !== null && Math.abs(hdop - 655.35) < 0.01) || hdop < 0.3) return null;
+  return hdop !== null && hdop >= 100 ? hdop / 100 : hdop;
+}
+
 export function fixQuality(row, config = HOLD_CONFIG) {
   if (!hasFix(row)) return 'none';
   const satellites = finite(row.satellites);
-  // HDOP arrives divided by 100 (cloud payloads, BLE JSON); 65535 / 655.35
-  // means "no HDOP", and nothing real is below 0.3. Any other value of 100 or more can only be the raw ×100
-  // integer, which real HDOP never reaches.
-  let hdop = finite(row.hdop);
-  if (hdop === 65535 || (hdop !== null && Math.abs(hdop - 655.35) < 0.01) || hdop < 0.3) hdop = null;
-  else if (hdop !== null && hdop >= 100) hdop /= 100;
+  const hdop = hdopOf(row);
   // Rows that never carried quality fields keep the old behaviour: shown as is.
   if (satellites === null && hdop === null) return 'good';
   const enoughSatellites = satellites === null || satellites >= config.goodMinSatellites;
@@ -162,7 +182,7 @@ export function fixQuality(row, config = HOLD_CONFIG) {
 
 const charging = value => value === 1 || value === true || value === '1';
 
-const REASONS = Object.freeze({
+export const REASONS = Object.freeze({
   charging: t("c731"),
   indoor: t('c114'),
   window: t("c853"),
@@ -202,6 +222,23 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
   let bleSignal = null;
   const buckets = new Map();
   let bucketStart = null;
+  // The rows of the last openSkyWindowMs, each packet once (copies dropped).
+  const sky = [];
+
+  function noteSky(row) {
+    const fix = hasFix(row);
+    sky.push({ time: row.time, good: fixQuality(row, config) === 'good',
+      satellites: fix ? finite(row.satellites) ?? 0 : 0, hdop: fix ? hdopOf(row) : null });
+    while (sky.length && row.time - sky[0].time > config.openSkyWindowMs) sky.shift();
+  }
+
+  function openSky() {
+    if (usb || sky.length < config.openSkyRows) return false;
+    if (sky.filter(entry => entry.good).length < sky.length * config.openSkyGoodShare) return false;
+    const hdops = sky.map(entry => entry.hdop).filter(value => value !== null);
+    return hdops.length > 0 && median(sky.map(entry => entry.satellites)) >= config.openSkyMinSatellites
+      && median(hdops) <= config.openSkyMaxHdop;
+  }
 
   // Several Masters can hear the dog in the same window. Their LoRa signal
   // says how far each receiver is, not where the dog is, so the window takes
@@ -649,6 +686,8 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         while (recentFixes.length && row.time - recentFixes[0].time > config.duplicateWindowMs) recentFixes.shift();
       }
       lastTime = row.time;
+      noteSky(row);
+      const clearSky = openSky();
       const measured = fixQuality(row, config);
       const point = measured === 'none' ? null
         : { time: row.time, latitude: Number(row.latitude), longitude: Number(row.longitude), speedKmh: rawSpeedKmh(row) };
@@ -660,7 +699,11 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       // A good fix alone among weak ones is usually multipath through a window:
       // it trusts only when the row before it was good too. The first good fix
       // of a run is then remembered and trusted with the second.
-      const backed = previous?.quality === 'good' && row.time - previous.time <= config.trustGapMs;
+      // Under a clear sky a good fix needs no neighbour: sparse packets there
+      // still move the anchor evidence on (a stop under a pavilion later must
+      // not reuse the charger it left).
+      const backed = (previous?.quality === 'good' && row.time - previous.time <= config.trustGapMs)
+        || (clearSky && measured === 'good');
       const quality = measured === 'good' && !backed ? 'weak' : measured;
       let event = null;
       if (measured === 'good' && backed && previous.point && !previous.trusted) {
@@ -673,6 +716,9 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       // Both the promoted fix and this one may have been added.
       goods.splice(0, Math.max(0, goods.length - config.anchorFixes * 8));
       if (held) event = whileHeld(point, quality, row.time);
+      // Precedence: the charger (openSky is false while plugged in), then open
+      // sky, then the rules above; a release they already made stands.
+      if (held && clearSky) event = release(row.time, 'open-sky');
       if (quality === 'good') {
         goods.push(point);
         lastGoodAt = row.time;
@@ -680,7 +726,7 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
         weak.push(point);
         if (weak.length > config.weakPool) weak.shift();
       }
-      if (held || event || quality === 'good') return event;
+      if (held || event || quality === 'good' || clearSky) return event;
       const quietFor = lastGoodAt === null ? Infinity : row.time - lastGoodAt;
       const why = evidence(row.time);
       // Only recent weak fixes say the dog may be moving under trees; once
@@ -718,14 +764,15 @@ export function createHoldTracker(config = HOLD_CONFIG, { classify = predictEnvi
       return {
         coordinate: held.anchor,
         source: held.source,
-        reason: why ? REASONS[why] : held.reason,
+        // Started on the charger and unplugged since: no longer 充電中.
+        reason: why ? REASONS[why] : held.reason === REASONS.charging ? REASONS.weak : held.reason,
         since: held.since,
         anchorAt: held.anchorAt,
       };
     },
     snapshot: () => JSON.parse(JSON.stringify({ goods, weak, rawTail, lastGoodAt, lastTime: Number.isFinite(lastTime) ? lastTime : null,
       usb, environment, held, previous, previousHold, recentFixes, bleSignal,
-      buckets: Object.fromEntries(buckets), bucketStart })),
+      buckets: Object.fromEntries(buckets), bucketStart, sky })),
     environment: () => environment,
     // The good fixes it knows, to seed a replacement when rows arrive late.
     goodFixes: () => goods.slice(),

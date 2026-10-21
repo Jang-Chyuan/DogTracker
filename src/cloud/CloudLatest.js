@@ -6,6 +6,7 @@ import { validCloudFix } from './CloudLatestSnapshot';
 import { HOLD_LOOKBACK_MS } from '../placement/HoldStore';
 import { inheritCloudDiagnosticSignal, beginCloudLogicalDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 import { serverClock } from './ServerClock';
+import { createMalformedFields } from '../models/MalformedFields';
 
 const FIELDS = 'event_id,master_id,slave_id,seq,received_at,payload,rssi,snr,upload_source,phone_received_at';
 const FALLBACK = 'upload_source.neq.phone,upload_source.is.null,phone_received_at.is.null';
@@ -53,6 +54,8 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
   if (!masters.length) return { ...cut, dogs };
   const work = new AbortController();
   inheritCloudDiagnosticSignal(signal, work.signal);
+  // Fields read as unknown (MalformedFields): one line for this snapshot.
+  const malformed = createMalformedFields();
   let failed = false, failure, stop;
   const stopped = new Promise((resolve, reject) => { stop = reject; });
   stopped.catch(() => {});
@@ -111,7 +114,12 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
             row = await read(query, fixed ? 'fix' : 'packet');
           }
           if (row) {
-            const mapped = mapCloudTelemetry(row);
+            const mapped = mapCloudTelemetry(row, malformed);
+            // The query asked for coordinates in range, so the reader drops
+            // them only for a wire value it cannot believe (CloudTelemetry:
+            // one too small to survive the division). Not a wrong row: this
+            // stream just has no fix (no older one is sought).
+            if (fixed && mapped.slave_lat == null && mapped.slave_lon == null) return null;
             if (mapped.slave_id !== slave || !masters.includes(mapped.master_id) || mapped.received_at >= serverCutoff
               || (phone && (row.upload_source !== 'phone' || !Number.isFinite(Date.parse(row.phone_received_at))))
               || (fixed && !validCloudFix(mapped))) throw new Error(t('c588'));
@@ -179,6 +187,7 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
     throw fail(error);
   } finally {
     signal?.removeEventListener?.('abort', cancel);
+    malformed.report('latest');
   }
 }
 
@@ -187,7 +196,14 @@ export async function downloadCloudLatest({ client, masterIds, cutoff, signal, c
 // used by the local hold reader. Partial context is never published.
 // `progress` (optional) receives aggregate counts only, so a caller can report
 // how far a timed-out or failed stage got: requests issued, dogs completed.
-export async function downloadCloudLatestContext({ client, masterIds, snapshot, signal, check = () => {}, progress }) {
+export async function downloadCloudLatestContext(options) {
+  // Fields read as unknown (MalformedFields): one line for this context.
+  const malformed = createMalformedFields();
+  try { return await latestContext(options, malformed); }
+  finally { malformed.report('context'); }
+}
+
+async function latestContext({ client, masterIds, snapshot, signal, check = () => {}, progress }, malformed) {
   const { cutoff, dogs } = snapshot;
   // The same snapshot's cut on the server's clock (downloadCloudLatest).
   const serverCutoff = Number.isFinite(snapshot.serverCutoff) ? snapshot.serverCutoff : cutoff;
@@ -217,7 +233,7 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
         return query;
       };
       const validate = row => {
-        const mapped = mapCloudTelemetry(row);
+        const mapped = mapCloudTelemetry(row, malformed);
         if (mapped.slave_id !== dog.slaveId || !masterIds.includes(mapped.master_id) || mapped.received_at >= serverCutoff
           || (phone && (row.upload_source !== 'phone' || !Number.isFinite(Date.parse(row.phone_received_at)))))
           throw new Error(t('c588'));
@@ -256,6 +272,8 @@ export async function downloadCloudLatestContext({ client, masterIds, snapshot, 
       if (page.length > 40) throw new Error(t('c578'));
       for (const row of page) {
         const mapped = validate(row);
+        // An unreadable fix (CloudTelemetry) is not a seed; not a wrong row.
+        if (mapped.slave_lat == null && mapped.slave_lon == null) continue;
         if (!validCloudFix(mapped) || mapped.track_at >= from) throw new Error(t('c588'));
         if (!seeds.has(mapped.event_id)) stored++;
         if (stored > 20000) throw new Error(t('c578'));

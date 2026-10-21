@@ -1615,7 +1615,9 @@
       "App"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "retired_note": "2026-10-21：雲端資料欄位讀不懂改成當作不知道、整筆保留，不再讓整批失敗，不需要這句"
   },
   {
     "id": "c590",
@@ -1625,7 +1627,9 @@
       "App"
     ],
     "src": "程式（062 補登）",
-    "kind": "定稿"
+    "kind": "定稿",
+    "retired": true,
+    "retired_note": "2026-10-21：雲端資料欄位讀不懂改成當作不知道、整筆保留，不再讓整批失敗，不需要這句"
   },
   {
     "id": "c591",
@@ -2369,7 +2373,7 @@
     "kind": "定稿",
     "supersedes": "c334",
     "retired": true,
-    "replaced_by": "c344"
+    "replaced_by": "c1432"
   },
   {
     "id": "c660",
@@ -4137,7 +4141,9 @@
     "src": "程式（062 補登）",
     "kind": "定稿",
     "supersedes": "c366",
-    "pending_user": true
+    "pending_user": true,
+    "retired": true,
+    "replaced_by": "c1436"
   },
   {
     "id": "c793",
@@ -9599,6 +9605,83 @@
     "area": "歷史／摘要列",
     "screens": [
       "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1431",
+    "tpl": "遮蔽處",
+    "area": "即時地圖／歷史：停在原處",
+    "screens": [
+      "M1",
+      "M2",
+      "H1",
+      "H2"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1432",
+    "tpl": "在遮蔽處 {duration}",
+    "area": "歷史／時間軸清單",
+    "screens": [
+      "H1",
+      "H2",
+      "H9"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1433",
+    "tpl": "充電中 {duration}",
+    "area": "歷史／時間軸清單",
+    "screens": [
+      "H1",
+      "H2",
+      "H9"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1434",
+    "tpl": "遮蔽處・{duration}",
+    "area": "歷史／游標標籤",
+    "screens": [
+      "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1435",
+    "tpl": "充電中・{duration}",
+    "area": "歷史／游標標籤",
+    "screens": [
+      "H1"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1436",
+    "tpl": "{prefix}遮蔽處・{value} 分",
+    "area": "歷史／匯出",
+    "screens": [
+      "H9"
+    ],
+    "src": "程式（070 補登）",
+    "kind": "定稿"
+  },
+  {
+    "id": "c1437",
+    "tpl": "{prefix}充電中・{value} 分",
+    "area": "歷史／匯出",
+    "screens": [
+      "H9"
     ],
     "src": "程式（070 補登）",
     "kind": "定稿"

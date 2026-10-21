@@ -1,8 +1,9 @@
 import { t } from '../i18n';
+import { holdWord, isChargingHold } from '../placement/HoldWords';
 import { distanceText } from '../utils/distanceText';
 // The words of the H1/H2 time-line list and its summary (copy deck c120,
 // c121, c127, c130, c137, c140, c159, c306–c308, c316, c331–c341, c1410, c1411,
-// c344, c1276). Pure: the list component draws them, tests read them.
+// c1432, c1276). Pure: the list component draws them, tests read them.
 
 const MINUTE = 60000;
 const pad = value => String(value).padStart(2, '0');
@@ -140,8 +141,9 @@ export function nodePill(node) {
     case 'indoor': {
       // 判定表「跨午夜」 for a hold over midnight, as for a stay. A hold that
       // runs on into the next day keeps its minutes (2026-10-13: no 「接續隔天」).
-      const inside = t('c344', { duration: stayDuration(node.displayDurationMs ?? node.end - node.start) });
-      const text = inside;
+      // 2026-10-19 (user): 「在遮蔽處 12 分」, on the charger 「充電中 12 分」.
+      const duration = stayDuration(node.displayDurationMs ?? node.end - node.start);
+      const text = isChargingHold(node.reason) ? t('c1433', { duration }) : t('c1432', { duration });
       return { text, tone: 'indoor' };
     }
     case 'resume':
@@ -260,7 +262,7 @@ export function sectionSpeech(section, from = null) {
 export function leavesFrom(row, next) {
   return ['stop', 'indoor'].includes(row?.type) && next?.type === 'movement';
 }
-const leftPlace = row => (row.type === 'indoor' ? t('c114')
+const leftPlace = row => (row.type === 'indoor' ? holdWord(row.reason)
   : row.number != null ? t('c136', { duration: row.number }) : t('c136', { duration: '' }).trim());
 
 /**
@@ -278,7 +280,7 @@ export function placeSpeech(node, title) {
       : node.type === 'switch'
       ? t("c663", { number: node.number })
       : node.type === 'indoor'
-      ? t('c114')
+      ? holdWord(node.reason)
       : pill?.text ?? '';
   // A stay's own length, interruptions left out (as its pill 「停 25 分」).
   const length = node.displayDurationMs ?? (

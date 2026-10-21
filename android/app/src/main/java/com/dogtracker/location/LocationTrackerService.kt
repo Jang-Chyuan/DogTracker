@@ -59,8 +59,11 @@ class LocationTrackerService : Service(), LocationListener {
     override fun run() {
       if (stopped) return
       val now = SystemClock.elapsedRealtimeNanos()
-      // Nothing arrived for a while: ask again (LocationResubscribe).
-      if (running && resubscribe?.due(now) == true) {
+      // Low power: no usable fix for a while, back to HIGH to look (StationaryPowerMode).
+      if (power?.silent(now, pipeline.lowUsableAt) == true) exitLowPower(now, StationaryPowerMode.Exit.SILENCE)
+      // Nothing arrived for a while: ask again (LocationResubscribe). In low
+      // power fixes come ~30 s apart; the silence rule above covers it.
+      if (running && !pipeline.lowPower && resubscribe?.due(now) == true) {
         unsubscribe()
         runCatching { subscribe() }
       }
@@ -73,7 +76,8 @@ class LocationTrackerService : Service(), LocationListener {
           if (earlierLocationAt == UNREAD) earlierLocationAt = database.newestLocationAt()
           if (LocationPipeline.repeatsSavedRow(sample, earlierLocationAt)) pipeline.skipped(sample)
           else {
-            val display = displayLocation?.takeIf { it.usable(sessionId, sample, now) }
+            // A held row (low power) is the pipeline's locked stop, never the map's animation.
+            val display = displayLocation?.takeIf { !pipeline.lowPower && it.usable(sessionId, sample, now) }
             // The fix's own time: an accepted fix can be up to MAX_FIX_AGE_NANOS old.
             database.save(sample, sessionId, display, LocationPipeline.fixWallTime(sample, now, System.currentTimeMillis()))
             earlierLocationAt = null // later fixes are ordered by the pipeline
@@ -96,13 +100,16 @@ class LocationTrackerService : Service(), LocationListener {
       }
       val latest = pipeline.latest
       val age = latest?.let { (now - it.elapsedNanos) / 1e9 }
-      // Expired once the pipeline would no longer save it (the map keeps its own display fence).
-      val expired = age != null && age > LocationPipeline.MAX_FIX_AGE_NANOS / 1e9
+      // Expired once the pipeline would no longer save it (the map keeps its own display fence);
+      // in low power after two missed ~30 s fixes.
+      val expired = age != null && age > (if (pipeline.lowPower) StationaryPowerMode.LOW_FRESH_NANOS
+        else LocationPipeline.MAX_FIX_AGE_NANOS) / 1e9
       if (!writeFailed) status = if (expired) com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1127) else pipeline.reason
       liveJson = JSONObject().put("running", running).put("status", status)
         .put("received", pipeline.received).put("accepted", pipeline.accepted).put("rejected", pipeline.rejected)
         .put("saved", saved).put("writeErrors", writeErrors).put("ageSeconds", age ?: JSONObject.NULL)
         .put("intervalSeconds", pipeline.intervalSeconds)
+        .put("lowPower", pipeline.lowPower)
         .put("sessionId", sessionId)
         // Diagnostics: a system restart (START_STICKY) and whether it is getting fixes.
         .put("restarted", restartWatch?.restart == true)
@@ -165,6 +172,7 @@ class LocationTrackerService : Service(), LocationListener {
       restartWatch = RestartFixWatch(kind == ServiceStartLog.Kind.RESTART, background, Build.VERSION.SDK_INT,
         SystemClock.elapsedRealtimeNanos())
       resubscribe = LocationResubscribe(SystemClock.elapsedRealtimeNanos())
+      power = if (choice == LocationSource.Choice.PlayFused) StationaryPowerMode(SystemClock.elapsedRealtimeNanos()) else null
       subscribe()
       running = true
       status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1133)
@@ -205,7 +213,7 @@ class LocationTrackerService : Service(), LocationListener {
     if (!running) return
     val age = pipeline.latest?.let { (now - it.elapsedNanos) / 1e9 }
     val notice = RecordingNotice.during(androidx.core.location.LocationManagerCompat.isLocationEnabled(manager),
-      age, (now - startedNanos) / 1e9)
+      age, (now - startedNanos) / 1e9, pipeline.lowPower)
     if (notice == shownNotice) return
     shownNotice = notice
     runCatching { getSystemService(NotificationManager::class.java).notify(ID, recordingNotification(notice)) }
@@ -223,17 +231,27 @@ class LocationTrackerService : Service(), LocationListener {
     when (val choice = source) {
       LocationSource.Choice.PlayFused -> {
         val client = fused ?: com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
-        val request = com.google.android.gms.location.LocationRequest.Builder(
-          com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, LocationSource.INTERVAL_MS)
-          .setMinUpdateIntervalMillis(LocationSource.INTERVAL_MS).build()
+        // HIGH 1 s, or balanced power ~30 s on a held stop (StationaryPowerMode).
+        val low = pipeline.lowPower
+        val spec = LocationSource.fusedRequest(low)
+        val request = com.google.android.gms.location.LocationRequest.Builder(spec.priority, spec.intervalMs)
+          .setMinUpdateIntervalMillis(spec.minIntervalMs).build()
         val callback = object : com.google.android.gms.location.LocationCallback() {
           override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-            if (fusedCallback !== this) return
-            result.locations.forEach { onLocationChanged(it) }
+            // Checked for each fix: a fix of this batch may have switched the request.
+            for (location in result.locations) {
+              if (fusedCallback !== this) return
+              onLocationChanged(location)
+            }
           }
         }
         fusedCallback = callback
         client.requestLocationUpdates(request, callback, worker.looper)
+          .addOnFailureListener {
+            // A low-power request Play services refused: back to the 1 s one.
+            handler.post { if (!stopped && low && fusedCallback === callback)
+              exitLowPower(SystemClock.elapsedRealtimeNanos(), StationaryPowerMode.Exit.REQUEST_FAILED) }
+          }
         fused = client
       }
       LocationSource.Choice.FrameworkFused -> if (Build.VERSION.SDK_INT >= 31)
@@ -249,6 +267,74 @@ class LocationTrackerService : Service(), LocationListener {
     fusedCallback?.let { callback -> runCatching { fused?.removeLocationUpdates(callback) } }
     fusedCallback = null
   }
+  // Low-power mode on a held stop (Play services fused only; null otherwise). Worker thread only.
+  private var power: StationaryPowerMode? = null
+  private var sensors: android.hardware.SensorManager? = null
+  private var motionTrigger: android.hardware.TriggerEventListener? = null
+  private var significantMotion: String = "unchecked"
+
+  /** After each fix (worker thread): leave LOW on the pipeline's evidence, or enter it on a long enough stop. */
+  private fun checkPower(now: Long) {
+    val power = power ?: return
+    if (pipeline.lowPower) {
+      pipeline.lowExit?.let { exitLowPower(now, it) }
+      return
+    }
+    if (!power.shouldDownshift(now, pipeline.stationarySince, pipeline.judgedAt) || !pipeline.enterLowPower()) return
+    power.enterLow(now)
+    armSignificantMotion()
+    // Now: the old callback is no longer current, so the rest of its batch
+    // and its queued deliveries are dropped (identity checked per fix).
+    resubscribeNow()
+  }
+
+  private fun exitLowPower(now: Long, reason: StationaryPowerMode.Exit) {
+    val power = power ?: return
+    if (!pipeline.lowPower && !power.low) return
+    pipeline.exitLowPower()
+    power.exitLow(now, reason)
+    cancelSignificantMotion()
+    // The 1 s request starts now, fencing the low-power callback's queued
+    // fixes; the silence schedule starts again with it.
+    resubscribe?.received(now)
+    resubscribeNow()
+  }
+
+  private fun resubscribeNow() {
+    if (stopped) return
+    unsubscribe()
+    runCatching { subscribe() }
+  }
+
+  /** The one-shot significant-motion sensor (no permission). Without one, fixes and the silence rule decide. */
+  private fun armSignificantMotion() {
+    if (stopped) return
+    val manager = sensors ?: getSystemService(android.hardware.SensorManager::class.java)?.also { sensors = it }
+    val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_SIGNIFICANT_MOTION)
+    if (manager == null || sensor == null) { significantMotion = "absent"; return }
+    cancelSignificantMotion()
+    val listener = object : android.hardware.TriggerEventListener() {
+      override fun onTrigger(event: android.hardware.TriggerEvent?) {
+        // Delivered on the main thread: hand it to the worker; a stale trigger is ignored.
+        handler.post {
+          if (stopped || motionTrigger !== this) return@post
+          motionTrigger = null
+          exitLowPower(SystemClock.elapsedRealtimeNanos(), StationaryPowerMode.Exit.SIGNIFICANT_MOTION)
+        }
+      }
+    }
+    val armed = runCatching { manager.requestTriggerSensor(listener, sensor) }.getOrDefault(false)
+    significantMotion = if (armed) "armed" else "failed"
+    motionTrigger = if (armed) listener else null
+  }
+
+  private fun cancelSignificantMotion() {
+    val listener = motionTrigger ?: return
+    motionTrigger = null
+    val manager = sensors ?: return
+    runCatching { manager.cancelTriggerSensor(listener, manager.getDefaultSensor(android.hardware.Sensor.TYPE_SIGNIFICANT_MOTION)) }
+  }
+
   private fun playServicesAvailable() = try {
     com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) ==
       com.google.android.gms.common.ConnectionResult.SUCCESS
@@ -267,7 +353,8 @@ class LocationTrackerService : Service(), LocationListener {
       speedAccuracy = if (Build.VERSION.SDK_INT >= 26 && location.hasSpeedAccuracy() &&
         location.speedAccuracyMetersPerSecond.isFinite() && location.speedAccuracyMetersPerSecond >= 0)
         location.speedAccuracyMetersPerSecond else null,
-      provider = LocationSource.label(source, location.provider)), now)
+      provider = LocationSource.label(source, location.provider, pipeline.lowPower)), now)
+    checkPower(now)
   }
   override fun onProviderDisabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1135) }
   override fun onProviderEnabled(provider: String) { status = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
@@ -289,6 +376,9 @@ class LocationTrackerService : Service(), LocationListener {
     val latest = pipeline.latest
     return buildString {
       appendLine("phone recording: started ${time.format(startedAtMs)} source=${LocationSource.label(source, null)}")
+      power?.let { appendLine("power: ${if (it.low) "LOW (balanced ~${StationaryPowerMode.LOW_INTERVAL_MS / 1000}s)" else "HIGH (1s)"} " +
+        "downshifts=${it.downshifts} exits=${it.exits} lowSeconds=${it.lowSeconds(now)} significantMotion=$significantMotion") }
+        ?: appendLine("power: HIGH only (source without low-power mode)")
       appendLine("received=${pipeline.received} accepted=${pipeline.accepted} rejected=${pipeline.rejectedBy} " +
         "motionOnly=${pipeline.motionOnly} saved=$saved writeErrors=$writeErrors intervalSeconds=${pipeline.intervalSeconds} " +
         "resubscribed=${resubscribe?.total ?: 0} odometer=${"%.1f".format(pipeline.odometerMeters)}m")
@@ -311,6 +401,8 @@ class LocationTrackerService : Service(), LocationListener {
   }
   override fun onDestroy() {
     stopped = true
+    // On the worker, after anything that might still arm it (quitSafely runs it first).
+    handler.post { runCatching { cancelSignificantMotion() } }
     handler.removeCallbacks(tick)
     if (running) handler.post { runCatching { gapHistory.end(System.currentTimeMillis(), counters()) } }
     liveJson = "{}"

@@ -85,8 +85,11 @@ test('malformed JSON coordinate types and out-of-range coordinates cannot become
     event(4, 4, 7, '2026-10-10T10:30:00Z', { lat: '25000000', lon: 121000000 })]);
   const result = await downloadCloudLatest({ client, masterIds: [7], cutoff: CUT });
   expect(result.dogs[0].fix.sequence).toBe(1);
+  // An unreadable coordinate is a packet without a fix, not a failed snapshot
+  // (2026-10-21, CloudMalformedTelemetry.test.js).
   const malformed = rest([event(9, 4, 7, '2026-10-10T11:00:00Z', { lat: '25', lon: 121000000 })]);
-  await expect(downloadCloudLatest({ client: malformed.client, masterIds: [7], cutoff: CUT })).rejects.toThrow();
+  const kept = await downloadCloudLatest({ client: malformed.client, masterIds: [7], cutoff: CUT });
+  expect(kept.dogs[0]).toMatchObject({ packet: { sequence: 9, slave_lat: null, slave_lon: null }, fix: null });
 });
 
 test('empty membership yields a complete empty snapshot and canceled requests cannot return a snapshot', async () => {

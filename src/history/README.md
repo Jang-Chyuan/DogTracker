@@ -15,7 +15,7 @@
 | `historyMovement(points, {subject, config})` | `edges`、`vehicles`、`switches`、計入距離；輸入為過濾後點 |
 | `historyVisits(points, options)` | 造訪起訖、圈內點、扣除缺口的時間；輸入為過濾後點 |
 | `historyStops(points, options)` | 路線／整天中位數、明顯停留、追加狀態（手機 2026-10-14 起不比中位數：`stayRatio: null`，≥ `stayMs` 就是停留） |
-| `historyIndoorNodes(points, options)` | 室內小房子節點；使用重算後封包，不用 GPS 去重結果判斷封包缺口 |
+| `historyIndoorNodes(points, options)` | 停住的節點（type 仍是 `indoor`；圖示涼亭，插著充電是閃電，`placement/HoldIcons.js`）；使用重算後封包，不用 GPS 去重結果判斷封包缺口。2026-10-19：顯示「在遮蔽處 N 分」或插著充電「充電中 N 分」（`placement/HoldWords.js`），同一段停住中途字改變（拔掉 USB）就從第一筆新字的封包分成兩個節點，第二個不算接續前一天 |
 | `historyDeparture(points, options)` | 確認狀態、自動範圍與手動範圍；輸入完整當天過濾後點，可提供完整交通分類 |
 | `historyTimeline(rows, options)` | 整合入口：共同資料流、範圍、地點列、交通／缺口列、編號、距離與追加狀態 |
 | `countDistances(edges, config)` | 判定表「距離怎麼加」：和「上一個有算進去的點」比，超過兩筆誤差較大者（至少 5 m，缺誤差值當 10 m）才算。手機（2026-10-13）：上一個算進去的點是走路中（moving、誤差 ≤ 10 m、速度扣掉速度誤差仍 ≥ 0.5 m/s）、這一點也是 moving 且誤差 ≤ 10 m、而且這段至少走到速度加總的 0.75 時，從 2 m 起算；誤差超過 20 m 又沒有走路速度（沒有或超過 3 m/s）的「確認移動」點（室內 Wi-Fi／電梯定位），和其後同樣粗的點，在更準的一點或停住之前都不算、不移動起點；兩點都有同一次記錄的 `odometer_m`（原生每秒定位累積的路程）時，算進去的距離改用兩點的路程差，不少於直線、不多於直線 × 1.5 + 5 m 與速度預算；沒有這欄（舊資料、雲端、狗）照舊用直線。手機（2026-10-14）：從靜止出發、5 分內在 100 m 內又靜止、沒有一步落在精細走路點的「來回」收回（`driftTrip`，見下面「一整天在家是一個停留」） |

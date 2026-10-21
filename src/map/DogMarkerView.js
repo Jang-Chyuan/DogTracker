@@ -5,10 +5,11 @@ import { size as sizes, type, border, space } from '../theme/tokens';
 import MapNameTag from './MapNameTag';
 import DogAvatar from '../dogs/DogAvatar';
 import { problemBadgePosition, houseBadgePosition } from './BadgeGeometry';
+import { HOLD_ICON_PATHS } from '../placement/HoldIcons';
 
 // The view inside one dog's map marker (design v3「狗的標記：所有情況」,
 // DESIGN.md §15): the face (40dp, 48dp with a problem, +8dp when its card is
-// open), a red "!" top right for any problem, a small house bottom left when
+// open), a red "!" top right for any problem, a small pavilion (or bolt) bottom left when
 // held indoors, and the name tag right under the face — or, where tags would
 // overlap, one 「3 隻」 group tag under the lowest face and none under the
 // others (DogMarkers.nameTags). Provider-neutral: the map renderer wraps it in
@@ -72,7 +73,8 @@ function ProblemBadge({ size }) {
 }
 
 // Centre on the left rim, a quarter face below its centre.
-function HouseBadge({ size }) {
+// 2026-10-19: the hold's own icon (HoldIcons), a pavilion or a bolt.
+function HouseBadge({ size, icon = 'shelter' }) {
   const { literalColors: themeLiteral } = useTheme();
   const styles = useStyles(getStyles);
   return (
@@ -86,12 +88,14 @@ function HouseBadge({ size }) {
     >
       <Svg width={badge.glyph} height={badge.glyph} viewBox="0 0 24 24">
         <Path
-          d="M4 11 12 4l8 7v9H4z"
+          d={HOLD_ICON_PATHS[icon].stroke}
           fill="none"
           stroke={themeLiteral.onRoute}
           strokeWidth={2.8}
+          strokeLinecap="round"
           strokeLinejoin="round"
         />
+        {HOLD_ICON_PATHS[icon].fill && <Path d={HOLD_ICON_PATHS[icon].fill} fill={themeLiteral.onRoute} />}
       </Svg>
     </View>
   );
@@ -166,7 +170,7 @@ export default function DogMarkerView({ marker, tag, avatar, onAvatarLoad, compa
             style={[styles.staleRing, { borderRadius: (size + sizes.marker.staleRingOutset * 2) / 2 }]}
           />
         )}
-        {indoor && <HouseBadge size={size} />}
+        {indoor && <HouseBadge size={size} icon={marker.holdIcon ?? 'shelter'} />}
         {problem && <ProblemBadge size={size} />}
       </View>
       {tag && (

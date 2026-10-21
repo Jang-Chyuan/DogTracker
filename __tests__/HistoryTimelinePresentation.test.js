@@ -395,7 +395,7 @@ describe('a stay going on from the day before begins its row at midnight', () =>
     const [row] = timelinePresentation(nodes);
     expect(nodeTimes(row)).toEqual(['00:00', '07:00']);
     // 2026-10-15 (user): no 「接續前一天」 pill — its 00:00 says it.
-    expect(nodePill(row).text).toBe('室內・7 時');
+    expect(nodePill(row).text).toBe('在遮蔽處 7 時');
     expect(row.start).toBe(MIDNIGHT);
     expect(listDuration(presentationDurationMs(row))).toBe('7 時');
     // The cursor and TalkBack say the row's minutes.

@@ -60,7 +60,7 @@ const position = dog => dogCard(dog, { freshness: fresh, now: NOW, name: '小黑
 
 describe('a cold start inside a stay held on weak fixes', () => {
   // 2026-10-16: the card no longer times a stay, so it asks the history nothing.
-  test('the live hold says it may have begun before its rows; the card says 「室內」', async () => {
+  test('the live hold says it may have begun before its rows; the card says 「遮蔽處」', async () => {
     const db = await kennel();
     try {
       const { hold, dog } = await coldStartDog(db);
@@ -68,7 +68,7 @@ describe('a cold start inside a stay held on weak fixes', () => {
       expect(dog.heldFrom).toBeGreaterThanOrEqual(NOW - HOLD_LOOKBACK_MS);
       expect(hold.fromClipped).toBe(true);
       expect(dog.heldFromClipped).toBe(true);
-      expect(position(dog)).toBe('室內');
+      expect(position(dog)).toBe('遮蔽處');
     } finally { db.close(); }
   });
 
@@ -78,7 +78,7 @@ describe('a cold start inside a stay held on weak fixes', () => {
       const { hold, dog } = await coldStartDog(db);
       expect(hold).toBeTruthy();
       expect(hold.fromClipped).toBeUndefined();
-      expect(position(dog)).toBe('室內');
+      expect(position(dog)).toBe('遮蔽處');
     } finally { db.close(); }
   });
 });

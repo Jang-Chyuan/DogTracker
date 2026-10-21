@@ -1,6 +1,7 @@
 import { size as sizes } from '../theme/tokens';
 import { PAW_STROKE } from './PawGeometry';
 import { LEAVE_SHAPE } from './LeaveGeometry';
+import { HOLD_ICON_PATHS } from '../placement/HoldIcons';
 import { useTheme } from '../theme/ThemeProvider';
 import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
@@ -156,9 +157,13 @@ export default function Glyph({ name, color, size = sizes.icon.inline, level = n
           <Circle cx={19} cy={12} r={1.6} fill={color} stroke="none" />
         </>
       )}
-      {name === 'house' && (
-        // History list: a dog held indoors (停在原處), white on receiver blue.
-        <Path d="M4 11l8-7 8 7M6.5 9.5V20h11V9.5" {...stroke} />
+      {(name === 'shelter' || name === 'bolt') && (
+        // History list and map: a hold (停在原處), white on receiver blue —
+        // 遮蔽處 a pavilion over the dog, 充電中 a bolt (HoldIcons).
+        <>
+          <Path d={HOLD_ICON_PATHS[name].stroke} {...stroke} />
+          {HOLD_ICON_PATHS[name].fill && <Path d={HOLD_ICON_PATHS[name].fill} fill={color} stroke="none" />}
+        </>
       )}
       {name === 'chevron' && <Path d="M9 5l7 7-7 7" {...stroke} />}
       {name === 'leave' && (
