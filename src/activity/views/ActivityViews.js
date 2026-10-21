@@ -196,7 +196,8 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const navigation = activityNavigation(mode, date ?? now, { now, earliest });
   const end = Math.min(period.end, minuteOf(now));
   const current = minuteOf(now);
-  // Gaps of at most 4 minutes carry the previous value (fillActivityGaps),
+  // Gaps of at most 4 minutes (30 between two charging minutes) carry the
+  // previous value (fillActivityGaps),
   // the same for raw readings (日) and per-minute sums (週／月／年). Given
   // minutes from the running one on are left out first.
   const minutes = fillActivityGaps(given ?? activityMinutes(readings, { now }), { before: current });
