@@ -237,12 +237,6 @@ function StatusRow({ row, first, onPress, headline = null, heading = 0 }) {
         {row.alert}
       </Text>
     ) : null,
-    // Under the distance, at the row's right edge.
-    headline?.kind === 'distance' && headline.phoneAge ? (
-      <Text key="phoneAge" style={[styles.phoneAge, styles.phoneAgeLine]} accessible={false}>
-        {headline.phoneAge}
-      </Text>
-    ) : null,
   ].filter(Boolean);
   const content = (
     <View
@@ -766,8 +760,6 @@ const getStyles = makeStyles(theme => {
     distanceEnd: { alignItems: 'flex-end', flexShrink: 0, marginLeft: space.s },
     distanceLine: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
     distance: { ...type.status, color: colors.text },
-    phoneAge: { ...type.caption, color: colors.textMuted },
-    phoneAgeLine: { textAlign: 'right' },
     noPhone: { ...type.caption, color: colors.textMuted, marginLeft: space.s, flexShrink: 0 },
     // Set apart from the row of dogs (or the face and name) above.
     rows: { marginTop: space.m, borderTopWidth: border.hairline, borderTopColor: colors.line },

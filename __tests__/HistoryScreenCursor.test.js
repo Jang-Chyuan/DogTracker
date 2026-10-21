@@ -15,7 +15,7 @@ test('two-line labels for moving, stop, vehicle, indoor and phone', () => {
   expect(cursorLabel(model, 15 * minute)[1]).toBe('停留 10 分');
   // 2026-10-14: the vehicle label no longer adds 「・不算距離」.
   expect(cursorLabel(model, 25 * minute)[1]).toBe('坐車中');
-  expect(cursorLabel(model, 45 * minute)[1]).toBe('室內・10 分');
+  expect(cursorLabel(model, 45 * minute)[1]).toBe('遮蔽處・10 分');
   expect(cursorLabel(model, 60 * minute, 'phone')[1]).toBe('走路・已走 2.0 km');
   const driving = { ...model, sections: [{ start: 0, end: 10 * minute, mode: 'driving' }] };
   expect(cursorLabel(driving, 0, 'phone')[1]).toBe('開車中');

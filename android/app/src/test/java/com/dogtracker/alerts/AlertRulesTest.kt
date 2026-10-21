@@ -189,6 +189,21 @@ class AlertRulesTest {
     assertNull(AlertCodec.readReceiverBattery(JSONObject("""{"mbp":55,"mbv":0}""")))
   }
 
+  // 2026-10-21: a garbled USB flag (usbPresent 136, 0x88) is unknown, not
+  // "unplugged": a charging dog stays charging, so no false 電量低.
+  @Test fun aGarbledUsbFlagKeepsTheChargingState() {
+    fun read(json: String) = AlertCodec.readPacket(JSONObject(json), 1000)!!
+    assertEquals(true, read("""{"sid":4,"usbPresent":1}""").usb)
+    assertEquals(true, read("""{"sid":4,"usb_present":true}""").usb)
+    assertEquals(false, read("""{"sid":4,"usbPresent":0}""").usb)
+    for (bad in listOf("136", "2", "-1", "0.5", "\"1\"", "{}")) assertNull(bad, read("""{"sid":4,"usbPresent":$bad}""").usb)
+    var dog = Dogs.apply(null, read("""{"sid":4,"slat":24.99,"slon":121.31,"bp":15,"bmv":3600,"bv":1,"usbPresent":1}"""))
+    assertTrue(dog.charging)
+    dog = Dogs.apply(dog, AlertCodec.readPacket(JSONObject("""{"sid":4,"slat":24.99,"slon":121.31,"bp":15,"bmv":3600,"bv":1,"usbPresent":136}"""), 6000)!!)
+    assertTrue("unknown keeps charging", dog.charging)
+    assertTrue(Events.update(AlertState(), listOf(dog.copy(name = "豆豆")), receiver, 6000).active.keys.none { it.startsWith("dog-battery") })
+  }
+
   @Test fun theHandedOverDogReadsBack() {
     val dog = AlertDog(4, "豆豆", north(5.0), 10, 20, true, 1, 30, true,
       RangeState(Range.OUT, 10, 9, listOf(11L), 0, 20, 20, false, null))

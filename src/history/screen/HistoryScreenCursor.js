@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { isChargingHold } from '../../placement/HoldWords';
 import { clock, stayDuration } from '../HistoryText';
 import { distanceText } from '../../utils/distanceText';
 import { shownNumberAt, shownRowAt, shownStayDurationMs } from '../HistoryTimelinePresentation';
@@ -34,13 +35,14 @@ export function cursorLabel(model, time, subject = 'dog', gap = null) {
   // A stay's first minute is 「停留 不到 1 分」, never 「停留 0 分」, as the list's
   // 「停 不到 1 分」 (2026-10-15).
   const shownMs = stay && shownStayDurationMs(model.nodes, stay);
-  // An indoor hold's too: 「室內・不到 1 分」, never 「室內・0 分」.
+  // A hold's too: 「遮蔽處・不到 1 分」, never 「遮蔽處・0 分」.
   const minutes = stay && stayDuration(shownMs);
   // The number the list shows for this stay (start / end stays have none).
   const number = stay?.type === 'stop' && row?.type === 'stop' ? shownNumberAt(model.nodes, time) : null;
   // 2026-10-15 (user, #200): a walk round one place 「在附近走動 2・1 時 49 分」.
   const wandering = stay?.type === 'stop' && !!(stay.wandering || listedStay?.wandering);
-  if (stay) return [clock(time), stay.type === 'indoor' ? t('c344', { duration: minutes })
+  if (stay) return [clock(time), stay.type === 'indoor'
+    ? (isChargingHold(stay.reason) ? t('c1435', { duration: minutes }) : t('c1434', { duration: minutes }))
     : wandering ? (number != null ? t('c1407', { number, duration: minutes }) : t('c1405', { duration: minutes }))
     : number != null ? t('c1342', { number, duration: minutes }) : t('c136', { duration: minutes })];
   // At a switch boundary the outgoing segment owns the label.

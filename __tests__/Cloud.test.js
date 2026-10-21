@@ -22,8 +22,10 @@ test('converts wire units and preserves the full envelope and microsecond timest
     raw_payload: JSON.stringify(event()),
   });
   expect(() => mapCloudTelemetry({ ...event(), event_id: 'bad)' })).toThrow();
-  expect(() => mapCloudTelemetry({ ...event(), slave_id: 8 })).toThrow();
-  expect(() => mapCloudTelemetry({ ...event(), payload: { ...event().payload, lat: '25' } })).toThrow();
+  // A payload naming another dog, or an unreadable coordinate, no longer
+  // fails the page (2026-10-21, CloudMalformedTelemetry.test.js): no readings / no fix.
+  expect(mapCloudTelemetry({ ...event(), slave_id: 8 })).toMatchObject({ slave_id: 8, slave_lat: null, battery_percentage: null });
+  expect(mapCloudTelemetry({ ...event(), payload: { ...event().payload, lat: '25' } })).toMatchObject({ slave_lat: null, slave_lon: null });
 });
 
 test('date range uses Taiwan days and rejects normalized invalid dates', () => {

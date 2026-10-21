@@ -62,7 +62,7 @@ class LocationPipelineTest {
     // Long outages reset rather than dragging the old location forward.
     assertTrue(pipe.accept(sample(60, lat = 26.0), 60_000_000_000L))
     assertEquals(26.0, pipe.latest!!.latitude, 0.0)
-    assertEquals(mapOf("stale" to 1, "duplicate" to 0, "invalid" to 0, "accuracy" to 1, "jump" to 1), pipe.rejectedBy)
+    assertEquals(mapOf("stale" to 1, "duplicate" to 0, "invalid" to 0, "accuracy" to 1, "jump" to 1, "moved" to 0), pipe.rejectedBy)
   }
   // PR 116: a stretch with no saved row records why, without any position.
   @Test fun noSaveStretchRecordsRejectionCausesOnly() {

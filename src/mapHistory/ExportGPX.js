@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isChargingHold } from '../placement/HoldWords';
 import { activeSubjects, clippedIntervals, exportRows, gpsTime, inInterval, rawCoordinate, subjectName } from './ExportData';
 import { mergeHistoryFixes } from '../history/HistorySources';
 import { coordinate } from '../tracking/RouteSamples';
@@ -15,7 +16,9 @@ function waypoint(subject, item, piece, hold, gaps) {
   // A stay the list shows inside 出發 or the end has no number (#154): 「停留・N 分」.
   const value = minutes(piece.end - piece.start - excluded);
   // 2026-10-15 (#200): a walk round one place 「在附近走動 2・109 分」.
-  const name = hold ? t("c792", { prefix, value }) : item.wandering
+  // 2026-10-19 (user): 「遮蔽處・N 分」, on the charger 「充電中・N 分」.
+  const name = hold ? (isChargingHold(item.reason) ? t('c1437', { prefix, value }) : t('c1436', { prefix, value }))
+    : item.wandering
     ? (item.number == null ? t("c1409", { prefix, value }) : t("c1408", { prefix, number: item.number, value }))
     : item.number == null ? t("c1310", { prefix, value })
     : t("c793", { prefix, number: item.number, value });

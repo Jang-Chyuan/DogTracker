@@ -10,7 +10,7 @@ const snapshot = (...subjects) => ({ since: 0, until: 60 * minute, timeZone: 'UT
 const count = (text, tag) => (text.match(new RegExp(`<${tag}[ >]`, 'g')) || []).length;
 function freeze(value) { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }
 
-// Design spec.txt:488: | GPX | GPX 1.1，時間用 UTC。狗的歷史：每隻狗一條移動的 trk（名稱「小黑-4」），中斷的地方分成不同的 trkseg；每一次坐車各自一個 trk（「小黑-4 坐車 1」、type＝drive），坐車前後的移動不相連。我的路線：步行的路線一條 trk（名稱「我的路線」，遇到中斷或開車都分成不同的 trkseg，開車前後不相連），每一次開車各自一個 trk，名稱依序「開車 1」「開車 2」、type＝drive（GPX 1.1 的 trk 有 type 欄位）；選定匯出範圍內沒資料的狗不寫 trk；停留是 wpt：名稱「小黑-4 停留 1・18 分」（我的路線「停留 1・18 分」）、時間＝停留開始、desc＝地點（扣過中斷時再加「不含中斷 5 分」）；多隻狗是一個檔案，每隻狗各自一條移動的 trk 和每次坐車各一個 trk（名稱前面是那隻的狗名和訊號源編號，例「小黑-4」「小黑-4 坐車 1」）。停在原處也是 wpt：名稱「小黑-4 室內・40 分」、座標＝停住點、時間＝照匯出範圍裁切後那段的開始（時間長度也照裁切後算；中間有「沒有資料」斷開時每段各一個）、desc＝地址（查不到就不寫）；沿著手機路線畫的那段不寫（原始資料裡沒有項圈座標）；多隻狗時每隻各自輸出（名稱前面是那隻的狗名和訊號源編號）
+// Design spec.txt:488: | GPX | GPX 1.1，時間用 UTC。狗的歷史：每隻狗一條移動的 trk（名稱「小黑-4」），中斷的地方分成不同的 trkseg；每一次坐車各自一個 trk（「小黑-4 坐車 1」、type＝drive），坐車前後的移動不相連。我的路線：步行的路線一條 trk（名稱「我的路線」，遇到中斷或開車都分成不同的 trkseg，開車前後不相連），每一次開車各自一個 trk，名稱依序「開車 1」「開車 2」、type＝drive（GPX 1.1 的 trk 有 type 欄位）；選定匯出範圍內沒資料的狗不寫 trk；停留是 wpt：名稱「小黑-4 停留 1・18 分」（我的路線「停留 1・18 分」）、時間＝停留開始、desc＝地點（扣過中斷時再加「不含中斷 5 分」）；多隻狗是一個檔案，每隻狗各自一條移動的 trk 和每次坐車各一個 trk（名稱前面是那隻的狗名和訊號源編號，例「小黑-4」「小黑-4 坐車 1」）。停在原處也是 wpt：名稱「小黑-4 遮蔽處・40 分」、座標＝停住點、時間＝照匯出範圍裁切後那段的開始（時間長度也照裁切後算；中間有「沒有資料」斷開時每段各一個）、desc＝地址（查不到就不寫）；沿著手機路線畫的那段不寫（原始資料裡沒有項圈座標）；多隻狗時每隻各自輸出（名稱前面是那隻的狗名和訊號源編號）
 test('GPX exports raw unsimplified coordinates, UTC, XML escaping and GPX element order', () => {
   const data = freeze(snapshot(dog({ name: '小<&"', rows: [point(0, { latitude: 30, raw_latitude: 25.1, raw_longitude: 121.1, altitude_meters: 10 })],
     stays: [{ start: 0, end: 18 * minute, latitude: 25, longitude: 121, number: 3, address: 'A&B' }] })));
@@ -42,7 +42,7 @@ test('exactly 3 minutes stays connected; missing GPS, sessions, explicit gaps br
   expect(count(buildGPX(data), 'trkseg')).toBe(4);
 });
 
-// Design spec.txt:319: | 停在原處的 GPX | 有效的原始 GPS 照常寫成 trkpt（停住那段也一樣，包括室內飄移的點）；停住那段另外輸出一個 wpt：座標＝停住點，先照匯出範圍裁切，時間＝裁切後那段的開始，名稱寫裁切後的時間長度（例「小黑-4 室內・40 分」），desc＝地址（查不到就不寫）；中間有「沒有資料」斷開時每段各一個 wpt；整天都沒有有效原始 GPS 時，GPX 只有 wpt
+// Design spec.txt:319: | 停在原處的 GPX | 有效的原始 GPS 照常寫成 trkpt（停住那段也一樣，包括室內飄移的點）；停住那段另外輸出一個 wpt：座標＝停住點，先照匯出範圍裁切，時間＝裁切後那段的開始，名稱寫裁切後的時間長度（例「小黑-4 遮蔽處・40 分」），desc＝地址（查不到就不寫）；中間有「沒有資料」斷開時每段各一個 wpt；整天都沒有有效原始 GPS 時，GPX 只有 wpt
 test('hold-only exports clip duration, split wpts around no-data and omit unknown address', () => {
   const data = snapshot(dog({ rows: [point(10 * minute, { raw_latitude: null, raw_longitude: null })],
     holds: [{ start: -10 * minute, end: 90 * minute, latitude: 24, longitude: 120 }], gaps: [{ start: 20 * minute, end: 25 * minute }] }));
@@ -50,15 +50,15 @@ test('hold-only exports clip duration, split wpts around no-data and omit unknow
   const gpx = buildGPX(data);
   expect(count(gpx, 'trk')).toBe(0);
   expect(count(gpx, 'wpt')).toBe(2);
-  expect(gpx).toContain('小黑-4 室內・10 分');
-  expect(gpx).toContain('小黑-4 室內・35 分');
+  expect(gpx).toContain('小黑-4 遮蔽處・10 分');
+  expect(gpx).toContain('小黑-4 遮蔽處・35 分');
   expect(gpx).toContain('1970-01-01T00:10:00.000Z');
   expect(gpx).not.toContain('<desc>');
   // No original fix: no CSV row (spec.txt:317), though the dog still has data.
   expect(buildCSV(data).split('\r\n')).toHaveLength(2);
 });
 
-// Design spec.txt:488: | GPX | GPX 1.1，時間用 UTC。狗的歷史：每隻狗一條移動的 trk（名稱「小黑-4」），中斷的地方分成不同的 trkseg；每一次坐車各自一個 trk（「小黑-4 坐車 1」、type＝drive），坐車前後的移動不相連。我的路線：步行的路線一條 trk（名稱「我的路線」，遇到中斷或開車都分成不同的 trkseg，開車前後不相連），每一次開車各自一個 trk，名稱依序「開車 1」「開車 2」、type＝drive（GPX 1.1 的 trk 有 type 欄位）；選定匯出範圍內沒資料的狗不寫 trk；停留是 wpt：名稱「小黑-4 停留 1・18 分」（我的路線「停留 1・18 分」）、時間＝停留開始、desc＝地點（扣過中斷時再加「不含中斷 5 分」）；多隻狗是一個檔案，每隻狗各自一條移動的 trk 和每次坐車各一個 trk（名稱前面是那隻的狗名和訊號源編號，例「小黑-4」「小黑-4 坐車 1」）。停在原處也是 wpt：名稱「小黑-4 室內・40 分」、座標＝停住點、時間＝照匯出範圍裁切後那段的開始（時間長度也照裁切後算；中間有「沒有資料」斷開時每段各一個）、desc＝地址（查不到就不寫）；沿著手機路線畫的那段不寫（原始資料裡沒有項圈座標）；多隻狗時每隻各自輸出（名稱前面是那隻的狗名和訊號源編號）
+// Design spec.txt:488: | GPX | GPX 1.1，時間用 UTC。狗的歷史：每隻狗一條移動的 trk（名稱「小黑-4」），中斷的地方分成不同的 trkseg；每一次坐車各自一個 trk（「小黑-4 坐車 1」、type＝drive），坐車前後的移動不相連。我的路線：步行的路線一條 trk（名稱「我的路線」，遇到中斷或開車都分成不同的 trkseg，開車前後不相連），每一次開車各自一個 trk，名稱依序「開車 1」「開車 2」、type＝drive（GPX 1.1 的 trk 有 type 欄位）；選定匯出範圍內沒資料的狗不寫 trk；停留是 wpt：名稱「小黑-4 停留 1・18 分」（我的路線「停留 1・18 分」）、時間＝停留開始、desc＝地點（扣過中斷時再加「不含中斷 5 分」）；多隻狗是一個檔案，每隻狗各自一條移動的 trk 和每次坐車各一個 trk（名稱前面是那隻的狗名和訊號源編號，例「小黑-4」「小黑-4 坐車 1」）。停在原處也是 wpt：名稱「小黑-4 遮蔽處・40 分」、座標＝停住點、時間＝照匯出範圍裁切後那段的開始（時間長度也照裁切後算；中間有「沒有資料」斷開時每段各一個）、desc＝地址（查不到就不寫）；沿著手機路線畫的那段不寫（原始資料裡沒有項圈座標）；多隻狗時每隻各自輸出（名稱前面是那隻的狗名和訊號源編號）
 test('stay duration excludes clipped gaps and preserves timeline numbering; phone drive naming', () => {
   const subject = dog({ kind: 'phone', stays: [{ start: -minute, end: 20 * minute, latitude: 25, longitude: 121, number: 4, address: '公園' }],
     gaps: [{ start: 5 * minute, end: 10 * minute }], rides: [{ start: 0, end: minute }] });

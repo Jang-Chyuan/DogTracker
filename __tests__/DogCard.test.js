@@ -118,7 +118,7 @@ test('rows that are not buttons are 40dp (56dp with a second line); 活動量 st
 // 2026-10-16: the distance always stays at the first line's right end, at
 // every font; it went under the words at a large font or with a long value,
 // which made the row (and, for every dog, the card) a line taller.
-test('the distance stays at the first line\'s right end at every font; an old phone fix says so under it', async () => {
+test('the distance stays at the first line\'s right end at every font; an old phone fix adds no line', async () => {
   const { PixelRatio } = require('react-native');
   const old = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * 60000 - 5000 } }, NOW);
   const scale = jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
@@ -134,11 +134,10 @@ test('the distance stays at the first line\'s right end at every font; an old ph
     await mount({ card: model({}, { phone: old }) });
     expect(flatten(distance())).toBe('850 m');
     expect(besideFirstLine()).toBe(true);
-    // The phone's old fix is the row's own line, at its right edge, under the
-    // distance: it never widens the distance's column.
-    const age = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '手機位置 3 分鐘前');
-    expect(StyleSheet.flatten(age.props.style).textAlign).toBe('right');
-    expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍手機位置 3 分鐘前');
+    // 2026-10-21 (user): the phone's fix being 3 minutes old is not written
+    // (a stop held in low-power mode updates about every 30 s).
+    expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍');
+    expect(renderer.root.findAllByType(Text).some(node => /分鐘前/.test(flatten(node.props.children)))).toBe(false);
     // The value beside it wraps in its own column rather than pushing it down.
     const value = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '09:05 之後沒有新位置');
     expect(value.props.numberOfLines).toBeUndefined();
@@ -176,7 +175,7 @@ test('the address takes the row\'s whole width under the value and the distance,
   while (typeof firstLine.type !== 'string') firstLine = firstLine.parent;
   expect(StyleSheet.flatten(firstLine.props.style).flexDirection).toBe('row');
   expect(firstLine.findAll(node => node.props.children === address)).toHaveLength(0);
-  expect(flatten(firstLine.children)).toBe('室內850 m');
+  expect(flatten(firstLine.children)).toBe('遮蔽處850 m');
 });
 
 test('two columns: left-aligned label with the 「!」 right after its text, the value column fixed', async () => {
@@ -431,15 +430,15 @@ test('a held dog\'s 位置 row is 56dp high (A7b); the address line shows once k
   const heights = () => [byTestId('dog-card-row-position')[0].props.style].flat(3).filter(Boolean)
     .map(item => item.minHeight).filter(Boolean);
   await mount({ card: model(held, fresh) });
-  // Still asking, none found or offline: 「室內」 alone, no spinner, one line.
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m');
+  // Still asking, none found or offline: 「遮蔽處」 alone, no spinner, one line.
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置遮蔽處850 m');
   expect(heights()).toContain(56);
   await act(async () => renderer.update(<DogCard card={model(held, { ...fresh, address: '桃園區中正路 1 號附近' })} />));
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m桃園區中正路 1 號附近');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置遮蔽處850 m桃園區中正路 1 號附近');
   expect(heights()).toContain(56);
 });
 
-test('held indoors: 位置 「室內」 (no minutes) and 活動量 「休息中・已 N 分鐘」', async () => {
+test('held indoors: 位置 「遮蔽處」 (no minutes) and 活動量 「休息中・已 N 分鐘」', async () => {
   const held = { heldReason: '室內', heldSource: 'good', heldFrom: NOW - 26 * 60000 - 5000, packetAt: NOW - 5000 };
   const fresh = { freshness: { stale: false, basis: 'packet', source: 'ble', lastAt: NOW }, range: null };
   const rows = [];
@@ -448,11 +447,11 @@ test('held indoors: 位置 「室內」 (no minutes) and 活動量 「休息中�
   }
   const activity = dogCardReadings({ local: rows }, NOW).activity;
   await mount({ card: model(held, { ...fresh, activity, address: '桃園區中正路 1 號附近' }) });
-  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置室內850 m桃園區中正路 1 號附近');
+  expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置遮蔽處850 m桃園區中正路 1 號附近');
   expect(flatten(byTestId('dog-card-row-activity')[0])).toContain('休息中・已 12 分鐘');
   const labels = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string', { deep: true })
     .map(node => node.props.accessibilityLabel);
-  expect(labels).toContain('位置，室內，桃園區中正路 1 號附近，東北方 850 公尺，離手機');
+  expect(labels).toContain('位置，遮蔽處，桃園區中正路 1 號附近，東北方 850 公尺，離手機');
   expect(labels).toContain('活動量，休息中，活動量低已 12 分鐘');
 });
 

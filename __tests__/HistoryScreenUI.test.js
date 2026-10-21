@@ -179,12 +179,12 @@ test('a tap on a stay row: the cursor to its start, the row lit, a double haptic
   await unmount(r);
 });
 
-test('history-indoor: the house on the map, 室內・N 分 at the cursor inside the hold', async () => {
+test('history-indoor: the house on the map, 遮蔽處・N 分 at the cursor inside the hold', async () => {
   const s = await mountFixture('history-indoor');
   const hold = s.screen.model.locations.find(node => node.type === 'indoor');
   expect(s.screen.map.places.some(place => place.kind === 'indoor')).toBe(true);
   await act(async () => s.screen.moveCursor(hold.start + 60000, 'drag'));
-  expect(s.screen.cursor.label[1]).toMatch(/^室內・\d+ 分$/);
+  expect(s.screen.cursor.label[1]).toMatch(/^遮蔽處・\d+ 分$/);
   await unmount(s);
 });
 

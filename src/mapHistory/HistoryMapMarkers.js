@@ -45,13 +45,13 @@ export function MovementIconView({ glyph, color }) {
   );
 }
 
-/** A hold (停在原處): the house on receiver blue. */
-export function IndoorMarkerView() {
+/** A hold (停在原處) on receiver blue: `icon` 'shelter' (遮蔽處) or 'bolt' (充電中), HoldIcons. */
+export function IndoorMarkerView({ icon = 'shelter' } = {}) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   return (
     <View style={[styles.stop, styles.indoor]}>
-      <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
+      <Glyph name={icon} color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
     </View>
   );
 }

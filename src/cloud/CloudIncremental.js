@@ -48,7 +48,7 @@ export async function listCloudMasters(client, owner, signal, check) {
 }
 
 export async function downloadMasterIncremental({ client, database, owner, masterId,
-  cutoff, signal, check, maxPages = Infinity, onChange = () => {} }) {
+  cutoff, signal, check, maxPages = Infinity, onChange = () => {}, malformed = null }) {
   await check();
   const saved = await database.loadSyncState(owner, masterId);
   await check();
@@ -63,7 +63,7 @@ export async function downloadMasterIncremental({ client, database, owner, maste
     await check();
   }
   return downloadCloudHistory({
-    client, owner, masterId, checkpoint: true, initialCursor: cursor, maxPages,
+    client, owner, masterId, checkpoint: true, initialCursor: cursor, maxPages, source: 'archive', malformed,
     database: { savePage: async (...args) => {
       await check();
       await database.savePage(...args);

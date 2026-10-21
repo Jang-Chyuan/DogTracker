@@ -10,8 +10,10 @@ import { PHONE_FIX_MAX_AGE_S } from './MapFraming';
 // re-rendered MapScreen, GoogleTrackingMap and every marker once a second and
 // had Google redraw the map, idle on the map included.
 
-// The phone's dot greys after this many seconds without a fix (the same
-// threshold PhoneLocationOverlay uses).
+// The phone's dot stops animating (and writing its display position back)
+// after this many seconds without a fix, PhoneLocationOverlay's threshold. Its
+// colour never follows age: a stop held in low-power mode (a fix about every
+// 30 s, at most 5 minutes apart) keeps the phone's colour.
 const PHONE_STALE_AFTER_S = 3;
 // While nothing else changes, the map's copy still takes a newer fix time
 // this often, so ages measured from it (the card's 「手機 x 分鐘前」, the

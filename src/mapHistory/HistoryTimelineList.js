@@ -28,6 +28,7 @@ import {
   clock,
 } from '../history/HistoryText';
 import { usePlaceNames } from '../placement/AddressLookup';
+import { holdIcon } from '../placement/HoldIcons';
 import { rowKey } from '../history/screen/HistoryScreenCursor';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 
@@ -184,7 +185,7 @@ function Node({ node, color, centered = false, rangeStart = false, rangeEnd = fa
     case 'indoor':
       return (
         <View style={[styles.indoor, centeredStyle]}>
-          <Glyph name="house" color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
+          <Glyph name={holdIcon(node.reason)} color={colors.onRoute} size={sizes.timeline.node.holdGlyph} />
         </View>
       );
     case 'resume':

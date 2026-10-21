@@ -15,9 +15,9 @@ test('midnight hold is clipped independently on each local day with UTC waypoint
   const midnight = Date.parse('2026-10-03T16:00:00Z');
   const subject = dog({ rows: [point(midnight - m), point(midnight + m)], holds: [{ start: midnight - 10 * m, end: midnight + 10 * m, latitude: 24, longitude: 120 }] });
   const data = { ...snap(subject), timeZone: 'Asia/Taipei', since: midnight, until: midnight + 10 * m };
-  expect(buildGPX(data)).toContain('<time>2026-10-03T16:00:00.000Z</time><name>小黑-4 室內・10 分');
+  expect(buildGPX(data)).toContain('<time>2026-10-03T16:00:00.000Z</time><name>小黑-4 遮蔽處・10 分');
   const previous = { ...data, since: midnight - 10 * m, until: midnight - 1 };
-  expect(buildGPX(previous)).toContain('室內・10 分');
+  expect(buildGPX(previous)).toContain('遮蔽處・10 分');
   expect(buildExportFilename(data, 'gpx')).toContain('20261004-0000_20261004-0010');
   expect(() => buildGPX({ ...data, since: midnight - 1 })).toThrow('同一天');
 });

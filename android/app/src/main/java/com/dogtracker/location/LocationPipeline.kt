@@ -76,7 +76,7 @@ internal class LocationPipeline {
   /** Accuracy rejections that still went to the motion detector (never saved; also counted in rejectedBy). */
   var motionOnly = 0; private set
   /** Rejections by cause (stale, duplicate, invalid, accuracy, jump) for diagnostics. */
-  val rejectedBy = linkedMapOf("stale" to 0, "duplicate" to 0, "invalid" to 0, "accuracy" to 0, "jump" to 0)
+  val rejectedBy = linkedMapOf("stale" to 0, "duplicate" to 0, "invalid" to 0, "accuracy" to 0, "jump" to 0, "moved" to 0)
   /** Since [markWindow]: the oldest stale fix (s) and best rejected accuracy (m). */
   var windowMaxStaleSeconds: Double? = null; private set
   var windowBestRejectedAccuracy: Float? = null; private set
@@ -86,7 +86,7 @@ internal class LocationPipeline {
   private var lastWrite = 0L
   private var newest = 0L
   private val window = java.util.ArrayDeque<LocationSample>()
-  private val motion = MotionDetector()
+  private var motion = MotionDetector()
   private var stationaryCoordinate: Pair<Double, Double>? = null
   // Fixes accepted since the last reset (none yet, or a break over 30 s), and
   // the newest fix rejected as a jump since the last accepted one.
@@ -95,6 +95,23 @@ internal class LocationPipeline {
   // The newest fix the motion detector has seen (saved or motion-only) and its answer.
   private var motionSample: LocationSample? = null
   private var motionState = "moving"
+  /** When the detector's current stationary run began (the fix's monotonic time), null while not stationary. */
+  var stationarySince: Long? = null; private set
+  /** The newest fix the motion detector judged (its monotonic time). */
+  val judgedAt: Long? get() = motionSample?.elapsedNanos
+  /**
+   * Low-power mode (StationaryPowerMode, 2026-10-21): the request is balanced
+   * power about every 30 s and the stop stays held without the detector (see
+   * [acceptLow]). [lowExit] is set by a fix showing the phone left; the
+   * service then switches back ([exitLowPower]).
+   */
+  var lowPower = false; private set
+  var lowExit: StationaryPowerMode.Exit? = null; private set
+  /** The newest usable low-power fix (saved as a held row), or the fix the mode began on. */
+  var lowUsableAt = 0L; private set
+  private var lowAnchorAccuracy = 0f
+  // After low-power mode the next fix starts afresh (no jump test against the held row).
+  private var resetNext = false
   val intervalSeconds: Int get() {
     val speed = latest?.rawSpeed?.takeIf { it.isFinite() && it >= 0 } ?: return 5
     return when {
@@ -116,6 +133,7 @@ internal class LocationPipeline {
     if (sample.elapsedNanos <= newest) return reject("duplicate") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119) }
     if (!sample.latitude.isFinite() || !sample.longitude.isFinite() || abs(sample.latitude) > 90 || abs(sample.longitude) > 180)
       return reject("invalid") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1120) }
+    if (lowPower) return acceptLow(sample) { cause, message -> reject(cause, message) }
     if (!acceptsLocationAccuracy(true, sample.accuracy, sample.rawSpeed)) {
       if (sample.accuracy.isFinite() && sample.accuracy >= 0f) windowBestRejectedAccuracy =
         minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, sample.accuracy)
@@ -124,7 +142,8 @@ internal class LocationPipeline {
     }
     val previous = latest
     val dt = if (previous == null) 0.0 else (sample.elapsedNanos - previous.elapsedNanos) / 1e9
-    var reset = previous == null || dt > 30
+    var reset = previous == null || dt > 30 || resetNext
+    resetNext = false
     if (!reset) {
       val distance = distanceMeters(previous!!.rawLatitude, previous.rawLongitude, sample.latitude, sample.longitude)
       if (distance > 70 * dt + previous.accuracy + sample.accuracy) {
@@ -186,7 +205,91 @@ internal class LocationPipeline {
   }
   private fun judge(sample: LocationSample): String {
     motionSample = sample
-    return motion.accept(sample).also { motionState = it }
+    return motion.accept(sample).also {
+      motionState = it
+      stationarySince = if (it == "stationary") stationarySince ?: sample.elapsedNanos else null
+    }
+  }
+
+  /**
+   * Starts low-power mode on a confirmed, locked stop; false (nothing
+   * changes) without one. The locked row stays [latest].
+   */
+  fun enterLowPower(): Boolean {
+    val held = latest
+    if (lowPower || held == null || motionState != "stationary" || stationaryCoordinate == null ||
+      held.motionState != "stationary") return false
+    lowPower = true; lowExit = null; lowUsableAt = held.elapsedNanos
+    lowAnchorAccuracy = held.accuracy.takeIf { it.isFinite() && it >= 0f } ?: 0f
+    return true
+  }
+
+  /**
+   * Ends low-power mode: the detector, smoothing and coordinate lock start
+   * again from the next fix, as after a break of more than 30 s (MotionDetector
+   * needs 20 s of fixes to confirm a stop). The session's odometer, the
+   * newest fix and the write slot are kept.
+   */
+  fun exitLowPower() {
+    if (!lowPower) return
+    lowPower = false; lowExit = null
+    motion = MotionDetector(); motionSample = null; motionState = "moving"; stationarySince = null
+    stationaryCoordinate = null; window.clear(); jumpRejected = null; acceptedSinceReset = 0; resetNext = true
+  }
+
+  /**
+   * A fresh, valid fix in low-power mode (balanced power: Wi-Fi and cell
+   * fixes of 15–50 m on a still phone). It is never shown to the detector
+   * (fixes ~30 s apart would reset it, and it decays to unknown after 3 min
+   * without fine evidence) and adds no distance.
+   * - Left the stop (raw position beyond max(25 m, 1.5 × the larger accuracy)
+   *   of the locked coordinate: MotionDetector.coarseHoldRadius) or a reliable
+   *   speed (MotionDetector `high`): [lowExit]; not saved (rejected "moved").
+   * - A repeat of the newest saved fix (same position and accuracy) is
+   *   rejected as a duplicate and is not usable.
+   * - Otherwise one that passes the accuracy gate is a held row: the locked
+   *   coordinate, stationary, speed 0, the same odometer; its own time, raw
+   *   position, accuracy and measured speed. Coarser ones are rejected as
+   *   before (accuracy) and are not usable.
+   */
+  private inline fun acceptLow(sample: LocationSample, reject: (String, () -> String) -> Boolean): Boolean {
+    val held = latest ?: return reject("invalid") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1120) }
+    val accuracy = sample.accuracy
+    val speed = sample.rawSpeed
+    val spread = sample.speedAccuracy
+    val spreadValid = spread != null && spread.isFinite() && spread >= 0f
+    val fast = speed != null && speed.isFinite() && speed >= 0f &&
+      (if (spreadValid) speed - spread!! > 0.500001f else speed > 1f)
+    val moved = accuracy.isFinite() && accuracy >= 0f &&
+      distanceMeters(held.latitude, held.longitude, sample.latitude, sample.longitude) >
+        max(25.0, 1.5 * max(lowAnchorAccuracy, accuracy).toDouble())
+    if (fast || moved) {
+      lowExit = if (moved) StationaryPowerMode.Exit.LEFT_STOP else StationaryPowerMode.Exit.SPEED
+      return reject("moved") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
+    }
+    // The 30 m gate whatever the fix's speed (a held row is never a fast one).
+    if (!acceptsLocationAccuracy(true, accuracy)) {
+      if (accuracy.isFinite() && accuracy >= 0f) windowBestRejectedAccuracy =
+        minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, accuracy)
+      return reject("accuracy") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122) }
+    }
+    // The same position and accuracy as the newest saved fix, under a new
+    // time: Play services repeating its last location while nothing measures
+    // (emulator: balanced power has no Wi-Fi or cell source; the GPS fix of
+    // the stop came back every 30 s while the phone walked away). It proves
+    // nothing about where the phone is: not saved, not usable (the silence
+    // rule then looks again). Real Wi-Fi fixes never repeated exactly (10/09:
+    // 0 of 4,162 consecutive pairs).
+    if (sample.latitude == held.rawLatitude && sample.longitude == held.rawLongitude && accuracy == held.accuracy)
+      return reject("duplicate") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119) }
+    latest = held.copy(elapsedNanos = sample.elapsedNanos, timestamp = sample.timestamp, accuracy = accuracy,
+      rawLatitude = sample.latitude, rawLongitude = sample.longitude, speed = 0f, rawSpeed = sample.rawSpeed,
+      speedAccuracy = sample.speedAccuracy, bearing = sample.bearing, altitude = sample.altitude,
+      motionState = "stationary", provider = sample.provider, odometer = odometerMeters)
+    newest = sample.elapsedNanos
+    lowUsableAt = sample.elapsedNanos
+    accepted++; reason = com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1124)
+    return true
   }
   /**
    * A fresh, valid fix that failed only the accuracy gate. While the detector

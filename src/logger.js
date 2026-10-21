@@ -163,3 +163,32 @@ export function historyModelDiagnostic(fields) {
     // A refused diagnostic sink cannot change a model or its publication.
   }
 }
+
+// A telemetry field read as unknown instead of failing its batch
+// (MalformedFields, 2026-10-21: `usbPresent: 136` in one cloud row stopped the
+// archive pass and the day download). One line per batch, in release builds
+// too. Rebuilt from fixed fields: the batch, the number of rows, and per field
+// its name, type and count; a value only for a flag, and only a whole number
+// within a byte or a boolean (never text). No id, time, coordinate or message.
+const MALFORMED_SOURCES = new Set(['archive', 'reconcile', 'history', 'download', 'latest', 'context', 'upload']);
+const MALFORMED_FIELDS = new Set(['usbPresent', 'activityValid', 'batteryValid', 'lat', 'lon', 'speed', 'satellites',
+  'hdop', 'activityScore', 'batteryMillivolts', 'batteryPercentage', 'gpsTimestamp', 'activityTimestamp', 'slaveId',
+  'payload', 'seq', 'rssi', 'snr']);
+const MALFORMED_FLAGS = new Set(['usbPresent', 'activityValid', 'batteryValid']);
+const MALFORMED_TYPES = new Set(['string', 'number', 'boolean', 'object', 'array', 'null', 'undefined', 'bigint', 'symbol', 'function']);
+export function malformedTelemetryDiagnostic({ source, rows, fields } = {}) {
+  try {
+    if (!MALFORMED_SOURCES.has(source) || !Number.isSafeInteger(rows) || rows < 1 || !Array.isArray(fields)) return;
+    const safe = fields.slice(0, 8).flatMap(entry => {
+      const { field, type, value, count } = entry || {};
+      if (!MALFORMED_FIELDS.has(field) || !MALFORMED_TYPES.has(type) || !Number.isSafeInteger(count) || count < 1) return [];
+      // A byte (a coordinate or a time is a fraction or larger) or a boolean.
+      const shown = MALFORMED_FLAGS.has(field) && ((type === 'number' && Number.isInteger(value) && value >= -255 && value <= 255)
+        || (type === 'boolean' && typeof value === 'boolean'));
+      return [{ field, type, ...(shown ? { value } : {}), count }];
+    });
+    if (safe.length) console.warn('[CloudTelemetry] malformed', { source, rows, fields: safe });
+  } catch {
+    // Logging never fails a download.
+  }
+}

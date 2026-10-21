@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { holdWord, isChargingHold } from '../placement/HoldWords';
 // What a dog's summary card (design v3 A3/A3b/A7b, DESIGN.md「摘要卡片」「卡片
 // 的狀態列」) says, as plain values: always three rows — 位置 or 接收範圍
 // (with the direction and distance from the phone), 電量 and 活動量. Pure: no
@@ -14,8 +15,6 @@ import { bearingAndDistance, compassWord, formatDistance } from './DogReadout';
 import { ACTIVITY_STATE, activityState, activityWords, minuteOf } from '../activity/ActivityMinutes';
 import { CARD_ACTIVITY_LOOKBACK_MS } from '../activity/DogCardReadings';
 
-// The phone's position is written as old (「手機位置 3 分鐘前」) after this.
-export const PHONE_OLD_AFTER_MS = 30 * 1000;
 // A battery or activity reading this much older than the position gets its
 // time written after it (「62%（09:40）」).
 export const READING_OLD_AFTER_MS = 10 * 60000;
@@ -59,7 +58,10 @@ export function nativePhoneReading(nativePhone, now) {
 /**
  * The direction and distance from the phone at the first row's right end
  * (「↗ 850 m」), or 「手機沒有定位」.
- * @returns {{ kind: 'distance', distance, bearing, compass, phoneAge } |
+ * The phone's own fix age is not written (2026-10-21, user: 「手機位置 N 分鐘
+ *前」 is not needed; while the recorder holds a stop in low-power mode the
+ * fix is up to a few minutes old and still the phone's place).
+ * @returns {{ kind: 'distance', distance, bearing, compass } |
  *   { kind: 'no-phone', text: '手機沒有定位' } | { kind: 'no-dog' }}
  *   `bearing` is true north; the card turns the arrow by the map's heading.
  */
@@ -67,10 +69,7 @@ export function cardHeadline({ dog, phone }) {
   if (!phone) return { kind: 'no-phone', text: t("c726") };
   if (!dog?.coordinate) return { kind: 'no-dog' };
   const { metres, bearing } = bearingAndDistance(phone.coordinate, dog.coordinate);
-  // The phone's own fix is old: said under the distance (「手機位置 3 分鐘前」).
-  const phoneAge = phone.ageMs > PHONE_OLD_AFTER_MS
-    ? t("c728", { value: Math.max(1, Math.floor(phone.ageMs / MINUTE)) }) : null;
-  return { kind: 'distance', distance: formatDistance(metres), bearing, compass: compassWord(bearing), phoneAge };
+  return { kind: 'distance', distance: formatDistance(metres), bearing, compass: compassWord(bearing) };
 }
 
 /**
@@ -141,15 +140,22 @@ export function dogCard(dog, { freshness, range = null, battery = null, activity
   const alert = out ? rangeLabel(view, clock) : null;
   let place;
   if (indoor) {
-    // Two lines (56dp) held indoors: 「室內」 and the address under it (A7b).
+    // Two lines (56dp) held: 「遮蔽處」 (HoldWords, 2026-10-19) and the
+    // address under it (A7b).
     // No minutes (2026-10-16, the user's decision: the card does not time
     // the stay; the history does). Still asking: no second line and no
     // spinner, the row keeps its two lines so nothing jumps. None found,
     // offline or timed out: useAddress gives the place's coordinates instead
     // (2026-10-14), read out the same. Silent too: 「09:05 之後沒有新資料」
     // over the same address.
+    // On its charger (2026-10-19, user): no 「充電中」 here — the 電量 and
+    // 活動量 rows already say it — but the dog's own line, 「09:30 更新」
+    // (its newest packet), over the same address.
+    const fresh = isChargingHold(dog.heldReason)
+      ? (Number.isFinite(positionAt) ? t('c1416', { time: lastTimeText(positionAt, now) }) : '—')
+      : holdWord(dog.heldReason);
     place = { key: 'position', label: t('c073'),
-      value: stale ? staleText(freshness, now) : t('c114'),
+      value: stale ? staleText(freshness, now) : fresh,
       tone: stale ? 'crit' : null, detail: address, twoLine: true, alert };
   } else if (stale) {
     place = { key: 'position', label: t('c073'), value: staleText(freshness, now), tone: 'crit', detail: null,
@@ -224,7 +230,6 @@ function distanceSpeech(headline) {
   if (headline.kind === 'no-phone') return headline.text;
   if (headline.kind !== 'distance') return null;
   const value = headline.distance.replace(' km', t("c729")).replace(' m', t("c730"));
-  const said = t('c1352', { compass: headline.compass, value });
-  return headline.phoneAge ? `${said}，${headline.phoneAge}` : said;
+  return t('c1352', { compass: headline.compass, value });
 }
 

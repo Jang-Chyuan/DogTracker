@@ -3,6 +3,8 @@ const rows = result => result.results || result.rows?._array || [];
 // Refused rows (blocked) are kept for 重試 this long, at most this many.
 export const BLOCKED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 export const BLOCKED_KEEP_ROWS = 2000;
+// What UsbPresent threw before 2026-10-21 (bleUploadPayload refused the row).
+export const OLD_USB_ERROR = 'usbPresent must be boolean or 0/1';
 // A Master whose cloud route refused this phone (BleUploadQueue.kt): its rows
 // wait, and the receiver service queues nothing more for it.
 const NOT_REFUSED = alias => `${alias}.master_id NOT IN (SELECT master_id FROM ble_upload_refusals WHERE owner_user_id=${alias}.owner_user_id)`;
@@ -114,9 +116,14 @@ export function createUploadDatabase(db) {
       await db.executeAsync('INSERT OR REPLACE INTO ble_upload_refusals(owner_user_id,master_id,refused_at,message) VALUES(?,?,?,?)',
         [row.owner_user_id, row.master_id, now, message.slice(0, 300)]);
     },
-    /** Refused rows (blocked) older than BLOCKED_KEEP_MS, or beyond the newest BLOCKED_KEEP_ROWS, go. */
+    /**
+     * Refused rows (blocked) older than BLOCKED_KEEP_MS, or beyond the newest
+     * BLOCKED_KEEP_ROWS, go. Rows an older build refused only for a garbled
+     * USB flag (OLD_USB_ERROR, 2026-10-21) wait again: they now go without it.
+     */
     async prune(now) {
       await db.executeBatchAsync([
+        { query: "UPDATE ble_upload_queue SET status='pending',next_retry_at=0 WHERE status='blocked' AND last_error=?", params: [OLD_USB_ERROR] },
         { query: "DELETE FROM ble_upload_queue WHERE status='blocked' AND received_at<?", params: [now - BLOCKED_KEEP_MS] },
         { query: `DELETE FROM ble_upload_queue WHERE status='blocked' AND id NOT IN (
           SELECT id FROM ble_upload_queue WHERE status='blocked' ORDER BY id DESC LIMIT ${BLOCKED_KEEP_ROWS})`, params: [] },

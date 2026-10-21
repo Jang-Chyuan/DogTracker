@@ -7,10 +7,8 @@ import { dogHistoryLabel, dogMapLabel } from '../mapHistory/DogAliases';
 import { dogFreshness, isIndoorHold, staleSpeech, staleText } from '../tracking/DogFreshness';
 import { RANGE_STATUS } from '../tracking/ReceiverRange';
 import { dogProblems } from '../tracking/DogProblems';
-
-// The one word the map uses for a dog held where it was last seen clearly,
-// whatever held it (indoors, by a window, charging, weak GPS).
-export const INDOOR_WORD = t('c114');
+import { holdWord, isChargingHold } from '../placement/HoldWords';
+import { holdIcon } from '../placement/HoldIcons';
 
 /** The dog's name on the map: its given name, or 「狗 6」. */
 export const dogName = (slaveId, aliases) => dogMapLabel(dogHistoryLabel(slaveId, aliases));
@@ -71,6 +69,9 @@ export function dogMarkers(dogs = [], { now = Date.now(), cloud = null, pauses =
 export function dogMarker(dog, { freshness, problems, name, now, range = null, selected = false,
   dimmed = false }) {
   const indoor = isIndoorHold(dog);
+  // The word for a dog held where it was last seen clearly (HoldWords):
+  // 「充電中」 on its charger, otherwise 「遮蔽處」.
+  const word = indoor ? holdWord(dog.heldReason) : null;
   const base = problems.any ? sizes.marker.attention : sizes.marker.normal;
   const note = problemNote(dog, { freshness, problems, range, indoor, now });
   return {
@@ -84,11 +85,14 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
     masterId: dog.masterId ?? null,
     name,
     // The overlap menu's second line: what is wrong (crit), or 快離開 (warn),
-    // or 室內 (muted); null for a dog with nothing to say.
+    // or 遮蔽處 / 充電中 (muted); null for a dog with nothing to say.
     note,
-    // Only the name; held indoors 「小黑・室內」. Never an address or a reason.
-    tag: indoor ? `${name}・${INDOOR_WORD}` : name,
+    // Only the name; held 「小黑・遮蔽處」 or 「小黑・充電中」. Never an address.
+    tag: indoor ? `${name}・${word}` : name,
     indoor,
+    holdWord: word,
+    // Its badge (HoldIcons): a pavilion, or a bolt on the charger.
+    holdIcon: indoor ? holdIcon(dog.heldReason) : null,
     stale: freshness.stale,
     // 070: drawn at opacity.catchingUp while a return to the app is still
     // reading; its colours are the ones the user left it with.
@@ -104,7 +108,7 @@ export function dogMarker(dog, { freshness, problems, name, now, range = null, s
  * One short line for the overlap menu (頭像＋名字＋問題): the problems, most
  * serious first, in the card's words (「不在接收範圍」「10:12 之後沒有新
  * 位置」「電量 15%・偏低」) as `crit`; otherwise 「快離開接收範圍」 as `warn`;
- * otherwise 「室內」 as `muted`; otherwise null.
+ * otherwise 「遮蔽處」 or 「充電中」 (a held dog) as `muted`; otherwise null.
  */
 export function problemNote(dog, { freshness, problems, range, indoor, now }) {
   const crit = [];
@@ -114,20 +118,23 @@ export function problemNote(dog, { freshness, problems, range, indoor, now }) {
   if (problems.lowBattery) crit.push(t("c734", { batteryPercentage: dog.batteryPercentage }));
   if (crit.length) return { text: crit.join('，'), level: 'crit' };
   if (range?.status === RANGE_STATUS.NEAR && !indoor) return { text: t('c067'), level: 'warn' };
-  if (indoor) return { text: INDOOR_WORD, level: 'muted' };
+  if (indoor) return { text: holdWord(dog.heldReason), level: 'muted' };
   return null;
 }
 
 /**
  * The marker's one accessibility label (the badges are not read on their own):
- * name, then 室內, charging or low battery, out of range, no new position —
- * 「小黑・室內，充電中 62%，不在接收範圍，10:05 之後沒有新資料」. A dog
- * without any of these is only its name.
+ * name, then 遮蔽處, charging or low battery, out of range, no new position —
+ * 「小黑・遮蔽處，不在接收範圍，10:05 之後沒有新資料」; held on its charger
+ * 「小黑・充電中 62%，…」 (said once). A dog without any of these is only its
+ * name.
  */
 export function markerSpeech(dog, { name, indoor, freshness, problems, now }) {
-  const parts = [indoor ? `${name}・${INDOOR_WORD}` : name];
   const battery = Number.isFinite(dog.batteryPercentage) ? `${dog.batteryPercentage}%` : null;
-  if (dog.charging) parts.push(battery ? t('c115', { percentage: battery }) : t("c731"));
+  const chargingWord = battery ? t('c115', { percentage: battery }) : t("c731");
+  const heldCharging = indoor && isChargingHold(dog.heldReason);
+  const parts = [!indoor ? name : `${name}・${heldCharging && dog.charging ? chargingWord : holdWord(dog.heldReason)}`];
+  if (dog.charging && !heldCharging) parts.push(chargingWord);
   else if (problems.lowBattery) parts.push(t("c732", { battery: battery }));
   if (problems.outOfRange) parts.push(t('c078'));
   const stale = staleSpeech(freshness, now);
@@ -183,8 +190,12 @@ function nameTagSize(text, fontScale) {
   return { width: TAG_MAX_WIDTH, height: size.height + type.mapLabel.lineHeight * fontScale };
 }
 
-const groupText = members => t("c733", { length: members.length,
-  value: members.every(item => item.marker.indoor) ? `・${INDOOR_WORD}` : '' });
+// Every dog in the group held under the same word: 「3 隻・遮蔽處」.
+const groupText = members => {
+  const word = members[0].marker.holdWord;
+  return t("c733", { length: members.length,
+    value: word && members.every(item => item.marker.indoor && item.marker.holdWord === word) ? `・${word}` : '' });
+};
 
 // The tag sits under the lowest face, so it covers none of the others.
 const lowest = members => members.reduce((low, item) => (item.point.y > low.point.y
@@ -199,7 +210,7 @@ const collide = (a, b) => a.tags.some(tag => b.tags.some(other => intersects(tag
 // Name tags merge into 「N 隻」 only when the map is zoomed out this far or
 // more (metres per dp; about zoom 16 here, a few streets on screen). Closer
 // in, every dog keeps its own tag even when the tags overlap (066: the user
-// zoomed in on a kennel and still saw 「5 隻・室內」).
+// zoomed in on a kennel and still saw 「5 隻・室內」, now 「5 隻・遮蔽處」).
 export const GROUP_MIN_METRES_PER_DP = 2;
 
 /** Whether tags may merge at this zoom (unknown zoom: they may). */
@@ -209,7 +220,7 @@ export const groupsAtZoom = metresPerDp =>
 /**
  * Which name tags are drawn, given where each marker is on screen. A name tag
  * that would run into another dog's tag or face merges with that dog into one
- * group tag 「3 隻」 (「3 隻・室內」 when every dog in it is held indoors),
+ * group tag 「3 隻」 (「3 隻・遮蔽處」 when every dog in it is held under one word),
  * drawn under the lowest of their faces; the others in the group draw no tag.
  * The group tag itself is checked again (it is wider than one name and sits
  * lower), so it never covers a dog left outside it. The selected dog keeps

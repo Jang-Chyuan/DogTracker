@@ -316,6 +316,20 @@ test.each([
   expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
 });
 
+// 2026-10-21: on a stop the recorder holds in low-power mode a new fix comes
+// about every 30 s (at most 5 minutes apart, StationaryPowerMode): the dot
+// keeps the phone's colour and circle at the held place; age only stops the
+// animation and the display write-back.
+test.each([[40], [240]])('a stop held in low-power mode, fix %i s old: normal colour, held place', async age => {
+  const held = { ...position, motionState: 'stationary' };
+  const location = { position: held, ageSeconds: age, sessionId: 'a', running: true, lowPower: true };
+  await act(async () => { renderer = Renderer.create(<PhoneLocationOverlay Circle={Circle} Marker={Marker} location={location} />); });
+  expect(dotStyle().backgroundColor).toBe(lightTheme.literalColors.phoneDot);
+  expect(renderer.root.findByType(Marker).props.coordinate).toEqual({ latitude: held.latitude, longitude: held.longitude });
+  await act(async () => jest.advanceTimersByTime(1000));
+  expect(locationTrackerNative.displayPosition).not.toHaveBeenCalled();
+});
+
 test.each([
   ['live moving', false, 'moving', 0],
   ['live stationary', false, 'stationary', 0],

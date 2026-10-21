@@ -116,7 +116,17 @@ test('null phone clock remains fallback and missing GPS still fetches both indep
   expect(f.calls.filter(c => !isKey(c.p) && !isFixed(c.p))).toHaveLength(1);
 });
 
-test.each(['coordinate', 'master', 'timestamp', 'payload'])('malformed discovery hint %s cannot become a publishable packet', async bad => {
+// A garbled payload (coordinate, not an object) is a packet without readings,
+// not a failed snapshot (2026-10-21, CloudMalformedTelemetry.test.js).
+test.each(['coordinate', 'payload'])('malformed discovery hint %s is a packet without a fix', async bad => {
+  const row = event(1, 4, '2026-10-12T11:00:00Z');
+  const changed = { ...row, payload: bad === 'coordinate' ? { lat: '25', lon: 121000000 } : null };
+  const f = sdk([row], async ({ p }) => isKey(p) && !p.has('slave_id') ? [changed] : undefined);
+  const result = await run(f);
+  expect(result.dogs[0].packet).toMatchObject({ sequence: 1, slave_lat: null, slave_lon: null });
+});
+
+test.each(['master', 'timestamp'])('malformed discovery hint %s cannot become a publishable packet', async bad => {
   const row = event(1, 4, '2026-10-12T11:00:00Z');
   const changed = { ...row, ...(bad === 'coordinate' ? { payload: { lat: '25', lon: 121000000 } }
     : bad === 'master' ? { master_id: 99 } : bad === 'timestamp' ? { received_at: 'invalid' } : { payload: null }) };

@@ -739,7 +739,7 @@ const FIXTURES = {
       masterBattery: 15 }) }),
   // 小黑 (dog 6, heard by receiver 7) went inside twelve minutes ago: clear
   // fixes in one spot, then packets without a fix. The real indoor-hold rules
-  // (HoldStore + the bundled environment model) hold it there as 室內.
+  // (HoldStore + the bundled environment model) hold it there: 「小黑・遮蔽處」.
   'dog-indoor': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: [
@@ -838,7 +838,7 @@ const FIXTURES = {
   }),
   // 豆豆, 小黑 and 阿福 went into the same kennel twelve minutes ago (a few
   // metres apart, as GPS sees separate cages): all three held indoors, their
-  // name tags merge into 「3 隻・室內」. Dog 5 walks outside on its own.
+  // name tags merge into 「3 隻・遮蔽處」. Dog 5 walks outside on its own.
   'dogs-indoor-stacked': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
     ble: inTimeOrder([
@@ -863,9 +863,9 @@ const FIXTURES = {
     cloudRows: [],
   }),
   // A face on another dog's name (fictional places): 狗 18 walks just below
-  // and right of 狗 16, held indoors, so its face sits on 「狗 16・室內」
-  // while the two names do not touch; 狗 108 does the same to 「狗 104・室內」,
-  // both held. Each pair merges into one 「2 隻」／「2 隻・室內」. 豆豆 far
+  // and right of 狗 16, held indoors, so its face sits on 「狗 16・遮蔽處」
+  // while the two names do not touch; 狗 108 does the same to 「狗 104・遮蔽處」,
+  // both held. Each pair merges into one 「2 隻」／「2 隻・遮蔽處」. 豆豆 far
   // away keeps the map zoomed out.
   'dogs-labels-touching': now => ({
     receiver: receiving(now), cloud: synced(now), phone: walkingPhone(now),
@@ -1173,8 +1173,8 @@ const FIXTURES = {
   }),
   // The longest first row (2026-10-16, the distance always beside it): 豆豆
   // silent since yesterday 21:09, 1.8 km away and out of range, the phone's
-  // own fix 3 minutes old — 「10/6 21:09 之後沒有新位置」 beside 「↗ 1.8 km」
-  // and 「手機位置 3 分鐘前」, 「不在接收範圍」 under it.
+  // own fix 3 minutes old — 「10/6 21:09 之後沒有新位置」 beside 「↗ 1.8 km」,
+  // 「不在接收範圍」 under it (no phone age since 2026-10-21).
   'card-status-longest': now => ({
     receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 3 * MINUTE), openDog: 4,
     ble: inTimeOrder([
@@ -1871,12 +1871,24 @@ const FIXTURES = {
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
   // 豆豆 goes inside for 25 minutes after a walk (clear fixes, then packets
-  // without a fix): the house node 「室內・N 分」, unnumbered, no distance.
+  // without a fix): the pavilion node 「在遮蔽處 N 分」, unnumbered, no distance.
   'history-indoor': now => {
     const path = legsPath(now, 80 * MINUTE, at(10, 8), [{ walk: 22, bearing: 60, speed: 1.3 }, { stay: 13 },
       { inside: 25 }, { walk: 20, bearing: 200, speed: 1.3 }]);
     const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
       ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
+    return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
+  },
+  // 2026-10-19: both kinds of hold in one list beside a coral stay — 豆豆
+  // walks, stays (停 13 分), 25 minutes without a fix: 「在遮蔽處 N 分」 with
+  // the pavilion; walks home, is on its charger (usb 1, no fix) for 20
+  // minutes: 「充電中 N 分」 with the bolt; then walks out again.
+  'history-shelter-charging': now => {
+    const path = legsPath(now, 110 * MINUTE, at(10, 8), [{ walk: 22, bearing: 60, speed: 1.3 }, { stay: 13 },
+      { inside: 25 }, { walk: 20, bearing: 200, speed: 1.3 }, { inside: 20 }, { walk: 10, bearing: 280, speed: 1.3 }]);
+    const charging = time => time >= now - 30 * MINUTE && time < now - 10 * MINUTE;
+    const ble = path.map(row => bleRow({ slave: 4, time: row.time, fix: row.fix,
+      ...(charging(row.time) ? { usb: 1 } : {}), ...(row.fix ? {} : { rssi: -96, snr: -4 }) }));
     return { ...FIXTURES['all-good'](now), openRoute: 'history', history: historyPage(now, { slave: 4, ble }) };
   },
   // ---- the list's last node (057a): every way a day's list can end -------
@@ -1938,7 +1950,7 @@ const FIXTURES = {
       historyView: { goTo: dayKey(new Date(midnight - 60 * MINUTE)) }, geocoder: { names: HISTORY_NAMES } };
   },
   // 豆豆 walks, stays, then goes inside for the last 30 minutes (packets
-  // without a fix until now): the list ends on the house node 「室內・N 分」.
+  // without a fix until now): the list ends on the pavilion node 「在遮蔽處 N 分」.
   'history-indoor-end': now => {
     const path = legsPath(now, 85 * MINUTE, at(10, 8), [{ walk: 25, bearing: 60, speed: 1.3 }, { stay: 15 },
       { walk: 2, bearing: 90, speed: 0.4 }, { stay: 13 }, { inside: 30 }]);

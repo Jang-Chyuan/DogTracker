@@ -1,9 +1,14 @@
 // Missing telemetry stays unknown; never infer USB from battery validity.
-export function usbPresent(value) {
+// Anything but true/false/1/0 is unknown too (2026-10-21: one cloud row's
+// `usbPresent: 136`, a garbled packet, used to throw here and stop the whole
+// archive pass and the day download). Unknown is not charging (isCharging).
+// `malformed` (MalformedFields, optional) is told about such a value.
+export function usbPresent(value, malformed = null) {
   if (value == null) return null;
   if (value === true || value === 1) return 1;
   if (value === false || value === 0) return 0;
-  throw new Error('usbPresent must be boolean or 0/1');
+  malformed?.note('usbPresent', value);
+  return null;
 }
 
 /**
