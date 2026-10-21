@@ -118,7 +118,7 @@ test('rows that are not buttons are 40dp (56dp with a second line); 活動量 st
 // 2026-10-16: the distance always stays at the first line's right end, at
 // every font; it went under the words at a large font or with a long value,
 // which made the row (and, for every dog, the card) a line taller.
-test('the distance stays at the first line\'s right end at every font; an old phone fix says so under it', async () => {
+test('the distance stays at the first line\'s right end at every font; an old phone fix adds no line', async () => {
   const { PixelRatio } = require('react-native');
   const old = phoneReading({ running: true, position: { ...HOME, timestamp: NOW - 3 * 60000 - 5000 } }, NOW);
   const scale = jest.spyOn(PixelRatio, 'getFontScale').mockReturnValue(1);
@@ -134,11 +134,10 @@ test('the distance stays at the first line\'s right end at every font; an old ph
     await mount({ card: model({}, { phone: old }) });
     expect(flatten(distance())).toBe('850 m');
     expect(besideFirstLine()).toBe(true);
-    // The phone's old fix is the row's own line, at its right edge, under the
-    // distance: it never widens the distance's column.
-    const age = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '手機位置 3 分鐘前');
-    expect(StyleSheet.flatten(age.props.style).textAlign).toBe('right');
-    expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍手機位置 3 分鐘前');
+    // 2026-10-21 (user): the phone's fix being 3 minutes old is not written
+    // (a stop held in low-power mode updates about every 30 s).
+    expect(flatten(byTestId('dog-card-row-position')[0])).toBe('位置09:05 之後沒有新位置850 m不在接收範圍');
+    expect(renderer.root.findAllByType(Text).some(node => /分鐘前/.test(flatten(node.props.children)))).toBe(false);
     // The value beside it wraps in its own column rather than pushing it down.
     const value = renderer.root.findAllByType(Text).find(node => flatten(node.props.children) === '09:05 之後沒有新位置');
     expect(value.props.numberOfLines).toBeUndefined();

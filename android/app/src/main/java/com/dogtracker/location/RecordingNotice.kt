@@ -24,10 +24,14 @@ internal enum class RecordingNotice {
      * The state while recording. [sinceAcceptedSeconds] is the age of the newest
      * accepted fix, or null before the first one, then [sinceStartSeconds] counts.
      * Failing to save a row is retried every second and is not a state of its own.
+     * [lowPower]: the recorder asks for a fix about every 30 s on a held stop
+     * (StationaryPowerMode): poor only after two of them are missed as well.
      */
-    fun during(locationOn: Boolean, sinceAcceptedSeconds: Double?, sinceStartSeconds: Double): RecordingNotice = when {
+    fun during(locationOn: Boolean, sinceAcceptedSeconds: Double?, sinceStartSeconds: Double,
+      lowPower: Boolean = false): RecordingNotice = when {
       !locationOn -> LOCATION_OFF
-      (sinceAcceptedSeconds ?: sinceStartSeconds) > POOR_SIGNAL_AFTER_SECONDS -> POOR_SIGNAL
+      (sinceAcceptedSeconds ?: sinceStartSeconds) > POOR_SIGNAL_AFTER_SECONDS +
+        (if (lowPower) 2 * StationaryPowerMode.LOW_INTERVAL_MS / 1000.0 else 0.0) -> POOR_SIGNAL
       else -> RECORDING
     }
   }

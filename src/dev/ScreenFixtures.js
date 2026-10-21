@@ -1137,8 +1137,8 @@ const FIXTURES = {
   }),
   // The longest first row (2026-10-16, the distance always beside it): 豆豆
   // silent since yesterday 21:09, 1.8 km away and out of range, the phone's
-  // own fix 3 minutes old — 「10/6 21:09 之後沒有新位置」 beside 「↗ 1.8 km」
-  // and 「手機位置 3 分鐘前」, 「不在接收範圍」 under it.
+  // own fix 3 minutes old — 「10/6 21:09 之後沒有新位置」 beside 「↗ 1.8 km」,
+  // 「不在接收範圍」 under it (no phone age since 2026-10-21).
   'card-status-longest': now => ({
     receiver: receiving(now), cloud: synced(now), phone: stalePhone(now, 3 * MINUTE), openDog: 4,
     ble: inTimeOrder([

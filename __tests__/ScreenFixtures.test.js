@@ -782,7 +782,7 @@ test('card-ok: in range (with the distance), 62%, resting 18 minutes; three rows
   expect(rows.battery).toMatchObject({ value: '62%', tone: null });
   expect(rows.range).toMatchObject({ value: i18nT('c348'), tone: null });
   expect(rows.activity).toMatchObject({ value: i18nT('c069'), detail: '已 18 分鐘', activityTone: 'rest', at: null });
-  expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
+  expect(model.headline).toMatchObject({ kind: 'distance' });
 });
 
 // 2026-10-16: a rest longer than the card's six-hour read, followed back to
@@ -863,7 +863,7 @@ test('card-problems (A3b): every problem red, 活動量 「—」, the distance 
   expect(rows.position).toMatchObject({ value: '09:05 之後沒有新位置', tone: 'crit', alert: i18nT('c078'), twoLine: true });
   expect(rows.battery).toMatchObject({ value: '15%・偏低', tone: 'crit' });
   expect(rows.activity).toMatchObject({ value: '—', tone: null });
-  expect(model.headline).toMatchObject({ kind: 'distance', phoneAge: null });
+  expect(model.headline).toMatchObject({ kind: 'distance' });
   expect(model.headline.distance).toMatch(/km$/);
   expect(model.rows.map(row => row.speech).join('；'))
     .toMatch(/^位置，09:05 之後沒有新位置，不在接收範圍，.+方 [\d.]+ 公里，離手機；電量 15%，偏低；活動量，沒有資料$/);
