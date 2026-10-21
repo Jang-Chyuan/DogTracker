@@ -24,7 +24,7 @@ export function closedBuckets(now, hours = WINDOW_HOURS) {
 // trims the local copy, and comparing against a trimmed table would re-download
 // the same hour on every sweep. A scan never moves the incremental checkpoint.
 export async function reconcileCloudWindow({ client, database, owner, masterId,
-  now = Date.now(), signal, isCurrent = () => true, hours = WINDOW_HOURS }) {
+  now = Date.now(), signal, isCurrent = () => true, hours = WINDOW_HOURS, malformed = null }) {
   const check = () => {
     if (signal?.aborted || !isCurrent()) throw new Error(t("c583"));
   };
@@ -65,7 +65,7 @@ export async function reconcileCloudWindow({ client, database, owner, masterId,
     check();
     if (local < count) {
       await downloadCloudHistory({ client, database, owner, masterId,
-        startAt, endBefore, signal, isCurrent });
+        startAt, endBefore, signal, isCurrent, source: 'reconcile', malformed });
       check();
       repaired += 1;
     }

@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { logger } from '../logger';
 import { bleUploadPayload } from './BleUploadPayload';
+import { createMalformedFields } from '../models/MalformedFields';
 // Foreground and Headless JS use separate service objects in the same runtime.
 let uploading = false;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -33,9 +34,9 @@ export function createUploadService({ database, client, now = Date.now }) {
   // One event to Supabase: 'sent', 'next' (blocked or skipped: go on),
   // 'refused' (403: go on, without this receiver), 'retry' (network/server:
   // stop the pass), 'unauthorized' (401) or 'cancelled'.
-  async function send(row, owner, phone, alive, signal) {
+  async function send(row, owner, phone, alive, signal, malformed) {
     let body;
-    try { body = bleUploadPayload(row, phone); }
+    try { body = bleUploadPayload(row, phone, malformed); }
     catch (error) { await database.failed(row, error.message, true, now()); return 'next'; }
     // Recheck the login before each event, including after a mode change.
     const { data, error: sessionError } = await sessionUntilCancelled(client.auth, signal);
@@ -81,6 +82,8 @@ export function createUploadService({ database, client, now = Date.now }) {
   async function sendAll(rows, owner, phone, alive, signal, { more = () => true, skipRefused = true } = {}) {
     let next = 0, stop = null;
     const refused = new Set();
+    // Fields left out as unknown (MalformedFields): one line for the pass.
+    const malformed = createMalformedFields();
     async function worker() {
       while (!stop && next < rows.length && more()) {
         const row = rows[next++];
@@ -90,12 +93,13 @@ export function createUploadService({ database, client, now = Date.now }) {
         // A flush or another pass may have sent this already-fetched row.
         if (!await database.isPending(row)) continue;
         if (!alive() || signal?.aborted) { stop = stop || 'cancelled'; return; }
-        const outcome = await send(row, owner, phone, alive, signal);
+        const outcome = await send(row, owner, phone, alive, signal, malformed);
         if (outcome === 'refused') refused.add(row.master_id);
         if (STOPS.includes(outcome) && (!stop || STOPS.indexOf(outcome) < STOPS.indexOf(stop))) stop = outcome;
       }
     }
-    await Promise.all(Array.from({ length: Math.min(PASS_REQUESTS, rows.length) }, worker));
+    try { await Promise.all(Array.from({ length: Math.min(PASS_REQUESTS, rows.length) }, worker)); }
+    finally { malformed.report('upload'); }
     return stop;
   }
   return {

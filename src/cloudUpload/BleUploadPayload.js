@@ -30,8 +30,15 @@ function wholeId(raw, max) {
   return Number.isInteger(value) && value >= 1 && value <= max ? value : null;
 }
 
-export function bleUploadPayload(row, phoneId) {
+/**
+ * A queued BLE packet as ingest-phone-telemetry takes it. A USB flag other
+ * than true/false/1/0 (a garbled packet, 2026-10-21) is left out, as unknown,
+ * and the packet still goes; `malformed` (MalformedFields, optional) is told.
+ * Every other field the edge function requires still refuses the row.
+ */
+export function bleUploadPayload(row, phoneId, malformed = null) {
   const d = JSON.parse(row.payload_json);
+  malformed?.row();
   if (d.type !== 3) throw new Error(t("c600"));
   const master = packetMasterId(d), slave = packetSlaveId(d);
   if (master == null) throw new Error(t("c603", { key: 'mid' }));
@@ -42,7 +49,7 @@ export function bleUploadPayload(row, phoneId) {
     if (typeof d[key] !== 'number' || !Number.isFinite(d[key]) || Math.abs(d[key]) > 300) throw new Error(t("c601", { key: key }));
     return d[key];
   };
-  const usb = usbPresent(d.usbPresent ?? d.usb_present);
+  const usb = usbPresent(d.usbPresent ?? d.usb_present, malformed);
   return { event_id: row.event_id, phone_id: phoneId, master_id: master, slave_id: slave,
     phone_received_at: new Date(row.received_at).toISOString(), seq: number(d, 'seq', 0, 65535),
     rssi: signal('rssi'), snr: signal('snr'), payload: {

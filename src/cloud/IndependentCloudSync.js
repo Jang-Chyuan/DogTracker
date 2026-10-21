@@ -11,6 +11,7 @@ import { createResumeCatchUp, CATCH_UP_IDLE } from '../tracking/ResumeCatchUp';
 import { createLatestReadinessGate, createMapReadback } from './CloudMapReadback';
 import { beginCloudAttemptDiagnostic } from '../diagnostics/CloudAttemptDiagnostics';
 import { contextFailureKind } from './CloudErrors';
+import { createMalformedFields } from '../models/MalformedFields';
 
 const DOWNLOAD_MS = 120000, CONTEXT_MS = 10000, SWEEP_MS = 600000;
 // Supabase answered but refused or failed the request (429, 5xx): it is up and
@@ -277,6 +278,8 @@ export function createIndependentCloudSync({ client, database, onChange = () => 
     const check = () => { if (!valid(version) || !authorized() || abort.signal.aborted) throw new Error(t('c576')); };
     const contextCurrent = () => valid(version) && !abort.signal.aborted && state.mapAttempt === attempt && readback === accepted;
     publish({ archivePending: true, busy: true, mode: 'auto' });
+    // Fields of this pass read as unknown (MalformedFields): one line for it.
+    const malformed = createMalformedFields();
     archiveRunning = withCloudSyncSlot(async () => {
       try {
         check();
@@ -321,7 +324,7 @@ export function createIndependentCloudSync({ client, database, onChange = () => 
         check(); await database.beginDownload?.(userId); check();
         for (const masterId of masters) {
           check(); await downloadMasterIncremental({ client, database, owner: userId, masterId, cutoff,
-            signal: abort.signal, check, onChange: () => { if (valid(version)) publish({ revision: state.revision + 1 }); } });
+            signal: abort.signal, check, malformed, onChange: () => { if (valid(version)) publish({ revision: state.revision + 1 }); } });
         }
         check(); await repairCloudTrackTimes({ client, database, owner: userId, signal: abort.signal, check,
           onChange: () => { if (valid(version)) publish({ revision: state.revision + 1 }); } });
@@ -330,7 +333,7 @@ export function createIndependentCloudSync({ client, database, onChange = () => 
           for (const masterId of masters) {
             check(); await reconcileCloudWindow({ client, owner: userId, masterId, now: cutoff,
               database: { ...database, savePage: async (...args) => { check(); await database.savePage(...args); if (valid(version)) publish({ revision: state.revision + 1 }); } },
-              signal: abort.signal, isCurrent: () => valid(version) });
+              signal: abort.signal, isCurrent: () => valid(version), malformed });
           }
         }
         check(); const material = await publishScoped(() => valid(version), () => database.publishDownload(userId, 'auto', cutoff,
@@ -342,6 +345,7 @@ export function createIndependentCloudSync({ client, database, onChange = () => 
         if (valid(version) && (!abort.signal.aborted || timedOut)) publish({ archiveError: t('c211'),
           ...(!timedOut && isAuthFailure(error) ? { authFailed: true } : {}) });
       } finally {
+        malformed.report('archive');
         clearTimeout(timeout); archiveRunning = null; archiveAbort = null;
         if (valid(version)) publish({ archivePending: false, contextPending: false }); updateBusy();
         startArchive();

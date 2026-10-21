@@ -68,11 +68,15 @@ test('snake case BLE alias preserves zero and absent values stay omitted', () =>
   expect(upload(ble).payload).not.toHaveProperty('usbPresent');
 });
 
-test.each([2, -1, '1', {}])('invalid USB %s is rejected by phone, backend and downloader', async value => {
-  expect(() => upload({ ...ble, usbPresent: value })).toThrow('usbPresent');
+// 2026-10-21: a garbled flag (a cloud row's `usbPresent: 136`) is unknown,
+// never a thrown batch. The backend still refuses it if a client sends it.
+test.each([2, 136, -1, '1', {}])('invalid USB %s is unknown on phone, still refused by backend, unknown in downloader', async value => {
+  expect(upload({ ...ble, usbPresent: value }).payload).not.toHaveProperty('usbPresent');
   const body = upload(ble); body.payload.usbPresent = value;
   expect((await backend().send(body)).status).toBe(400);
-  expect(() => mapCloudTelemetry({ ...body, received_at: '2026-10-01T00:00:00Z' })).toThrow('usbPresent');
+  expect(mapCloudTelemetry({ ...body, received_at: '2026-10-01T00:00:00Z' }).usb_present).toBeNull();
+  expect(toDogStatus({ ...ble, usbPresent: value }).usbPresent).toBeNull();
+  expect(mapDogStatusRow({ usb_present: value }).usbPresent).toBeNull();
 });
 
 test('upgrades existing BLE and cloud tables without inventing USB status', async () => {
