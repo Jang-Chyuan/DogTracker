@@ -11,16 +11,19 @@ import { isCharging } from '../models/UsbPresent';
 //   position time: dog_status.received_at, supabase_dog_status.track_at — the
 //   collar's activity_time unit is not confirmed yet, docs/trackerdoc-h0).
 // - The same reading downloaded back from the cloud (this phone's own upload,
-//   or a receiver both heard) counts once: readings are deduplicated by a key,
-//   and the local copy wins.
+//   or a receiver both heard) counts once: a downloaded reading with a local
+//   reading's key within 2 minutes of it is its copy, and the local copy wins
+//   (uniqueReadings).
 // - A minute's value is the mean of its readings. The minute still running is
 //   left out (it would judge on a few seconds).
 // - Gap fill (2026-10-19): collars send sparsely to save battery (30–110 s
 //   apart, now and then 3–4 minutes). A minute without a reading between two
 //   minutes with readings at most 4 minutes apart (FILL_MAX_GAP_MINUTES: at
 //   most 3 empty minutes in a row) carries the previous minute's value; it is
-//   not 沒有資料. Longer gaps are. Charging and not charging never fill into
-//   each other (fillActivityGaps). Counted on whole minutes, not on the
+//   not 沒有資料. Longer gaps are. Between two charging minutes the limit is
+//   30 minutes (CHARGING_FILL_MAX_GAP_MINUTES, 2026-10-21: on its charger the
+//   collar sends only every 4–9 minutes). Charging and not charging never fill
+//   into each other (fillActivityGaps). Counted on whole minutes, not on the
 //   readings' own times, because week, month and year only have per-minute
 //   sums: a reading at 10:00:00 and the next at 10:04:59 fill 10:01–10:03.
 // - 休息: every one of the last 10 minutes has a value (a reading, or filled:
@@ -57,6 +60,10 @@ export const REST_MAX_MISSING_MINUTES = 30;
 // then 210–250 s apart).
 export const FILL_MAX_GAP_MINUTES = 4;
 
+// The same between two charging minutes: on its charger the collar sends only
+// every 4–9 minutes (2026-10-21, the user's decision: 30).
+export const CHARGING_FILL_MAX_GAP_MINUTES = 30;
+
 export const ACTIVITY = Object.freeze({
   restMax: 0.1,
   restMinutes: 10,
@@ -64,6 +71,7 @@ export const ACTIVITY = Object.freeze({
   vigorousMinutes: 2,
   restMaxMissingMinutes: REST_MAX_MISSING_MINUTES,
   fillMaxGapMinutes: FILL_MAX_GAP_MINUTES,
+  chargingFillMaxGapMinutes: CHARGING_FILL_MAX_GAP_MINUTES,
 });
 
 export const ACTIVITY_STATE = Object.freeze({ REST: 'rest', NORMAL: 'normal', VIGOROUS: 'vigorous',
@@ -113,17 +121,32 @@ export function readingKey(row, time = Number(row?.time)) {
   return `${row?.slave_id}|t${time}`;
 }
 
+// A downloaded reading is a copy of a local one with the same key only this
+// close in time (ActivityData's per-minute SQL looks for copies the same way).
+export const COPY_WINDOW_MS = 2 * MINUTE;
+
 /**
- * The readings with each copy of a reading counted once: the local copy wins
- * over the cloud copy of the same reading (readingKey).
+ * The readings with each copy of a reading counted once: a downloaded reading
+ * with the key of a local one (readingKey) within COPY_WINDOW_MS of it is that
+ * reading's copy, and the local one counts. Readings of the same table are
+ * never copies of each other: the collar repeats its activity stamp over
+ * several packets (2026-10-21: on the charger, 218 packets carried 132
+ * stamps), and each packet is a minute of its own. As the per-minute SQL of
+ * week, month and year (ActivityData.readActivityPeriod) counts them.
  */
 export function uniqueReadings(readings = []) {
-  const unique = new Map();
+  const local = new Map();
   for (const reading of readings) {
-    const old = unique.get(reading.key);
-    if (!old || (old.source !== 'ble' && reading.source === 'ble')) unique.set(reading.key, reading);
+    if (reading.source !== 'ble') continue;
+    const times = local.get(reading.key);
+    if (times) times.push(reading.time);
+    else local.set(reading.key, [reading.time]);
   }
-  return [...unique.values()];
+  return readings.filter(reading => {
+    if (reading.source === 'ble') return true;
+    const times = local.get(reading.key);
+    return !times || !times.some(time => Math.abs(time - reading.time) <= COPY_WINDOW_MS);
+  });
 }
 
 /**
@@ -156,12 +179,13 @@ export function activityMinutes(readings = [], { now = Date.now() } = {}) {
 }
 
 /**
- * The minutes with the gaps of at most `fillMaxGapMinutes` filled in (see the
- * rules above), in one pass. A minute between two minutes with readings that
- * are both charging or both not is filled: `{ minute, value, count: 0,
- * filled: true }` with the earlier minute's value, or `{ minute, value: NaN,
- * count: 0, charging: true, filled: true }` between two charging minutes.
- * Between a charging minute and one that is not nothing is filled.
+ * The minutes with the gaps of at most `fillMaxGapMinutes` (between two
+ * charging minutes `chargingFillMaxGapMinutes`) filled in (see the rules
+ * above), in one pass. A minute between two minutes with readings that are
+ * both charging or both not is filled: `{ minute, value, count: 0, filled:
+ * true }` with the earlier minute's value, or `{ minute, value: NaN, count: 0,
+ * charging: true, filled: true }` between two charging minutes. Between a
+ * charging minute and one that is not nothing is filled.
  * @param minutes activityMinutes() or ActivityData.mergeMinutes() (oldest
  *   first, one entry per minute)
  * @param options.before minutes from here on are left out before filling (the
@@ -170,13 +194,15 @@ export function activityMinutes(readings = [], { now = Date.now() } = {}) {
  */
 export function fillActivityGaps(minutes = [], { config = ACTIVITY, before = Infinity } = {}) {
   const most = (config.fillMaxGapMinutes ?? FILL_MAX_GAP_MINUTES) * MINUTE;
+  const mostCharging = (config.chargingFillMaxGapMinutes ?? CHARGING_FILL_MAX_GAP_MINUTES) * MINUTE;
   const result = [];
   let previous = null;
   for (let index = 0; index < minutes.length; index += 1) {
     const item = minutes[index];
     if (!(item.minute < before)) continue;
     const gap = previous ? item.minute - previous.minute : 0;
-    if (gap > MINUTE && gap <= most && !previous.charging === !item.charging) {
+    if (gap > MINUTE && !previous.charging === !item.charging
+      && gap <= (previous.charging ? mostCharging : most)) {
       for (let minute = previous.minute + MINUTE; minute < item.minute; minute += MINUTE) {
         result.push(previous.charging ? { minute, value: NaN, count: 0, charging: true, filled: true }
           : { minute, value: previous.value, count: 0, filled: true });

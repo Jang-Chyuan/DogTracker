@@ -294,7 +294,7 @@ test('年 built month by month equals 年 built at once', () => {
   for (let month = 1; month <= 10; month += 1) {
     const period = periodOf('month', date(month, 1));
     months.push(buildActivityView({ mode: 'month', date: period.start, now, earliest: date(1, 1),
-      minutes: minutes.filter(item => item.minute >= period.start - 12 * M && item.minute < period.end + 12 * M) }));
+      minutes: minutes.filter(item => item.minute >= period.start - 39 * M && item.minute < period.end + 39 * M) }));
   }
   const combined = combineYearView({ date: now, now, earliest: start, months });
   expect(combined.totals).toEqual(whole.totals);

@@ -218,6 +218,7 @@ test('per-minute sums: the running minute and later never fill finished minutes'
 test('a year built month by month equals the whole year on sparse minutes', () => {
   const { combineYearView, buildActivityView, activityPeriod } = require('../src/activity/views/ActivityViews');
   const { buildYearView } = require('../src/activity/views');
+  const { ACTIVITY_CONTEXT_MS } = require('../src/activity/ActivityData');
   const start = date(8, 25);
   const now = date(10, 7, 9, 30);
   const minutes = [];
@@ -225,6 +226,11 @@ test('a year built month by month equals the whole year on sparse minutes', () =
   // sometimes 3 minutes), calm around midnight between months.
   for (let t = start, i = 0; t < now; t += M, i += 1) {
     if (i % 7 === 3 || i % 7 === 4 || (i % 97 > 90)) continue;
+    // On the charger over the month boundary, a packet every 8 minutes.
+    if (t >= date(8, 31, 23, 20) && t < date(9, 1, 0, 50)) {
+      if (i % 8 === 0) minutes.push({ minute: t, value: NaN, count: 0, charging: true });
+      continue;
+    }
     const hour = new Date(t).getHours();
     minutes.push({ minute: t, value: hour < 6 || hour >= 22 ? 0.02 : (i % 13 < 2 ? 0.9 : 0.3), count: 1 });
   }
@@ -233,12 +239,19 @@ test('a year built month by month equals the whole year on sparse minutes', () =
   for (let month = 8; month <= 10; month += 1) {
     const period = activityPeriod('month', date(month, 1));
     months.push(buildActivityView({ mode: 'month', date: period.start, now, earliest: date(1, 1), since: start,
-      minutes: minutes.filter(item => item.minute >= period.start - 13 * M && item.minute < period.end + 13 * M) }));
+      minutes: minutes.filter(item => item.minute >= period.start - ACTIVITY_CONTEXT_MS
+        && item.minute < period.end + ACTIVITY_CONTEXT_MS) }));
   }
   const combined = combineYearView({ date: now, now, earliest: start, months });
   expect(combined.totals).toEqual(whole.totals);
   expect(combined.bars).toEqual(whole.bars);
   expect(whole.totals.rest).toBeGreaterThan(0);
+  // The charging run is one stretch over the month boundary (split per day
+  // as week, month and year list them), no 沒有資料 inside it.
+  const charging = combined.rows.find(row => row.state === 'charging').ranges;
+  expect(charging).toHaveLength(2);
+  expect(charging[0].end).toBe(date(9, 1));
+  expect(charging[1].start).toBe(date(9, 1));
 });
 
 test('the card\'s newest reading is one that counts, not a cloud copy of a local one', () => {
@@ -250,4 +263,80 @@ test('the card\'s newest reading is one that counts, not a cloud copy of a local
   const cloud = [{ time: date(10, 1, 9, 59, 5), activity: 0.02, activity_valid: 1, activity_time: '9',
     slave_id: 4, master_id: 7 }];
   expect(dogCardReadings({ local, cloud }, now).activity.newestAt).toBe(date(10, 1, 9, 58, 50));
+});
+
+// 2026-10-21: on its charger the collar sends only every 4–9 minutes. Between
+// two charging minutes a gap of up to 30 minutes is still 充電中; every other
+// gap keeps the 4-minute limit, and charging ↔ not charging is never filled.
+describe('charging gaps up to 30 minutes', () => {
+  const plugged = (hour, minute) => ({ time: date(10, 1, hour, minute, 20), activity: 0, activity_valid: 1,
+    usb_present: 1, slave_id: 4, master_id: 7 });
+  const loose = (hour, minute, activity = 0.3) => ({ time: date(10, 1, hour, minute, 20), activity,
+    activity_valid: 1, usb_present: 0, slave_id: 4, master_id: 7 });
+
+  test('charging packets 5–9 minutes apart are one continuous 充電中', () => {
+    const minutes = [0, 6, 11, 20, 27, 33, 42, 50, 55];
+    const rows = minutes.map(minute => plugged(13, minute));
+    const view = buildDayView({ ...options, readings: readingsOf(rows) });
+    expect(states(view, date(10, 1, 13, 0), date(10, 1, 13, 56))).toEqual({ charging: 56 });
+    expect(view.rows.find(row => row.state === 'charging').ranges)
+      .toEqual([{ start: date(10, 1, 13, 0), end: date(10, 1, 13, 56), durationMinutes: 56 }]);
+    // No 沒有資料 between the charging packets.
+    expect(view.gaps.filter(gap => gap.start < date(10, 1, 13, 56) && gap.end > date(10, 1, 13, 0))).toEqual([]);
+  });
+
+  test('a charging gap of 30 minutes is filled, one of 31 is 沒有資料', () => {
+    const thirty = buildDayView({ ...options, readings: readingsOf([plugged(13, 0), plugged(13, 30)]) });
+    expect(states(thirty, date(10, 1, 13, 0), date(10, 1, 13, 31))).toEqual({ charging: 31 });
+    const longer = buildDayView({ ...options, readings: readingsOf([plugged(13, 0), plugged(13, 31)]) });
+    expect(states(longer, date(10, 1, 13, 0), date(10, 1, 13, 32))).toEqual({ charging: 2, missing: 30 });
+  });
+
+  test('the 4-minute limit still holds for the dog’s own minutes and across the charger', () => {
+    const normal = buildDayView({ ...options, readings: readingsOf([loose(15, 0), loose(15, 6)]) });
+    expect(states(normal, date(10, 1, 15, 0), date(10, 1, 15, 7))).toEqual({ normal: 2, missing: 5 });
+    // Charging → off the charger 6 minutes later, and back on: never filled.
+    const across = buildDayView({ ...options, readings: readingsOf([plugged(16, 0), loose(16, 6),
+      plugged(16, 12)]) });
+    expect(states(across, date(10, 1, 16, 0), date(10, 1, 16, 13)))
+      .toEqual({ charging: 2, normal: 1, missing: 10 });
+    // The same at two minutes apart: still not filled.
+    const near = buildDayView({ ...options, readings: readingsOf([plugged(17, 0), loose(17, 2)]) });
+    expect(states(near, date(10, 1, 17, 0), date(10, 1, 17, 3))).toEqual({ charging: 1, missing: 1, normal: 1 });
+  });
+
+  test('a charging run across midnight fills the first minutes of the day, read with the period context', async () => {
+    const { ACTIVITY_CONTEXT_MS } = require('../src/activity/ActivityData');
+    // On the charger over midnight: packets at 23:46 and 00:15 (29 minutes
+    // apart, filled). 23:46 is more than the old 13-minute context before
+    // the day: read with only that, the first 15 minutes were 沒有資料.
+    const previous = date(9, 30, 23, 46, 20);
+    const next = date(10, 1, 0, 15, 20);
+    expect(DAY - previous).toBeLessThan(ACTIVITY_CONTEXT_MS);
+    const rows = [{ ...plugged(0, 0), time: previous }, { ...plugged(0, 0), time: next }];
+    // Only what readActivityPeriod would read: the period with its context.
+    const read = rows.filter(row => row.time >= DAY - ACTIVITY_CONTEXT_MS && row.time < DAY + 1440 * M
+      + ACTIVITY_CONTEXT_MS);
+    const day = buildDayView({ ...options, readings: readingsOf(read) });
+    expect(states(day, DAY, date(10, 1, 0, 16))).toEqual({ charging: 16 });
+    // The week built from per-minute sums agrees, and so does the day before.
+    const week = buildWeekView({ ...options, minutes: sqlMinutes(read) });
+    expect(week.bars.find(bar => bar.start === DAY).totals.charging).toBe(day.totals.charging);
+    const before = buildDayView({ ...options, date: date(9, 30), readings: readingsOf(rows) });
+    expect(states(before, date(9, 30, 23, 46), DAY)).toEqual({ charging: 14 });
+    // The context reaches far enough for the longest charging bridge plus
+    // the 9 minutes a rest window looks back.
+    expect(ACTIVITY_CONTEXT_MS).toBeGreaterThanOrEqual((9 + 30) * M);
+  });
+
+  test('the card on the charger: 充電中 at a charging packet, and a rest after it starts there', () => {
+    const rows = [plugged(18, 0), plugged(18, 8), plugged(18, 16),
+      ...sparse(date(10, 1, 18, 21, 5), date(10, 1, 18, 40), 0.02, { usb_present: 0 })];
+    const minutes = activityMinutes(readingsOf(rows), { now: date(10, 1, 18, 40) });
+    expect(activityState(minutes, { end: date(10, 1, 18, 16) }).state).toBe('charging');
+    const last = Math.floor(rows[rows.length - 1].time / M) * M;
+    expect(activityState(minutes, { end: last })).toMatchObject({ state: 'rest', since: date(10, 1, 18, 21) });
+    const view = buildDayView({ ...options, readings: readingsOf(rows) });
+    expect(states(view, date(10, 1, 18, 0), date(10, 1, 18, 21))).toEqual({ charging: 17, missing: 4 });
+  });
 });
