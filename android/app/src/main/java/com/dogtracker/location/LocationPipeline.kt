@@ -267,7 +267,8 @@ internal class LocationPipeline {
       lowExit = if (moved) StationaryPowerMode.Exit.LEFT_STOP else StationaryPowerMode.Exit.SPEED
       return reject("moved") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1117) }
     }
-    if (!acceptsLocationAccuracy(true, accuracy, speed)) {
+    // The 30 m gate whatever the fix's speed (a held row is never a fast one).
+    if (!acceptsLocationAccuracy(true, accuracy)) {
       if (accuracy.isFinite() && accuracy >= 0f) windowBestRejectedAccuracy =
         minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, accuracy)
       return reject("accuracy") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122) }

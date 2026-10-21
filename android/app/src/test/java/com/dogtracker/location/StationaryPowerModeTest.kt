@@ -218,6 +218,17 @@ class StationaryPowerModeTest {
     assertFalse(r.feed(fix(591.0, n = 3.0, accuracy = 18f)))
   }
 
+  @Test fun anUncertainFastReadingDoesNotOpenTheThirtyMetreGate() {
+    val r = Recorder()
+    r.still(1, 201)
+    val rows = r.saved.size
+    // 40 m, 6 ± 6 m/s at the stop: no reliable speed, and still too coarse to save.
+    assertFalse(r.feed(fix(231.0, n = 2.0, accuracy = 40f, speed = 6f, spread = 6f)))
+    assertTrue(r.pipe.lowPower)
+    assertEquals(rows, r.saved.size)
+    assertEquals(201 * s, r.pipe.lowUsableAt)
+  }
+
   @Test fun aJumpInLowPowerIsNoMoveAndNoRow() {
     val r = Recorder()
     r.still(1, 201)

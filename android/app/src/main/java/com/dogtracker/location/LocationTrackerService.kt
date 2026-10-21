@@ -283,8 +283,9 @@ class LocationTrackerService : Service(), LocationListener {
     if (!power.shouldDownshift(now, pipeline.stationarySince, pipeline.judgedAt) || !pipeline.enterLowPower()) return
     power.enterLow(now)
     armSignificantMotion()
-    // After this batch of fixes: the callback identity fences the old request's late fixes.
-    handler.post { if (!stopped && pipeline.lowPower) resubscribeNow() }
+    // Now: the old callback is no longer current, so the rest of its batch
+    // and its queued deliveries are dropped (identity checked per fix).
+    resubscribeNow()
   }
 
   private fun exitLowPower(now: Long, reason: StationaryPowerMode.Exit) {
@@ -293,18 +294,21 @@ class LocationTrackerService : Service(), LocationListener {
     pipeline.exitLowPower()
     power.exitLow(now, reason)
     cancelSignificantMotion()
-    // The 1 s request starts now; the silence schedule starts again with it.
+    // The 1 s request starts now, fencing the low-power callback's queued
+    // fixes; the silence schedule starts again with it.
     resubscribe?.received(now)
-    handler.post { if (!stopped && !pipeline.lowPower) resubscribeNow() }
+    resubscribeNow()
   }
 
   private fun resubscribeNow() {
+    if (stopped) return
     unsubscribe()
     runCatching { subscribe() }
   }
 
   /** The one-shot significant-motion sensor (no permission). Without one, fixes and the silence rule decide. */
   private fun armSignificantMotion() {
+    if (stopped) return
     val manager = sensors ?: getSystemService(android.hardware.SensorManager::class.java)?.also { sensors = it }
     val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_SIGNIFICANT_MOTION)
     if (manager == null || sensor == null) { significantMotion = "absent"; return }
@@ -397,8 +401,8 @@ class LocationTrackerService : Service(), LocationListener {
   }
   override fun onDestroy() {
     stopped = true
-    // The trigger's manager call is thread-safe; its late callback is fenced by `stopped`.
-    runCatching { cancelSignificantMotion() }
+    // On the worker, after anything that might still arm it (quitSafely runs it first).
+    handler.post { runCatching { cancelSignificantMotion() } }
     handler.removeCallbacks(tick)
     if (running) handler.post { runCatching { gapHistory.end(System.currentTimeMillis(), counters()) } }
     liveJson = "{}"
