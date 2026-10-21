@@ -163,3 +163,25 @@ export function historyModelDiagnostic(fields) {
     // A refused diagnostic sink cannot change a model or its publication.
   }
 }
+
+// A4's automatic download (ActivityDownloads, 2026-10-21): one line per failed
+// step, in release builds too, so a phone that stays on 「這天的紀錄還沒下載完」
+// says why. Rebuilt from fixed fields: the day key (YYYY-MM-DD, no time), the
+// step, the HTTP status, and the error's words with anything like a URL, an
+// e-mail, an id or a long number taken out (Supabase and SQLite messages are
+// short fixed texts: 「canceling statement due to statement timeout」).
+const ACTIVITY_DOWNLOAD_STAGES = new Set(['proof', 'count', 'download', 'recheck', 'plan']);
+export function activityDownloadDiagnostic({ day, stage, error } = {}) {
+  try {
+    if (!ACTIVITY_DOWNLOAD_STAGES.has(stage)) return;
+    const message = String(error?.message ?? error ?? '')
+      .replace(/[a-z]+:\/\/\S+/gi, '<url>').replace(/\S+@\S+/g, '<email>')
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '<id>').replace(/\d{5,}/g, '<n>').slice(0, 120);
+    const status = error?.status;
+    console.warn('[ActivityDownload] failed', {
+      day: typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null, stage, message,
+      ...(Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}) });
+  } catch {
+    // Logging never fails a download.
+  }
+}

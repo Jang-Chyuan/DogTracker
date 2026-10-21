@@ -18,6 +18,7 @@ import { serverClock } from '../cloud/ServerClock';
 import { captureActivityRead } from '../cloud/CloudPagePublication';
 import { CLOUD_MAX_ROWS } from '../cloud/CloudDatabase';
 import { dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
+import { activityDownloadDiagnostic } from '../logger';
 
 // ‹ › tapped quickly ask nothing until they settle on a period.
 export const ACTIVITY_DOWNLOAD_SETTLE_MS = 600;
@@ -33,6 +34,13 @@ export const ACTIVITY_DOWNLOAD_BUDGET_ROWS = Math.floor(CLOUD_MAX_ROWS / 2);
 // ARCHIVE_WAIT_MS), so a month of downloads never holds the archive off.
 export const ARCHIVE_BREATH_MS = 2 * 60000;
 export const ARCHIVE_WAIT_MS = 60000;
+// A step that failed (the sync's slot refused or busy, the network) is tried
+// again after these pauses before the page says it failed (2026-10-21: one
+// refusal left 10/19 on 「這天的紀錄還沒下載完」 for good).
+export const ACTIVITY_RETRY_DELAYS_MS = Object.freeze([3000, 10000]);
+// A day whose count could not be answered is downloaded as if missing; for
+// the plan's budget it counts as a dog's full day.
+const DAY_ROWS_ESTIMATE = 14000;
 // A plan whose proof and counts were read across a publication reads again
 // this many times, then waits for the next publication.
 const FENCE_TRIES = 3;
@@ -105,7 +113,7 @@ export const ACTIVITY_DOWNLOAD_PENDING = Object.freeze(['pending', 'waiting', 'c
  *   should be read
  */
 export function useActivityDownloads({ cloud, online = true, slaveId, mode, date, now, active = true,
-  publication = 0, settleMs = ACTIVITY_DOWNLOAD_SETTLE_MS }) {
+  publication = 0, settleMs = ACTIVITY_DOWNLOAD_SETTLE_MS, retryDelays = ACTIVITY_RETRY_DELAYS_MS }) {
   const period = activityPeriod(mode, Math.min(date, now));
   const key = `${cloud?.owner ?? ''}|${slaveId}|${mode}|${period.start}`;
   const [state, setState] = useState({ key: null, ...IDLE });
@@ -129,6 +137,22 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
       if (controller.signal.aborted) throw new Error('cancelled');
     };
     const show = value => { if (alive) setState({ key, ...IDLE, ...value }); };
+    // Release logcat shows these (ReactNativeJS): which day, which step.
+    const report = (day, stage, error) => activityDownloadDiagnostic({ day, stage, error });
+    // `work` again after each pause in retryDelays; the last failure is thrown
+    // (marked with its stage). Moving on or 取消 is never retried.
+    const retrying = async (day, stage, work) => {
+      for (let tries = 0; ; tries += 1) {
+        try { return await work(); }
+        catch (error) {
+          check();
+          report(day, stage, error);
+          if (tries >= retryDelays.length) { error.stage = stage; throw error; }
+          await pause(retryDelays[tries]);
+          check();
+        }
+      }
+    };
     const reread = (final = false) => {
       if (!alive) return;
       clearTimeout(readTimer);
@@ -155,7 +179,8 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
       for (let tries = 0; tries < FENCE_TRIES; tries += 1) {
         const fence = captureActivityRead(cloud.getPublication, cloud.owner, !!cloud.publishedReads);
         if (!fence.open) return null;
-        const states = cloud.downloadStates ? await cloud.downloadStates({ slaveId }) : [];
+        const states = cloud.downloadStates
+          ? await retrying(days[0], 'proof', () => cloud.downloadStates({ slaveId })) : [];
         check();
         const unproven = unprovenDays(days, states, { slaveId, cutoff, serverOffset });
         if (!unproven.length) return { unproven, missing: [], counts: {} };
@@ -164,8 +189,17 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
         const missing = [], counts = {};
         for (const day of unproven) {
           const { dayStart, dayEnd } = dayBounds(day);
-          const answer = cloud.missingRows ? await cloud.missingRows({ slaveId, dayStart, dayEnd, cutoff,
-            serverOffset, signal: controller.signal }) : { missing: true };
+          // The count only saves a download: unanswered (a statement timeout
+          // over a busy day, the network), the day is downloaded.
+          let answer = { missing: true, cloud: DAY_ROWS_ESTIMATE, local: 0 };
+          if (cloud.missingRows) {
+            try {
+              answer = await cloud.missingRows({ slaveId, dayStart, dayEnd, cutoff, serverOffset, signal: controller.signal });
+            } catch (error) {
+              check();
+              report(day, 'count', error);
+            }
+          }
           check();
           if (answer?.missing) { missing.push(day); counts[day] = Math.max(0, (answer.cloud ?? 0) - (answer.local ?? 0)); }
         }
@@ -185,8 +219,14 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
           show({ status: 'checking' });
           const months = [];
           for (const month of periodMonths(period.start, cutoff)) {
-            const answer = await cloud.missingRows({ slaveId, dayStart: month.start, dayEnd: month.end,
-              cutoff, serverOffset, signal: controller.signal });
+            let answer = null;
+            try {
+              answer = await cloud.missingRows({ slaveId, dayStart: month.start, dayEnd: month.end,
+                cutoff, serverOffset, signal: controller.signal });
+            } catch (error) {
+              check();
+              report(dayKey(new Date(month.start)), 'count', error);
+            }
             check();
             if (answer?.missing) months.push(month.start);
           }
@@ -206,7 +246,8 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
           check();
           show({ status: 'downloading', day, done, total: missing.length, missing });
           const { dayStart, dayEnd } = dayBounds(day);
-          await cloud.download({ slaveId, dayStart, dayEnd, cutoff, serverOffset, signal: controller.signal });
+          await retrying(day, 'download', () => cloud.download({ slaveId, dayStart, dayEnd, cutoff, serverOffset,
+            signal: controller.signal }));
           check();
           done += 1;
           if (done < missing.length) reread();
@@ -216,17 +257,24 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
         // are not downloaded once more in this plan.
         let gone = 0;
         if (cloud.downloadStates) {
-          const states = await cloud.downloadStates({ slaveId });
-          check();
-          gone = unprovenDays(missing, states, { slaveId, cutoff, serverOffset }).length;
+          try {
+            const states = await cloud.downloadStates({ slaveId });
+            check();
+            gone = unprovenDays(missing, states, { slaveId, cutoff, serverOffset }).length;
+          } catch (error) {
+            check();
+            report(missing[0], 'recheck', error);
+          }
         }
         show(skipped + gone ? { status: 'partial', left: skipped + gone } : {});
         reread(true);
       } catch (error) {
         if (!alive || error === STOP) return;
+        const cancelled = controller.signal.aborted;
+        if (!cancelled && !error?.stage) report(missing[done] ?? null, 'plan', error);
         // What finished before stays on the page.
         const left = missing.slice(done);
-        show({ status: controller.signal.aborted ? 'cancelled' : 'failed',
+        show({ status: cancelled ? 'cancelled' : 'failed',
           missing: left.length ? left : periodDays(mode, period.start, cutoff), done, total: missing.length });
         if (done) reread(true);
       }
@@ -240,7 +288,7 @@ export function useActivityDownloads({ cloud, online = true, slaveId, mode, date
     };
     // `period` is `key`; the clock is read from `clock`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, enabled, online, attempt, cloud, settleMs]);
+  }, [key, enabled, online, attempt, cloud, settleMs, retryDelays]);
   // Waiting for a coherent publication: the next one tries again.
   const waiting = enabled && state.key === key && state.status === 'waiting';
   useEffect(() => {

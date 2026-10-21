@@ -35,7 +35,8 @@ import { useActivityView } from './useActivityView';
 import { linesFor } from '../utils/textScale';
 import BackRow from '../components/BackRow';
 import ShimmerLabel from '../components/ShimmerLabel';
-import { ACTIVITY_DOWNLOAD_PENDING, ACTIVITY_DOWNLOAD_SETTLE_MS, useActivityDownloads } from './ActivityDownloads';
+import { ACTIVITY_DOWNLOAD_PENDING, ACTIVITY_DOWNLOAD_SETTLE_MS, ACTIVITY_RETRY_DELAYS_MS,
+  useActivityDownloads } from './ActivityDownloads';
 import { shortDate } from '../history/screen/HistoryCalendar';
 import { dayKey } from '../history/screen/HistoryScreenDates';
 
@@ -154,6 +155,7 @@ export default function ActivityScreen({
   online = true,
   downloadsActive = active,
   downloadSettleMs = ACTIVITY_DOWNLOAD_SETTLE_MS,
+  downloadRetryDelays = ACTIVITY_RETRY_DELAYS_MS,
   onBack,
 }) {
   const styles = useStyles(getStyles);
@@ -171,7 +173,7 @@ export default function ActivityScreen({
   }), [readEarliest, cloud]);
   const downloads = useActivityDownloads({
     cloud, online, slaveId, mode, date: Math.max(date, earliestBound(cloudFirst)), now,
-    active: downloadsActive, publication: revision, settleMs: downloadSettleMs,
+    active: downloadsActive, publication: revision, settleMs: downloadSettleMs, retryDelays: downloadRetryDelays,
   });
   const downloadRevision = `${downloads.revision}:${cloudFirst ?? ''}`;
   const { status, view, retry, earliest, downloadRevision: viewRevision } = useActivityView({

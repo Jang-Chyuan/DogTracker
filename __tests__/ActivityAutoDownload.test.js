@@ -47,7 +47,7 @@ const press = async id => {
 
 // 小黑 (6) on this phone: two readings a minute on the days in `local`; the
 // days in `cloudOnly` appear once the stand-in cloud has downloaded them.
-function world({ local = [], cloudOnly = [], proven = [], complete = [], hold = false, fail = false } = {}) {
+function world({ local = [], cloudOnly = [], proven = [], complete = [], hold = false, fail = false, failDownload = false } = {}) {
   const present = new Set(local);
   const downloads = [];
   let release = null;
@@ -77,6 +77,7 @@ function world({ local = [], cloudOnly = [], proven = [], complete = [], hold = 
     }),
     download: jest.fn(({ dayStart, signal }) => {
       downloads.push(day(dayStart));
+      if (failDownload) return Promise.reject(new Error('fixture: 下載失敗'));
       return new Promise((resolve, reject) => {
         const finish = () => {
           if (cloudOnly.includes(day(dayStart))) present.add(day(dayStart));
@@ -174,15 +175,30 @@ test('offline: a day not downloaded shows the offline words with 重試, not 沒
   expect(w.cloud.download).toHaveBeenCalledTimes(1);
 });
 
-test('a failed check shows the retry state; 重試 asks again', async () => {
+test('a count that fails only saves nothing: the day is downloaded anyway', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
   const w = world({ local: [], cloudOnly: [DAY], fail: true });
   await mount({ read: w.read, readEarliest: w.readEarliest, cloud: w.cloud, online: true,
     initialView: { mode: 'day', date: new Date(2026, 9, 6, 12).getTime() } });
+  await settle(20);
+  expect(w.cloud.download).toHaveBeenCalledTimes(1);
+  expect(byId('activity-empty')).toHaveLength(0);
+  expect(all()).toContain('一般');
+});
+
+test('a download that keeps failing: retried, then c321 with 重試; 重試 starts again', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const w = world({ local: [], cloudOnly: [DAY], failDownload: true });
+  await mount({ read: w.read, readEarliest: w.readEarliest, cloud: w.cloud, online: true, downloadRetryDelays: [1, 1],
+    initialView: { mode: 'day', date: new Date(2026, 9, 6, 12).getTime() } });
+  await settle(20);
+  expect(w.cloud.download).toHaveBeenCalledTimes(3);
+  expect(all()).toContain(i18nT('c321'));
   expect(byId('activity-empty')).toHaveLength(0);
   expect(byId('activity-download-retry').length).toBeGreaterThan(0);
   await press('activity-download-retry');
-  await settle();
-  expect(w.cloud.missingRows).toHaveBeenCalledTimes(2);
+  await settle(20);
+  expect(w.cloud.download).toHaveBeenCalledTimes(6);
 });
 
 test('not signed in (no cloud): nothing is asked or downloaded, 沒有資料 as before', async () => {
