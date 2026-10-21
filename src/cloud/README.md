@@ -5,7 +5,7 @@
 1. 使用 Supabase Auth 中已建立並獲授權的 Email／密碼登入一次。
 2. 首次同步每個已授權 Master 的最近 24 小時；前景每 30 秒下載增量，Android 背景／鎖屏每 15 分鐘由 WorkManager 排程，回到 App 先顯示本機歷史並立即補下載。
 3. 在下方查看本機紀錄，每頁 50 筆。重新讀取本機資料不使用網路。
-4. 雲端診斷頁沒有手動下載入口；已下載的較早資料仍可查看。歷史畫面的日期列／月曆可補下載指定日期，由 `HistoryCloud`、`useHistoryCloud` 寫入同一份本機快取。
+4. 雲端診斷頁沒有手動下載入口；已下載的較早資料仍可查看。歷史畫面的日期列／月曆可補下載指定日期，由 `HistoryCloud`、`useHistoryCloud` 寫入同一份本機快取；A4 活動量頁缺的日子也用同一個下載（`src/activity/ActivityDownloads.js`，先用 `HistoryCloud.missingRows` 問一次筆數，自動同步已經帶回來的日子不重抓）。
 
 ## 設定與授權
 

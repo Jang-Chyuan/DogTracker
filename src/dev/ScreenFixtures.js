@@ -29,7 +29,7 @@ import { HISTORY_DAY_AFTER_MS, HISTORY_DAY_CONTEXT_MS } from '../mapHistory/Hist
 import { dogHistoryRow, phoneHistoryRow } from '../history/HistoryRows';
 import { fixtureAddressLookup } from './fixtureGeocoder';
 import { fixtureExporter } from './fixtureExporter';
-import { dayKey } from '../history/screen/HistoryScreenDates';
+import { dayBounds, dayKey } from '../history/screen/HistoryScreenDates';
 import { activityMinutes, activityReadings } from '../activity/ActivityMinutes';
 import { ACTIVITY_CONTEXT_MS } from '../activity/ActivityData';
 import { CARD_BATTERY_ROWS } from '../activity/DogCardReadings';
@@ -604,8 +604,11 @@ function dogActivity(time) {
 // ([start, end) pairs). `answer: 'hang' | 'fail'` for 載入中 and 讀取失敗.
 // Whole 1/1024ths: sums are exact, so every reader's mean is the same number.
 const reading = time => Math.round(Math.max(0, Math.min(1, dogActivity(time))) * 1024) / 1024;
-function activityFixture({ earliest, gaps = [], charges = [], now, answer = null }) {
-  const has = time => time >= earliest && !gaps.some(([start, end]) => time >= start && time < end);
+function activityFixture({ earliest, gaps = [], charges = [], now, answer = null, cloudOnly = null }) {
+  // `cloudOnly`: [start, end) spans only the stand-in cloud holds until it
+  // has downloaded them (activityCloud); the array shrinks as it does.
+  const has = time => time >= earliest && !gaps.some(([start, end]) => time >= start && time < end)
+    && !(cloudOnly || []).some(([start, end]) => time >= start && time < end);
   // [start, end) spans on the charger (usb_present 1, activity 0).
   const powered = time => charges.some(([start, end]) => time >= start && time < end);
   const read = async (slaveId, { start, end, detail }) => {
@@ -640,6 +643,47 @@ function activityFixture({ earliest, gaps = [], charges = [], now, answer = null
   };
   return { readActivity: read, readActivityEarliest: async slaveId => (slaveId === 6 ? earliest ?? null : null) };
 }
+// A4's stand-in cloud (HistoryCloud's adapter, 2026-10-21): the days in
+// `cloudOnly` are missing on this phone until downloaded (3.5 s each, or
+// never: 'hang'); a downloaded day is proven. `online: false` for 沒有網路.
+function activityCloud(cloudOnly, { online = true, download = 'ok', earliest = null } = {}) {
+  const proven = [];
+  const overlaps = (from, to) => cloudOnly.some(([start, end]) => start < to && end > from);
+  const stopped = signal => new Promise((_, reject) => signal?.addEventListener?.('abort',
+    () => reject(new Error('已取消'))));
+  return {
+    online,
+    cloud: {
+      owner: FIXTURE_OWNER,
+      downloadStates: async () => proven.map(key => {
+        const { dayStart, dayEnd } = dayBounds(key);
+        return { slave_id: 6, day: key, complete: 1, range_start: dayStart, range_end: dayEnd,
+          received_before: dayEnd + 2 * 3600000 };
+      }),
+      missingRows: async ({ slaveId, dayStart, dayEnd }) => (slaveId === 6 && overlaps(dayStart, dayEnd)
+        ? { missing: true, cloud: 14000, local: 0 } : { missing: false, cloud: 0, local: 0 }),
+      earliest: async () => earliest,
+      async download({ slaveId, dayStart, dayEnd, signal }) {
+        if (download === 'hang') await stopped(signal);
+        await Promise.race([new Promise(resolve => setTimeout(resolve, 3500)), stopped(signal)]);
+        if (slaveId !== 6) return 0;
+        for (let index = cloudOnly.length - 1; index >= 0; index -= 1) {
+          const [start, end] = cloudOnly[index];
+          if (start < dayEnd && end > dayStart) cloudOnly.splice(index, 1);
+        }
+        proven.push(dayKey(new Date(dayStart)));
+        return 14000;
+      },
+    },
+  };
+}
+// The A4 page with days only the cloud holds (`spans`) and its stand-in cloud.
+const activityDownloadPage = (now, view, spans, cloud = {}) => {
+  const cloudOnly = spans.map(span => [...span]);
+  const page = activityPage(now, view, { cloudOnly });
+  return { ...page, historyCloud: activityCloud(cloudOnly, { earliest: localDate(2026, 3, 16, 8, 0), ...cloud }) };
+};
+
 // 小黑's card open on the map, its activity page (A4) over it.
 // 小黑's own rows (its card's 活動量 row) carry the same activity as A4 reads.
 const activityPage = (now, view, data) => {
@@ -1146,6 +1190,18 @@ const FIXTURES = {
   // The page still reading (never answers) and a read that fails.
   'activity-loading': now => activityPage(now, { mode: 'week', date: now }, { answer: 'hang' }),
   'activity-error': now => activityPage(now, { mode: 'day', date: now }, { answer: 'fail' }),
+  // 2026-10-21: 10/6（二） only in the cloud: A4 downloads it (載入中 and
+  // 「下載 10/06 的紀錄…」 for 3.5 s), then shows the day.
+  'activity-download': now => activityDownloadPage(now, { mode: 'day', date: day(10, 6, 12) },
+    [[day(10, 6, 0), day(10, 7, 0)]]),
+  // 週 9/27–10/3 with 10/1 and 10/2 only in the cloud: the rest shows at
+  // once, 「下載紀錄 0/2…」 then 1/2, the two days fill in.
+  'activity-download-week': now => activityDownloadPage(now, { mode: 'week', date: day(9, 30, 12) },
+    [[day(10, 1, 0), day(10, 3, 0)]]),
+  // The same as activity-download without a network: 「沒有網路，10/06 的紀錄
+  // 還沒下載，連上網路再試」 and 重試, not 沒有資料.
+  'activity-download-offline': now => activityDownloadPage(now, { mode: 'day', date: day(10, 6, 12) },
+    [[day(10, 6, 0), day(10, 7, 0)]], { online: false }),
   // ---- a dog's edit sheet (047, A5: name and face in one sheet) ----------
   // card-ok with the pencil pressed: 豆豆's edit sheet (A5) over its card.
   'dog-edit': now => ({ ...FIXTURES['card-ok'](now), openPage: 'edit' }),
