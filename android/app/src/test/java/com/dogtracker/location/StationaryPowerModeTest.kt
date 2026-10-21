@@ -202,6 +202,22 @@ class StationaryPowerModeTest {
     assertEquals(301L, r.power.lowSeconds(600 * s))
   }
 
+  @Test fun aRepeatedLastPositionIsNotUsable() {
+    val r = Recorder()
+    r.still(1, 201)
+    val rows = r.saved.size
+    // Play services hands back the stop's last GPS fix every 30 s (nothing measures in balanced power).
+    var t = 231.0
+    while (t <= 531) { assertFalse(r.feed(fix(t))); t += 30 }
+    assertEquals(rows, r.saved.size)
+    assertEquals(201 * s, r.pipe.lowUsableAt)
+    assertTrue(r.power.silent(502 * s, r.pipe.lowUsableAt))
+    // A real Wi-Fi fix at the stop is usable again.
+    assertTrue(r.feed(fix(561.0, n = 3.0, accuracy = 18f)))
+    assertEquals(561 * s, r.pipe.lowUsableAt)
+    assertFalse(r.feed(fix(591.0, n = 3.0, accuracy = 18f)))
+  }
+
   @Test fun aJumpInLowPowerIsNoMoveAndNoRow() {
     val r = Recorder()
     r.still(1, 201)

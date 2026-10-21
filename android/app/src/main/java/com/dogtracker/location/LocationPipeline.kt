@@ -245,6 +245,8 @@ internal class LocationPipeline {
    * - Left the stop (raw position beyond max(25 m, 1.5 × the larger accuracy)
    *   of the locked coordinate: MotionDetector.coarseHoldRadius) or a reliable
    *   speed (MotionDetector `high`): [lowExit]; not saved (rejected "moved").
+   * - A repeat of the newest saved fix (same position and accuracy) is
+   *   rejected as a duplicate and is not usable.
    * - Otherwise one that passes the accuracy gate is a held row: the locked
    *   coordinate, stationary, speed 0, the same odometer; its own time, raw
    *   position, accuracy and measured speed. Coarser ones are rejected as
@@ -270,6 +272,15 @@ internal class LocationPipeline {
         minOf(windowBestRejectedAccuracy ?: Float.MAX_VALUE, accuracy)
       return reject("accuracy") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1122) }
     }
+    // The same position and accuracy as the newest saved fix, under a new
+    // time: Play services repeating its last location while nothing measures
+    // (emulator: balanced power has no Wi-Fi or cell source; the GPS fix of
+    // the stop came back every 30 s while the phone walked away). It proves
+    // nothing about where the phone is: not saved, not usable (the silence
+    // rule then looks again). Real Wi-Fi fixes never repeated exactly (10/09:
+    // 0 of 4,162 consecutive pairs).
+    if (sample.latitude == held.rawLatitude && sample.longitude == held.rawLongitude && accuracy == held.accuracy)
+      return reject("duplicate") { com.dogtracker.NativeCopy.text(com.dogtracker.R.string.c1119) }
     latest = held.copy(elapsedNanos = sample.elapsedNanos, timestamp = sample.timestamp, accuracy = accuracy,
       rawLatitude = sample.latitude, rawLongitude = sample.longitude, speed = 0f, rawSpeed = sample.rawSpeed,
       speedAccuracy = sample.speedAccuracy, bearing = sample.bearing, altitude = sample.altitude,
