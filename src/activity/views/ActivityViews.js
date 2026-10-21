@@ -1,6 +1,6 @@
 import { t } from '../../i18n';
 import { size } from '../../theme/tokens';
-import { ACTIVITY, activityMinutes, durationText, minuteOf } from '../ActivityMinutes';
+import { ACTIVITY, activityMinutes, durationText, fillActivityGaps, minuteOf } from '../ActivityMinutes';
 
 const MINUTE = 60000;
 // A local binding: a global lookup per minute is slow over a year of minutes.
@@ -119,19 +119,21 @@ function axisLabel(mode, start) {
 }
 
 /**
- * The 休息／劇烈 runs over one slot per minute (NaN = no data), the same rules
- * as ActivityMinutes.activityState judged at the end of every minute, in one
- * pass (a year is ~500,000 minutes): 劇烈 when a minute and the one before are
- * both at least vigorousMin (the pair counts); 休息 when the last restMinutes
- * have at least coverage of their minutes with data and every one at most
- * restMax, from the window's first minute with data. Returns per slot whether
- * a 休息 / 劇烈 run covers it (missing minutes inside a run stay missing for
- * the totals, but the run's ground is continuous).
+ * The 休息／劇烈 runs over one slot per minute (NaN = no data; gaps already
+ * filled, ActivityMinutes.fillActivityGaps), the same rules as
+ * ActivityMinutes.activityState judged at the end of every minute, in one
+ * pass (a year is ~500,000 minutes): 劇烈 when a minute with a reading of its
+ * own (`real`, when given) and the one before are both at least vigorousMin
+ * (the pair counts); 休息 when every one of the last restMinutes has a value
+ * at most restMax. Returns per slot whether a 休息 / 劇烈 run covers it.
+ * A run is marked with what came after it too (a rest from the first of its
+ * 10 minutes, 劇烈 from the first minute of a pair), which the card, judging
+ * the newest minute, cannot know yet.
  */
-export function classify(values, config = ACTIVITY, charging = null) {
+export function classify(values, config = ACTIVITY, charging = null, real = null) {
   const n = values.length;
   const restWindow = config.restMinutes;
-  const needs = Math.ceil(restWindow * config.coverage - 1e-9);
+  const needs = restWindow;
   const pair = config.vigorousMinutes;
   const restMax = config.restMax;
   const vigorousMin = config.vigorousMin;
@@ -156,7 +158,7 @@ export function classify(values, config = ACTIVITY, charging = null) {
     const v = values[tick];
     high = v >= vigorousMin ? high + 1 : 0;
     const from = tick - restWindow + 1 > 0 ? tick - restWindow + 1 : 0;
-    if (high >= pair) {
+    if (high >= pair && (!real || real[tick])) {
       const since = tick - high + 1 > from ? tick - high + 1 : from;
       vigorousDiff[since] += 1;
       vigorousDiff[tick + 1] -= 1;
@@ -194,8 +196,11 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const navigation = activityNavigation(mode, date ?? now, { now, earliest });
   const end = Math.min(period.end, minuteOf(now));
   const current = minuteOf(now);
-  // Given minutes past the last finished one are skipped below (limit).
-  const minutes = given ?? activityMinutes(readings, { now });
+  // Gaps of at most 4 minutes (30 between two charging minutes) carry the
+  // previous value (fillActivityGaps),
+  // the same for raw readings (日) and per-minute sums (週／月／年). Given
+  // minutes from the running one on are left out first.
+  const minutes = fillActivityGaps(given ?? activityMinutes(readings, { now }), { before: current });
   // One slot per minute from 9 minutes before the period (a run that began
   // just before still fills back) to the last finished minute it needs.
   const base = period.start - 9 * MINUTE;
@@ -204,6 +209,8 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
   const values = new Float64Array(n).fill(NaN);
   const counts = new Uint16Array(n);
   const charging = new Uint8Array(n);
+  // Minutes with a reading of their own (not filled).
+  const real = new Uint8Array(n);
   for (let i = 0; i < minutes.length; i += 1) {
     const item = minutes[i];
     // Minutes are whole (minuteOf), so the slot is exact.
@@ -215,11 +222,12 @@ export function buildActivityView({ mode = 'day', date, now, earliest, since = n
         continue;
       }
       values[index] = item.value;
+      if (!item.filled) real[index] = 1;
       const count = item.count ?? 1;
       counts[index] = count > 65535 ? 65535 : count;
     }
   }
-  const { rest, vigorous } = classify(values, ACTIVITY, charging);
+  const { rest, vigorous } = classify(values, ACTIVITY, charging, real);
   // Period minutes: 0 missing, 1 normal, 2 rest, 3 vigorous, 5 charging.
   const first = 9;
   const last = Math.max(first, Math.round((end - base) / MINUTE));

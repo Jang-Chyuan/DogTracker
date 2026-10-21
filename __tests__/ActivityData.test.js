@@ -19,24 +19,26 @@ function database() {
   return { db, local, cloud };
 }
 
-test('日 reads raw rows of both tables with 9 minutes either side; other accounts and dogs stay out', async () => {
+test('日 reads raw rows of both tables with 39 minutes either side (9 + the 30-minute charging fill, 2026-10-21); other accounts and dogs stay out', async () => {
   const { db, local, cloud } = database();
   try {
-    local(DAY - 9 * M, 0.02);
-    local(DAY - 10 * M, 0.02); // outside the context
+    local(DAY - 39 * M, 0.02);
+    local(DAY - 40 * M, 0.02); // outside the context
     local(DAY + 5 * M + 1000, 0.4);
     local(DAY + 5 * M + 2000, 0.9, 0); // not a valid reading
     local(DAY + 6 * M, 0.4, 1, 4); // another dog
     cloud(DAY + 7 * M, 0.6);
     cloud(DAY + 8 * M, 0.7, 'b'); // another account
     const answer = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
-    expect(answer.local.map(row => row.time)).toEqual([DAY - 9 * M, DAY + 5 * M + 1000]);
+    expect(answer.local.map(row => row.time)).toEqual([DAY - 39 * M, DAY + 5 * M + 1000]);
     expect(answer.cloud.map(row => row.time)).toEqual([DAY + 7 * M]);
     const signedOut = await readActivityPeriod(db, null, 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
     expect(signedOut.cloud).toEqual([]);
     const view = buildDayView({ date: DAY, now: DAY + 2 * 1440 * M, earliest: DAY, ...activityViewInput(answer) });
     expect(view.points[5]).toMatchObject({ value: 0.4, state: 'normal' });
     expect(view.points[7]).toMatchObject({ value: 0.6, state: 'normal' });
+    // The minute between (no packet, readings 2 minutes apart) carries 0.4.
+    expect(view.points[6]).toMatchObject({ value: 0.4, count: 0, state: 'normal' });
   } finally { db.close(); }
 });
 
@@ -67,6 +69,37 @@ test('週／月／年: one mean per minute over both tables, a downloaded copy o
     const same = activityMinutes(activityViewInput(raw).readings, { now: DAY + 1440 * M });
     expect(same.map(item => [item.minute, item.count])).toEqual(answer.minutes.map(item => [item.minute, item.count]));
     same.forEach((item, i) => expect(item.value).toBeCloseTo(answer.minutes[i].value));
+  } finally { db.close(); }
+});
+
+// 2026-10-21: the collar repeats its activity stamp over several packets (on
+// the charger 218 packets carried 132 stamps). Packets of the same table are
+// never copies of each other; a downloaded one is a copy of a local one only
+// within 2 minutes. The day's raw read and the per-minute SQL agree.
+test('a repeated collar stamp: each packet counts, a copy only within 2 minutes', async () => {
+  const { db } = database();
+  const stamped = (table, values) => db.sqlite.prepare(table === 'local'
+    ? 'INSERT INTO dog_status VALUES(6,?,?,?,1,?,?)'
+    : "INSERT INTO supabase_dog_status VALUES('a',6,?,?,?,?,1,?,?)").run(...values);
+  try {
+    // On the charger, the cloud only: the same stamp at 10:00, 10:06, 10:13.
+    for (const minute of [600, 606, 613]) stamped('cloud', [7, DAY + minute * M + 5000, DAY + minute * M, 0, 'S1', 1]);
+    // Local and cloud with one stamp: the cloud one 90 s later is the copy,
+    // the one 5 minutes later is a packet of its own.
+    stamped('local', [7, DAY + 700 * M, '0.3', 'S2', 0]);
+    stamped('cloud', [7, DAY + 701 * M + 35000, DAY + 701 * M + 30000, 0.3, 'S2', 0]);
+    stamped('cloud', [7, DAY + 705 * M + 5000, DAY + 705 * M, 0.5, 'S2', 0]);
+    const { activityMinutes } = require('../src/activity/ActivityMinutes');
+    const raw = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'raw' });
+    const minutes = activityMinutes(activityViewInput(raw).readings, { now: DAY + 1440 * M });
+    expect(minutes.map(item => [(item.minute - DAY) / M, item.count, !!item.charging])).toEqual([
+      [600, 0, true], [606, 0, true], [613, 0, true], [700, 1, false], [705, 1, false]]);
+    const sql = await readActivityPeriod(db, 'a', 6, { start: DAY, end: DAY + 1440 * M, detail: 'minute' });
+    expect(sql.minutes.map(item => [(item.minute - DAY) / M, item.count, !!item.charging]))
+      .toEqual(minutes.map(item => [(item.minute - DAY) / M, item.count, !!item.charging]));
+    // So the day is one charging stretch 10:00–10:13, as the week shows it.
+    const view = buildDayView({ date: DAY, now: DAY + 2 * 1440 * M, earliest: DAY, ...activityViewInput(raw) });
+    expect(view.points.slice(600, 614).every(point => point.state === 'charging')).toBe(true);
   } finally { db.close(); }
 });
 

@@ -4,7 +4,7 @@ import { chargingSql, isCharging } from '../models/UsbPresent';
 // activity readings of the last hours (both tables, for the 活動量 row) and
 // its newest believed battery reading (the 電量 row says how old it is when it
 // is older than the position). Only read while a card is open.
-import { activityMinutes, activityReadings } from './ActivityMinutes';
+import { activityMinutes, activityReadings, uniqueReadings } from './ActivityMinutes';
 import { advanceBattery, batteryReading, PLAUSIBLE_BATTERY_SQL } from '../tracking/BatteryPlausibility';
 
 // How far back the 活動量 row reads every time: a rest that reaches back to
@@ -72,7 +72,9 @@ export async function readDogCardRows(db, owner, slaveId, since, until = null) {
 export function dogCardReadings({ local = [], cloud = [], battery = [], since = null } = {}, now) {
   const readings = [...activityReadings(local, 'ble'), ...activityReadings(cloud, 'cloud')];
   const minutes = activityMinutes(readings, { now });
-  const finished = readings.filter(reading => reading.time < Math.floor(now / 60000) * 60000);
+  // The newest reading that counts (a cloud copy of a local reading, with
+  // the server's later time, is not one: its minute has no value).
+  const finished = uniqueReadings(readings).filter(reading => reading.time < Math.floor(now / 60000) * 60000);
   const newestAt = finished.length ? Math.max(...finished.map(reading => reading.time)) : null;
   // Both tables in time order (equal times: the local copy first, so the
   // cloud copy of the same reading is the same packet again), judged the way

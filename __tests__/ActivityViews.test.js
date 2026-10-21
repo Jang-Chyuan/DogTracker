@@ -17,7 +17,8 @@ test('day averages and deduplicates with shared BLE precedence; missing curve is
     { time: START, value: 0.2, key: 'same', source: 'cloud' },
     { time: START, value: 0.4, key: 'same', source: 'ble' },
     { time: START + 30000, value: 0.6, key: 'other', source: 'ble' },
-    ...input(START + 2 * M, [0.3]),
+    // Four minutes without a packet in between (a gap over 4 minutes).
+    ...input(START + 5 * M, [0.3]),
   ];
   const original = JSON.stringify(readings);
   const view = buildDayView({ ...options, readings });
@@ -25,33 +26,41 @@ test('day averages and deduplicates with shared BLE precedence; missing curve is
   expect(view.points[0]).toMatchObject({ value: 0.5, count: 2, state: 'normal' });
   expect(view.points[1]).toMatchObject({ value: null, count: 0, state: 'missing' });
   expect(view.totals).toEqual({ rest: 0, normal: 2, vigorous: 0, missing: 1438, charging: 0 });
-  expect(view.gaps[0]).toEqual({ start: START + M, end: START + 2 * M, durationMinutes: 1 });
+  expect(view.gaps[0]).toEqual({ start: START + M, end: START + 5 * M, durationMinutes: 4 });
   expect(JSON.stringify(readings)).toBe(original);
 });
 
-test('rest backfills eight of ten, excludes holes from totals but keeps continuous band', () => {
+// 2026-10-19: a minute without a packet between readings at most 4 minutes
+// apart carries the previous value and counts as its state.
+test('rest backfills ten; minutes without a packet between close readings are filled and counted', () => {
   const readings = input(START, [0.05, 0.05, null, 0.05, 0.05, null, 0.05, 0.05, 0.05, 0.05, 0.3]);
   const view = buildDayView({ ...options, readings });
-  expect(view.totals.rest).toBe(8);
+  expect(view.totals.rest).toBe(10);
   expect(view.totals.normal).toBe(1);
   expect(view.bands.rest).toEqual([{ start: START, end: START + 10 * M }]);
-  expect(view.points[2].state).toBe('missing');
-  expect(view.rows[0].durationText).toBe('8 分');
-  expect(view.rows[2].rangeLabels).toEqual(['00:02–00:03', '00:05–00:06', '00:11–24:00']);
+  expect(view.points[2]).toMatchObject({ state: 'rest', value: 0.05, count: 0 });
+  expect(view.rows[0].durationText).toBe('10 分');
+  expect(view.rows[2].rangeLabels).toEqual(['00:11–24:00']);
 });
 
-test('coverage below eight of ten does not rest; sparse observations still count as normal', () => {
+test('a gap over 4 minutes is 沒有資料 and breaks a rest; the readings still count as normal', () => {
   const view = buildDayView({ ...options, readings: input(START,
-    [0, null, 0, null, 0, null, 0, 0, 0, 0]) });
+    [0, null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0]) });
   expect(view.totals.rest).toBe(0);
-  expect(view.totals.normal).toBe(7);
+  expect(view.totals.normal).toBe(10);
+  expect(view.rows[2].rangeLabels[0]).toBe('00:01–00:05');
 });
 
-test('vigorous includes 0.8, backfills two, ends on normal and cannot bridge a gap', () => {
-  const view = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, 1]) });
+test('vigorous includes 0.8, backfills two, ends on normal and cannot bridge a gap over 4 minutes', () => {
+  const view = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, null, null, null, 1]) });
   expect(view.totals.vigorous).toBe(2);
   expect(view.bands.vigorous).toEqual([{ start: START, end: START + 2 * M }]);
-  expect(view.points.slice(0, 6).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'normal', 'missing', 'normal']);
+  expect(view.points.slice(0, 9).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'normal',
+    'missing', 'missing', 'missing', 'missing', 'normal']);
+  // One minute without a packet between two vigorous readings is bridged.
+  const bridged = buildDayView({ ...options, readings: input(START, [0.8, 0.9, 0.3, 1, null, 1]) });
+  expect(bridged.points.slice(0, 6).map(p => p.state)).toEqual(['vigorous', 'vigorous', 'normal', 'vigorous',
+    'vigorous', 'vigorous']);
 });
 
 test('today excludes unfinished minute and all future time from totals/gaps', () => {
@@ -79,7 +88,8 @@ test('context on either side of midnight preserves backfill without leaking dura
 });
 
 test('gap ranges truncate to three with additional count and full-day copy', () => {
-  const day = buildDayView({ ...options, readings: input(START, [null, 0.3, null, 0.3, null, 0.3, null, 0.3]) });
+  const day = buildDayView({ ...options, readings: input(START,
+    [null, 0.3, null, null, null, null, 0.3, null, null, null, null, 0.3, null, null, null, null, 0.3]) });
   expect(day.rows[2].rangeLabels).toHaveLength(3);
   expect(day.rows[2].additionalRanges).toBe(2);
   expect(day.rows[2].additionalText).toBe('另外 2 段');
@@ -135,9 +145,9 @@ test('empty data, durations, legend and thresholds use A4 text', () => {
   expect(view.rows.map(row => row.label)).toEqual([i18nT('c086'), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
   expect(view.rows[2].durationText).toBe('24 小時');
   expect(view.rows[2].rangeLabels).toEqual(['00:00–24:00']);
-  expect(view.thresholds).toEqual({ restMax: 0.05, vigorousMin: 0.8 });
+  expect(view.thresholds).toEqual({ restMax: 0.1, vigorousMin: 0.8 });
   expect(view.thresholdBands).toEqual([
-    { state: 'rest', min: 0, max: 0.05, label: i18nT('c086') },
+    { state: 'rest', min: 0, max: 0.1, label: i18nT('c086') },
     { state: 'vigorous', min: 0.8, max: 1, label: i18nT('c088') },
   ]);
   expect(ACTIVITY_VIEW_COPY.legend.map(item => item.label)).toEqual([i18nT('c086'), i18nT("c434"), i18nT('c088'), i18nT('c089'), i18nT('c731')]);
@@ -197,22 +207,39 @@ test('local calendar days retain DST capacity rather than adding fixed 24 hours'
 
 // The one-pass classify() against activityState() judged at every minute (the
 // first model's loop), on random minutes with gaps around both thresholds.
+// 2026-10-19: classify() gets the gaps filled (fillActivityGaps). A minute
+// with a packet is judged by activityState() on the packets up to it; a
+// filled minute as if its carried value had been read there, except that it
+// never starts 劇烈 (a filled minute does not make the pair).
 describe('classify matches activityState at every minute', () => {
-  const { activityState } = require('../src/activity/ActivityMinutes');
+  const { activityState, fillActivityGaps } = require('../src/activity/ActivityMinutes');
   const { classify } = require('../src/activity/views/ActivityViews');
+  const realMinutes = values => Array.from(values, (value, k) => ({ minute: k * M, value }))
+    .filter(item => !Number.isNaN(item.value));
+  const filledSlots = values => {
+    const filled = new Float64Array(values.length).fill(NaN);
+    const real = new Uint8Array(values.length);
+    for (const item of fillActivityGaps(realMinutes(values))) {
+      filled[item.minute / M] = item.value;
+      if (!item.filled) real[item.minute / M] = 1;
+    }
+    return { filled, real };
+  };
   const reference = values => {
     const n = values.length;
     const rest = new Uint8Array(n);
     const vigorous = new Uint8Array(n);
+    const { filled, real } = filledSlots(values);
+    const minutes = realMinutes(values);
     for (let t = 0; t < n; t += 1) {
-      const window = [];
-      for (let k = Math.max(0, t - 9); k <= t; k += 1) {
-        if (!Number.isNaN(values[k])) window.push({ minute: k * M, value: values[k] });
-      }
+      // The packets of the 12 minutes before (9 + the gap fill) and up to t.
+      const window = minutes.filter(item => item.minute >= (t - 12) * M && item.minute <= t * M);
+      if (!real[t] && !Number.isNaN(filled[t])) window.push({ minute: t * M, value: filled[t] });
       const result = activityState(window, { end: t * M });
       if (result.state !== 'rest' && result.state !== 'vigorous') continue;
+      if (result.state === 'vigorous' && !real[t]) continue;
       const target = result.state === 'rest' ? rest : vigorous;
-      for (let k = result.since / M; k <= t; k += 1) target[k] = 1;
+      for (let k = Math.max(result.since / M, t - 9); k <= t; k += 1) target[k] = 1;
     }
     return { rest, vigorous };
   };
@@ -221,16 +248,18 @@ describe('classify matches activityState at every minute', () => {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
-  test.each([0, 1, 2, 3, 4, 5])('random series %i', () => {
+  // Series 6 and 7: sparse (45% of minutes without a packet), gaps over 4 minutes too.
+  test.each([0, 1, 2, 3, 4, 5, 6, 7])('random series %i', series => {
     const values = Float64Array.from({ length: 600 }, (_, i) => {
       const r = random();
-      if (r < 0.12) return NaN;
+      if (r < (series >= 6 ? 0.45 : 0.12)) return NaN;
       const phase = Math.floor(i / 40) % 3;
       if (phase === 0) return random() < 0.9 ? 0.03 : 0.2;
       if (phase === 1) return random() < 0.6 ? 0.9 : 0.5;
       return 0.3;
     });
-    const fast = classify(values);
+    const { filled, real } = filledSlots(values);
+    const fast = classify(filled, undefined, null, real);
     const slow = reference(values);
     expect(Array.from(fast.rest)).toEqual(Array.from(slow.rest));
     expect(Array.from(fast.vigorous)).toEqual(Array.from(slow.vigorous));
@@ -265,7 +294,7 @@ test('年 built month by month equals 年 built at once', () => {
   for (let month = 1; month <= 10; month += 1) {
     const period = periodOf('month', date(month, 1));
     months.push(buildActivityView({ mode: 'month', date: period.start, now, earliest: date(1, 1),
-      minutes: minutes.filter(item => item.minute >= period.start - 9 * M && item.minute < period.end + 9 * M) }));
+      minutes: minutes.filter(item => item.minute >= period.start - 39 * M && item.minute < period.end + 39 * M) }));
   }
   const combined = combineYearView({ date: now, now, earliest: start, months });
   expect(combined.totals).toEqual(whole.totals);
@@ -312,7 +341,9 @@ test('day has 96 quarter-hour means, exact two-minute vigorous burst wins', () =
 test('partial today averages present minutes and leaves future slots pending', () => {
   const view = buildDayView({ ...options, now: START + 18 * M + 1000,
     readings: input(START + 15 * M, [0.2, null, 0.6, 1]) });
-  expect(view.bars[1]).toMatchObject({ count: 2, value: 0.4, height: 80, pending: false });
+  // 00:16 has no packet: it carries 00:15's 0.2 (a filled minute counts).
+  expect(view.bars[1]).toMatchObject({ count: 3, pending: false });
+  expect(view.bars[1].value).toBeCloseTo(1 / 3);
   expect(view.bars[2]).toMatchObject({ count: 0, height: 0, pending: true });
   expect(view.bars[0]).toMatchObject({ state: 'missing', height: 0, pending: false });
 });
