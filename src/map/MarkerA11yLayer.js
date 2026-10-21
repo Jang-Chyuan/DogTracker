@@ -1,10 +1,11 @@
 import { presentationDurationMs } from '../history/HistoryTimelinePresentation';
 import { t } from '../i18n';
+import { holdWord } from '../placement/HoldWords';
 // TalkBack on the map's dogs (設計稿「無障礙」狗標記). Google draws the dog
 // markers as bitmaps, so the label on the marker's view never reaches
 // TalkBack (only the SDK's own blue dot does). This layer puts one invisible
 // accessibility item over each dog on screen, with the marker's one sentence
-// (「小黑・室內，充電中 62%，不在接收範圍，沒有新資料，最後 10:05」; a group
+// (「小黑・遮蔽處，不在接收範圍，沒有新資料，最後 10:05」; a group
 // tag's 「3 隻…」); a double tap does what tapping the dog does. It takes no
 // touches (pointerEvents none): fingers still reach the map.
 import { StyleSheet, View } from 'react-native';
@@ -75,7 +76,7 @@ const clock = at => {
 
 /**
  * A history stop on the map (設計稿「無障礙」停留編號): 「停留 2，09:35 到
- * 10:05，30 分鐘，點兩下跳到開始」; an indoor hold 「室內，…」.
+ * 10:05，30 分鐘，點兩下跳到開始」; a hold 「遮蔽處，…」 or 「充電中，…」.
  */
 export function stopSpeech(place) {
   // Stays at one place on one marker (「1・3」): each stay, in time order.
@@ -85,7 +86,7 @@ export function stopSpeech(place) {
     const at = Number.isFinite(place.start) ? `，${clock(place.start)}` : '';
     return t("c762", { number: place.number, at: at });
   }
-  const lead = place.kind === 'indoor' ? t('c114') : t('c136', { duration: place.number });
+  const lead = place.kind === 'indoor' ? holdWord(place.reason) : t('c136', { duration: place.number });
   const length = presentationDurationMs(place);
   const span =
     Number.isFinite(place.start) && Number.isFinite(place.end)

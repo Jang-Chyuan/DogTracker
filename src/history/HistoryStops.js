@@ -1,9 +1,9 @@
-import { t } from '../i18n';
 import { configFor, coordinateValid, distanceMeters, median, above, samePlaceGap, measuredSpeedMps,
   quietFix, recordingSessionChanged } from './HistoryConfig';
 import { isVehiclePoint } from './HistoryMovement';
 import { phoneReliableSpeed } from '../locationTracker/PhoneMotion';
 import { phoneStayDisplayAnchors } from './PhoneStayDisplayAnchors';
+import { holdWord } from '../placement/HoldWords';
 import { replayVisitDecisions } from './HistoryVisitReplay';
 
 // 判定表「停留的代表位置」: the mean of the visit's judged fixes (accuracy
@@ -446,12 +446,19 @@ export function historyIndoorNodes(points, { start = -Infinity, end = Infinity, 
   for (const p of points) {
     if (p.time < start || p.time > end) continue;
     if (!p.heldReason) { node = null; previous = p; continue; }
-    if (!node || node.heldSince !== p.heldSince
+    // 2026-10-19 (user): a hold on the charger is 「充電中」, any other
+    // 「遮蔽處」. One hold unplugged on the way is two rows, each with its
+    // word: the second starts at its first packet (the list gives the
+    // seconds before it to the first), and only the first of them can go
+    // on from the day before.
+    const word = holdWord(p.heldReason);
+    const reworded = !!node && node.heldSince === p.heldSince && node.label !== word;
+    if (!node || node.heldSince !== p.heldSince || reworded
       || (p.time - previous.time > config.gapMs && !samePlaceGap(previous, p, config))) {
       node = { type: 'indoor', start: p.time, end: p.time, durationMs: 0,
         latitude: p.latitude, longitude: p.longitude, reason: p.heldReason,
-        heldSince: p.heldSince, label: t('c114'),
-        continuesPreviousDay: p.heldSince < dayStart, continuesNextDay: false };
+        heldSince: p.heldSince, label: word,
+        continuesPreviousDay: p.heldSince < dayStart && !reworded, continuesNextDay: false };
       nodes.push(node);
     } else { node.end = p.time; node.durationMs = node.end - node.start; }
     previous = p;

@@ -160,9 +160,9 @@ describe('no 「接續隔天」 capsule', () => {
     expect(placeSpeech(end, '虛構地址')).toBe('虛構地址，09:25');
   });
 
-  test('a hold running past midnight keeps 「室內・N 分」', () => {
+  test('a hold running past midnight keeps 「在遮蔽處 N 分」', () => {
     expect(nodePill({ type: 'indoor', start: T0, end: T0 + 40 * MINUTE, continuesNextDay: true }))
-      .toEqual({ text: '室內・40 分', tone: 'indoor' });
+      .toEqual({ text: '在遮蔽處 40 分', tone: 'indoor' });
   });
 
   test('the copy is gone from resources', () => {

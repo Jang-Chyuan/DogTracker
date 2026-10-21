@@ -775,7 +775,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -1895,7 +2059,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -3197,7 +3525,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -4629,7 +5121,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -6839,7 +7495,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -7456,7 +8276,69 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -7760,7 +8642,69 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -8135,7 +9079,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -8535,7 +9547,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -8960,7 +10040,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -9410,7 +10558,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -9960,7 +11176,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -10660,7 +11944,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -11910,7 +13262,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -13117,7 +14537,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -13949,7 +15533,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -14856,7 +16604,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [
@@ -15531,7 +17443,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -16031,7 +18011,75 @@
       }
      ]
     },
-    "bucketStart": 1760000040000
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
    }
   },
   "rows": [
@@ -16183,6 +18231,824 @@
       "longitude": 121.314
      },
      "why": "good-fixes-away"
+    }
+   }
+  ]
+ },
+ {
+  "name": "release: open sky near the anchor",
+  "initial": {
+   "slaveId": 4,
+   "name": "豆豆",
+   "coordinate": {
+    "latitude": 24.9895,
+    "longitude": 121.314
+   },
+   "fixAt": 1760000045000,
+   "packetAt": 1760000065000,
+   "held": true,
+   "farFixes": 0,
+   "batteryPercentage": 80,
+   "charging": false,
+   "range": {
+    "status": "in",
+    "clearing": [],
+    "nearBack": 0,
+    "cloudOnly": false
+   },
+   "indoorState": {
+    "goods": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     }
+    ],
+    "weak": [],
+    "rawTail": [
+     {
+      "time": 1760000000000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000005000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000010000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000015000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000020000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000025000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000030000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000035000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000040000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     },
+     {
+      "time": 1760000045000,
+      "latitude": 24.9895,
+      "longitude": 121.314,
+      "speedKmh": null
+     }
+    ],
+    "lastGoodAt": 1760000045000,
+    "lastTime": 1760000065000,
+    "usb": true,
+    "environment": {
+     "environment": "window",
+     "source": "random_forest",
+     "modelEnvironment": "window",
+     "modelConfidence": 0.9934126984126984,
+     "probabilities": {
+      "indoor": 0,
+      "outdoor": 0.006587301587301586,
+      "window": 0.9934126984126984
+     },
+     "samples": 8,
+     "hasSignal": true,
+     "windowStart": 1759999920000,
+     "windowEnd": 1760000040000,
+     "observedAt": 1760000035000
+    },
+    "held": {
+     "anchor": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "source": "good",
+     "reason": "充電中",
+     "refine": [
+      {
+       "time": 1760000010000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000015000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000020000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000025000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000030000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000035000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000040000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      },
+      {
+       "time": 1760000045000,
+       "latitude": 24.9895,
+       "longitude": 121.314,
+       "speedKmh": null
+      }
+     ],
+     "weak": [],
+     "farGood": [],
+     "lately": [],
+     "nearby": [],
+     "since": 1760000045000,
+     "anchorAt": 1760000045000,
+     "startedAt": 1760000065000
+    },
+    "previous": {
+     "time": 1760000065000,
+     "quality": "none",
+     "point": null,
+     "trusted": false
+    },
+    "previousHold": null,
+    "recentFixes": [
+     {
+      "time": 1760000000000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000005000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000010000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000015000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000020000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000025000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000030000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000035000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000040000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     {
+      "time": 1760000045000,
+      "master": "7",
+      "latitude": 24.9895,
+      "longitude": 121.314
+     }
+    ],
+    "bleSignal": {
+     "rssi": -55,
+     "time": 1760000065000
+    },
+    "buckets": {
+     "7": [
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000040000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000045000,
+       "slave_lat": 24.9895,
+       "slave_lon": 121.314,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 0
+      },
+      {
+       "master_id": 7,
+       "slave_id": 4,
+       "track_at": 1760000065000,
+       "slave_lat": 0,
+       "slave_lon": 0,
+       "satellites": 9,
+       "hdop": 1,
+       "rssi": -55,
+       "snr": 8,
+       "usb_present": 1
+      }
+     ]
+    },
+    "bucketStart": 1760000040000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     }
+    ]
+   }
+  },
+  "rows": [
+   {
+    "row": {
+     "time": 1760000120000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000160000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000200000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000240000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000280000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000320000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000360000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000400000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000440000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000480000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000520000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": true,
+     "coordinate": {
+      "latitude": 24.9895,
+      "longitude": 121.314
+     },
+     "why": null
+    }
+   },
+   {
+    "row": {
+     "time": 1760000560000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.989949155587496,
+      "longitude": 121.314
+     },
+     "why": "open-sky"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000600000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.989949155587496,
+      "longitude": 121.314
+     },
+     "why": "open-sky"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000640000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.989949155587496,
+      "longitude": 121.314
+     },
+     "why": "open-sky"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000680000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.989949155587496,
+      "longitude": 121.314
+     },
+     "why": "open-sky"
+    }
+   },
+   {
+    "row": {
+     "time": 1760000720000,
+     "master_id": 7,
+     "slave_id": 4,
+     "source": "ble",
+     "latitude": 24.989949155587496,
+     "longitude": 121.314,
+     "satellites": 34,
+     "hdop": 0.6,
+     "rssi": -55,
+     "snr": 8,
+     "master_latitude": 24.9895,
+     "master_longitude": 121.314,
+     "usb_present": 0
+    },
+    "expect": {
+     "held": false,
+     "coordinate": {
+      "latitude": 24.989949155587496,
+      "longitude": 121.314
+     },
+     "why": "open-sky"
     }
    }
   ]
@@ -16963,7 +19829,171 @@
       }
      ]
     },
-    "bucketStart": 1760000160000
+    "bucketStart": 1760000160000,
+    "sky": [
+     {
+      "time": 1760000000000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000005000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000010000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000015000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000020000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000025000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000030000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000035000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000040000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000045000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000065000,
+      "good": false,
+      "satellites": 0,
+      "hdop": null
+     },
+     {
+      "time": 1760000120000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000125000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000130000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000135000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000140000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000145000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000150000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000155000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000160000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000165000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000170000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000175000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000180000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000185000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000190000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     },
+     {
+      "time": 1760000195000,
+      "good": true,
+      "satellites": 9,
+      "hdop": 1
+     }
+    ]
    }
   },
   "rows": [

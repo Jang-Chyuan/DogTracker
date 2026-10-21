@@ -46,6 +46,14 @@ export const SCENARIOS = {
     { kind: 'open', minutes: 5, from: PARK, to: DOOR },
     { kind: 'indoor', minutes: 180, from: ROOM, fix: 0.5, usb: true },
   ],
+  // 2026-10-19: a new collar unplugged and out in the yard 40–55 m from its
+  // charger, 30–38 satellites at HDOP 0.5–0.7: never 80 m away, so only the
+  // open sky lets it go.
+  'yard with open sky beside the charger': [
+    { kind: 'indoor', minutes: 30, from: ROOM, fix: 0.5, usb: true },
+    { kind: 'open', minutes: 60, from: offset(HOME, 40, 0), to: offset(HOME, 50, 20), sats: [30, 38], hdop: [0.5, 0.7],
+      label: 'yard' },
+  ],
   'charging in a moving car': [
     { kind: 'drive', minutes: 20, from: HOME, to: OTHER, usb: true, master: 'dog' },
   ],
@@ -274,6 +282,14 @@ describeSimulation('indoor hold against simulated collars', () => {
       const { raw, hold } = table[name];
       expect(hold.movingP95).toBeLessThanOrEqual(raw.movingP95 + 25);
     });
+
+  test('a high-satellite yard beside the charger: drawn in the yard once the sky is clear', () => {
+    const { raw, hold, history } = table['yard with open sky beside the charger'];
+    // The first ten minutes still hold (the open-sky window); then the dog is
+    // drawn where it is, not at the charger 40–55 m away.
+    expect(hold.movingP50).toBeLessThanOrEqual(raw.movingP50 + 5);
+    expect(history.movingP50).toBeLessThanOrEqual(raw.movingP50 + 5);
+  });
 
   test('a set point at home would draw a dog charging in a car at home', () => {
     expect(table['charging in a moving car'].point.movingP50).toBeGreaterThan(1000);

@@ -114,10 +114,10 @@ test('a day whose walk runs past midnight ends without a capsule', async () => {
   expect(nodePill(last)).toBeNull();
 });
 
-test('indoors until now: the list ends on the house node 「室內・N 分」', async () => {
+test('indoors until now: the list ends on the house node 「在遮蔽處 N 分」', async () => {
   const { last } = await open('history-indoor-end');
   expect(last.type).toBe('indoor');
-  expect(nodePill(last)).toEqual({ text: '室內・30 分', tone: 'indoor' });
+  expect(nodePill(last)).toEqual({ text: '在遮蔽處 30 分', tone: 'indoor' });
 });
 
 test('a swipe over a row never counts as a tap on it (useTap)', async () => {

@@ -11,6 +11,7 @@ import { exportColors as colors, exportLightTheme } from '../theme/exportPalette
 import lightMapStyle from '../theme/light-map-style.json';
 import { withAlpha } from '../history/screen/HistoryMapModel';
 import { PLACE_X, PNG_STYLE as S } from './ExportPNG';
+import { HOLD_ICON_PATHS } from '../placement/HoldIcons';
 
 // The list's icons on a 24-unit grid (the same shapes as map/Glyph.js), as
 // path data the renderer strokes 2 units wide (dots are filled).
@@ -19,7 +20,9 @@ export const EXPORT_ICONS = {
   paw: { stroke: PAW_STROKE },
   car: { stroke: 'M3 16v-3.5l2-1 2.5-4h7l3.5 4 3 .8V16h-1.5M7.5 16h7M7.8 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M18.3 16.5a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0' },
   dots: { fill: 'M6.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M13.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0M20.6 12a1.6 1.6 0 1 1-3.2 0a1.6 1.6 0 1 1 3.2 0' },
-  house: { stroke: 'M4 11l8-7 8 7M6.5 9.5V20h11V9.5' },
+  // Holds (HoldIcons): 遮蔽處 a pavilion, 充電中 a bolt.
+  shelter: HOLD_ICON_PATHS.shelter,
+  bolt: HOLD_ICON_PATHS.bolt,
   // Leaving a stay: Glyph 'leave', filled (LeaveGeometry).
   leave: { fill: LEAVE_SHAPE.path },
 };
@@ -93,7 +96,7 @@ function nodeOps(row, color, cy) {
         text(String(row.number ?? ''), cx, cy - tokenSize.export.glyphInset, tokenSize.export.nodeDigitLine, tokenSize.export.nodeDigit, colors.onRoute, { bold: true, align: 'center' })];
     case 'indoor':
       return [{ t: 'circle', cx, cy, r: S.nodeSize / 2, fill: colors.receiver, stroke: colors.surface, strokeWidth: tokenSize.export.nodeBorder },
-        { t: 'icon', name: 'house', icon: EXPORT_ICONS.house, x: cx - tokenSize.export.glyphInset, y: cy - tokenSize.export.glyphInset, size: tokenSize.export.glyphSize, color: colors.onRoute }];
+        { t: 'icon', name: row.holdIcon ?? 'shelter', icon: EXPORT_ICONS[row.holdIcon ?? 'shelter'], x: cx - tokenSize.export.glyphInset, y: cy - tokenSize.export.glyphInset, size: tokenSize.export.glyphSize, color: colors.onRoute }];
     case 'resume':
       return [{ t: 'circle', cx, cy, r: tokenSize.export.resumeRadius, fill: colors.surface, stroke: color, strokeWidth: tokenSize.export.nodeBorder }];
     default:
@@ -212,7 +215,8 @@ export function mapOp(block) {
     t: 'map', x: 0, y: block.y, w: block.width, h: block.height, padding: block.padding,
     background: colors.mapFallback, halo: colors.mapLabelHalo, text: colors.text, surface: colors.surface,
     indoor: colors.receiver, onRoute: colors.onRoute, attribution: block.attribution, attributionColor: colors.textMuted,
-    north: block.north, scale: block.scale, northColor: colors.critLine, house: EXPORT_ICONS.house,
+    north: block.north, scale: block.scale, northColor: colors.critLine,
+    holdIcons: { shelter: EXPORT_ICONS.shelter, bolt: EXPORT_ICONS.bolt },
     // Route widths three times the screen's (4dp walk, 2dp car or ride).
     subjects: block.subjects.map(subject => ({
       color: subject.color,
