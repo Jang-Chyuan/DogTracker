@@ -9,6 +9,7 @@ import { t } from '../i18n';
 import { dayKey } from '../history/screen/HistoryScreenDates';
 import { useMemo, useRef } from 'react';
 import { downloadCloudHistory } from '../cloud/CloudDownload';
+import { createMalformedFields } from '../models/MalformedFields';
 import { getCloudClient } from '../cloud/CloudClient';
 import { serverClock } from '../cloud/ServerClock';
 
@@ -133,6 +134,8 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
         // time can arrive a little before it and up to a while after it.
         // `db`: the lease's own commands when the sync passes them
         // (runManual), which do not wait at the archive-priority gate.
+        // Fields read as unknown (MalformedFields): one line for this download.
+        const malformed = createMalformedFields();
         const work = async (leaseCurrent, publishScoped, db = database) => {
           let count = 0, failure = null;
           // A retained completed prefix can be extended by reception-time tail.
@@ -195,13 +198,13 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
               const carry = `${id}:${windowStart}`, carryStart = carried.has(carry) ? windowStart : carryFrom;
               if (carryStart < windowStart) count += await downloadCloudHistory({ client, database: db, owner,
                 startAt: iso(carryStart), endBefore: iso(windowStart), slaveId: id,
-                signal: network.signal, isCurrent: current });
+                signal: network.signal, isCurrent: current, malformed });
               carryDone = carryStart < windowStart ? carry : null;
               keeping = true;
               if (!current()) throw new Error(t("c576"));
               count += await downloadCloudHistory({ client, database: db, owner,
                 startAt: iso(tailStart(id)), endBefore: iso(coverage.received_before), slaveId: id,
-                signal: network.signal, isCurrent: current,
+                signal: network.signal, isCurrent: current, malformed,
                 onProgress: (processed, last) => { if (Number.isFinite(last?.received_at)) kept = last.received_at; } });
               // History is bucketed by track time: a phone packet of this day can
               // reach the cloud after the reception window. Before proving a
@@ -213,7 +216,7 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
                 count += await downloadCloudHistory({ client, database: db, owner,
                   startAt: iso(coverage.received_before), endBefore: iso(serverCutoff), slaveId: id,
                   phoneTrack: { startAt: iso(dayStart - DOWNLOAD_BEFORE_MS), endBefore: iso(coverage.range_end) },
-                  signal: network.signal, isCurrent: current });
+                  signal: network.signal, isCurrent: current, malformed });
               }
               keeping = false;
               if (!current()) throw new Error(t("c576"));
@@ -246,7 +249,8 @@ export function createHistoryCloud({ client, database, owner, runManual, getPubl
           if (failure) throw failure;
           return count;
         };
-        return runManual ? runManual(work, abort) : work(() => true);
+        try { return await (runManual ? runManual(work, abort) : work(() => true)); }
+        finally { malformed.report('history'); }
       })();
       previous = run;
       return run;

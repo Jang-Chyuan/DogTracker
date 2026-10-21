@@ -4,6 +4,7 @@ import { openTrackingDatabase } from '../database/TrackingDatabaseConnection';
 import { createDogDatabase } from '../database/DogDatabase';
 import { createCloudDatabase } from './CloudDatabase';
 import { downloadMasterIncremental, listCloudMasters } from './CloudIncremental';
+import { createMalformedFields } from '../models/MalformedFields';
 import { registerBackgroundSync, withCloudSyncSlot } from './CloudSyncSlot';
 import { createUploadDatabase } from '../cloudUpload/UploadDatabase';
 import { createUploadService } from '../cloudUpload/UploadService';
@@ -111,10 +112,14 @@ export async function runBackgroundCloudSync({ runId, owner }, {
       const cutoff = now();
       await database.beginDownload?.(owner);
       await check();
-      for (const masterId of masters) {
-        await downloadMasterIncremental({ client, database, owner, masterId, cutoff,
-          signal: abort.signal, check, maxPages: 4 });
-      }
+      // Fields read as unknown (MalformedFields): one line for the pass.
+      const malformed = createMalformedFields();
+      try {
+        for (const masterId of masters) {
+          await downloadMasterIncremental({ client, database, owner, masterId, cutoff,
+            signal: abort.signal, check, maxPages: 4, malformed });
+        }
+      } finally { malformed.report('archive'); }
       await check();
     }, { signal: abort.signal });
     outcome = uploadRetry ? 'retry' : 'success';

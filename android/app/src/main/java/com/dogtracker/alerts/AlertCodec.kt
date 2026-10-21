@@ -227,15 +227,22 @@ object AlertCodec {
     val battery = number("battery_pct", "bp")
     val satellites = number("satellites", "sat")
     val hdop = number("hdop", "hd")
-    val usb = number("usbPresent", "usb_present") ?: (data.opt("usbPresent") as? Boolean)?.let { if (it) 1.0 else 0.0 }
-      ?: (data.opt("usb_present") as? Boolean)?.let { if (it) 1.0 else 0.0 }
+    // UsbPresent.js: only true/false/1/0 are known; anything else (2026-10-21:
+    // a garbled 136) is unknown, so Dogs.apply keeps the charging state.
+    val usb = listOf("usbPresent", "usb_present").firstOrNull { data.has(it) && !data.isNull(it) }?.let { name ->
+      when (val value = data.opt(name)) {
+        is Boolean -> value
+        is Number -> when (value.toDouble()) { 1.0 -> true; 0.0 -> false; else -> null }
+        else -> null
+      }
+    }
     return Packet(
       slaveId = slave.toInt(),
       time = receivedAt,
       dog = if (Geo.valid(latitude, longitude)) LatLng(latitude!!, longitude!!) else null,
       receiver = if (Geo.valid(masterLatitude, masterLongitude)) LatLng(masterLatitude!!, masterLongitude!!) else null,
       batteryPercentage = if (battery != null && batteryValid != 0.0) Math.round(battery).toInt() else null,
-      usb = usb?.let { it == 1.0 },
+      usb = usb,
       good = Dogs.good(satellites, hdop),
       masterId = number("master_id", "mid")?.toInt(),
       satellites = satellites, hdop = hdop,
