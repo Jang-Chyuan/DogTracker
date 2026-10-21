@@ -1197,7 +1197,7 @@ const FIXTURES = {
   // 週 9/27–10/3 with 10/1 and 10/2 only in the cloud: the rest shows at
   // once, 「下載紀錄 0/2…」 then 1/2, the two days fill in.
   'activity-download-week': now => activityDownloadPage(now, { mode: 'week', date: day(9, 30, 12) },
-    [[day(10, 1, 0), day(10, 3, 0)]]),
+    [[day(10, 1, 0), day(10, 2, 0)], [day(10, 2, 0), day(10, 3, 0)]]),
   // The same as activity-download without a network: 「沒有網路，10/06 的紀錄
   // 還沒下載，連上網路再試」 and 重試, not 沒有資料.
   'activity-download-offline': now => activityDownloadPage(now, { mode: 'day', date: day(10, 6, 12) },

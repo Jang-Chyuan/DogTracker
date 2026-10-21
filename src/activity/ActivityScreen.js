@@ -241,7 +241,10 @@ export default function ActivityScreen({
         <DownloadRow downloads={downloads} mode={mode} show={unknown || ['downloading', 'partial'].includes(downloads.status)} />
         <LoadingContent loading={loading} shape={mode === 'day' ? 'chart' : 'bars'} skeletonTestID="activity-loading">
           {status === 'error' && <Failure onRetry={retry} />}
-          {view && <ActivityBody view={view} hideEmpty={pending || unknown} />}
+          {view && !(unknown && noData && mode === 'day') && (
+            <ActivityBody view={view} hideEmpty={pending || unknown}
+              waiting={pending || unknown ? downloads.missing : null} />
+          )}
         </LoadingContent>
       </ScrollView>
     </View>
@@ -397,19 +400,21 @@ function Failure({ onRetry }) {
   );
 }
 
-function ActivityBody({ view, hideEmpty = false }) {
+// `waiting`: the days not on this phone yet (being downloaded, or offline):
+// their bars are a skeleton, not 沒有資料, and the 沒有資料 row waits.
+function ActivityBody({ view, hideEmpty = false, waiting = null }) {
   const styles = useStyles(getStyles);
   const empty = !!view.emptyText && !hideEmpty;
   return (
     <View>
-      {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} />}
+      {view.mode === 'day' ? <DayChart view={view} /> : <Bars view={view} waiting={waiting} />}
       <Legend view={view} />
       {empty && (
         <Text style={styles.empty} testID="activity-empty">
           {view.emptyText}
         </Text>
       )}
-      <Summary view={view} />
+      <Summary view={view} hideMissing={hideEmpty} />
     </View>
   );
 }
@@ -466,7 +471,7 @@ function BarNoData({ testID }) {
   );
 }
 
-function Bars({ view }) {
+function Bars({ view, waiting = null }) {
   const { colors } = useTheme();
   const styles = useStyles(getStyles);
   const gap = BAR_GAP[view.mode];
@@ -492,7 +497,10 @@ function Bars({ view }) {
               );
             })}
             {bar.totals.missing > 0 && bar.segments.every(segment => segment.minutes === 0) && (
-              <BarNoData testID={`activity-nodata-${bar.start}`} />
+              waiting?.includes(dayKey(new Date(bar.start)))
+                ? <View style={[styles.barNoData, { backgroundColor: colors.skeleton }]}
+                  testID={`activity-waiting-${bar.start}`} />
+                : <BarNoData testID={`activity-nodata-${bar.start}`} />
             )}
           </View>
         ))}
@@ -548,10 +556,11 @@ function Legend({ view }) {
   );
 }
 
-function Summary({ view }) {
+function Summary({ view, hideMissing = false }) {
   const styles = useStyles(getStyles);
   const rows = view.rows.filter(
-    row => (row.state !== 'missing' && row.state !== 'charging') || row.durationMinutes > 0,
+    row => (row.state !== 'missing' && row.state !== 'charging') || (row.durationMinutes > 0
+      && !(hideMissing && row.state === 'missing')),
   );
   return (
     <View testID="activity-summary">

@@ -162,6 +162,9 @@ test('offline: a day not downloaded shows the offline words with 重試, not 沒
   expect(w.cloud.missingRows).not.toHaveBeenCalled();
   expect(all()).toContain(i18nT('c157', { date: '10/06' }));
   expect(byId('activity-empty')).toHaveLength(0);
+  // Not a chart of 沒有資料 either: only the words and 重試.
+  expect(byId('activity-row-missing')).toHaveLength(0);
+  expect(byId('activity-day-chart')).toHaveLength(0);
   expect(byId('activity-download-retry').length).toBeGreaterThan(0);
   // Back online: 重試 downloads it.
   await act(async () => renderer.update(<ActivityScreen name="小黑" slaveId={6} now={NOW} onBack={jest.fn()}
@@ -201,9 +204,14 @@ test('week: only the missing days are downloaded, newest first, with progress', 
     .toEqual(['2026-10-07', '2026-10-05', '2026-10-04'].map(key => dayBounds(key).dayStart));
   expect(w.downloads).toEqual(['2026-10-07']);
   expect(all()).toContain(i18nT('c1440', { done: 0, total: 2 }));
-  // Partial data stays on screen while the rest downloads.
+  // Partial data stays on screen while the rest downloads; the days still
+  // coming are a skeleton, not 沒有資料.
   expect(loading()).toBe(false);
   expect(byId('activity-empty')).toHaveLength(0);
+  const start = key => dayBounds(key).dayStart;
+  expect(byId(`activity-waiting-${start('2026-10-04')}`).length).toBeGreaterThan(0);
+  expect(byId(`activity-nodata-${start('2026-10-04')}`)).toHaveLength(0);
+  expect(byId('activity-row-missing')).toHaveLength(0);
   await act(async () => w.release());
   await settle();
   expect(w.downloads).toEqual(['2026-10-07', '2026-10-04']);
